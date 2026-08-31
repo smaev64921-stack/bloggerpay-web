@@ -1,0 +1,55 @@
+#  BloggerPay — настройки раздачи на Netlify
+#
+#  Сборки нет: на хостинг уезжает готовый HTML и sw.js рядом с ним.
+#  Netlify сам сжимает ответы (gzip/brotli), поэтому 4 МБ файла
+#  превращаются примерно в 1 МБ трафика — отдельно включать нечего.
+#
+#  Что здесь важно и почему:
+#   · главный файл НЕ кэшируем — иначе у людей застрянет старая версия
+#     приложения с деньгами, а обновление доедет через недели;
+#   · sw.js тоже не кэшируем: он решает, как обновляется всё остальное;
+#   · заголовки безопасности — чтобы страницу нельзя было встроить
+#     чужим сайтом и подсунуть человеку поддельную кнопку оплаты.
+
+[build]
+  publish = "."
+  command = ""
+
+#  Мини-апп открывается как корень сайта.
+[[redirects]]
+  from = "/"
+  to = "/index.html"
+  status = 200
+
+#  Главная страница: всегда свежая.
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+#  Service worker: браузер обязан проверять его при каждом заходе.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+    Content-Type = "application/javascript; charset=utf-8"
+    Service-Worker-Allowed = "/"
+
+#  Общие заголовки.
+#
+#  frame-ancestors: Телеграм открывает мини-апп во фрейме на своих
+#  доменах — их и разрешаем. Остальным сайтам встраивать нас незачем.
+#  X-Frame-Options здесь НЕ ставим: он не умеет список доменов и
+#  сломал бы веб-версию Телеграма.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(), microphone=(), camera=(), payment=()"
+    Content-Security-Policy = "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org https://telegram.org"
