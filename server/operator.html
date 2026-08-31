@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>BloggerPay — выплаты</title>
+<!--
+  РАБОЧЕЕ МЕСТО ОПЕРАТОРА.
+
+  Это НЕ часть мини-аппа. Ключ оператора нельзя класть в файл, который
+  скачивает каждый пользователь, поэтому страница живёт отдельно и
+  открывается только тем, у кого есть ключ.
+
+  Что здесь делает человек: видит, кому и сколько должен, берёт заявку в
+  работу, переводит деньги своим банком и отмечает, что перевёл.
+  Сервер сам деньги никуда не отправляет — он ведёт учёт.
+
+  Ключ хранится в sessionStorage: закрыл вкладку — надо ввести заново.
+-->
+<style>
+  :root{
+    --bg:#0f1115; --card:#171a20; --card2:#1d2128; --line:#262b33;
+    --t1:#e8eaed; --t2:#a2a9b4; --t3:#6f7783;
+    --acc:#4a8cf7; --ok:#3ddc84; --warn:#f6a823; --bad:#ff6b6b;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+
+    /* Шкала размеров. Экран сканируют глазами: ищут сумму и статус,
+       а не читают подряд. Поэтому ступени крупные (шаг примерно ×1.25),
+       и их всего пять. Было восемь значений в диапазоне 11–15 px —
+       13,5 против 13 против 12,5 глаз не различает, и всё сливалось. */
+    --fs-xl:28px;   /* число в плитке — то, за чем сюда приходят */
+    --fs-lg:20px;   /* заголовок раздела */
+    --fs-md:15px;   /* основной текст и строки таблицы */
+    --fs-sm:12px;   /* второстепенное: подписи, реквизиты, пояснения */
+    --fs-xs:10px;   /* прописные метки: шапка таблицы, статусы */
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--t1);
+    font:var(--fs-md)/1.5 -apple-system,"Segoe UI",Roboto,sans-serif;padding:20px}
+  .wrap{max-width:1080px;margin:0 auto}
+  h1{font-size:var(--fs-lg);margin:0 0 4px;letter-spacing:-.3px}
+  .sub{color:var(--t3);font-size:var(--fs-sm);margin:0 0 20px}
+
+  .gate{max-width:420px;margin:60px auto;background:var(--card);
+    border:1px solid var(--line);border-radius:14px;padding:22px}
+  .gate p{color:var(--t2);font-size:var(--fs-md);margin:0 0 14px;line-height:1.55}
+  input,button,select{font:inherit;font-family:inherit}
+  input[type=password],input[type=text]{width:100%;background:var(--card2);
+    border:1px solid var(--line);border-radius:10px;padding:11px 13px;color:var(--t1);outline:none}
+  input:focus{border-color:var(--acc)}
+  .btn{background:var(--acc);border:0;border-radius:10px;padding:11px 16px;
+    color:#fff;font-size:var(--fs-md);font-weight:600;cursor:pointer}
+  .btn:hover{filter:brightness(1.08)}
+  .btn.ghost{background:var(--card2);border:1px solid var(--line);color:var(--t1)}
+  .btn.ok{background:var(--ok);color:#07130c}
+  .btn.bad{background:transparent;border:1px solid var(--bad);color:var(--bad)}
+  .btn:disabled{opacity:.5;cursor:default}
+  .btn.sm{padding:7px 12px;font-size:var(--fs-sm);font-weight:700;border-radius:8px}
+
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:18px}
+  .tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .tile b{display:block;font-size:var(--fs-xl);font-family:var(--mono);
+    letter-spacing:-1px;line-height:1.05}
+  .tile i{display:block;font-style:normal;color:var(--t3);
+    font-size:var(--fs-sm);margin-top:6px}
+  .tile.good b{color:var(--ok)} .tile.warn b{color:var(--warn)} .tile.bad b{color:var(--bad)}
+
+  .recon{border-radius:12px;padding:13px 15px;margin-bottom:18px;font-size:var(--fs-md);
+    border:1px solid var(--line);background:var(--card)}
+  .recon.ok{border-color:rgba(61,220,132,.35);background:rgba(61,220,132,.08)}
+  .recon.bad{border-color:rgba(255,107,107,.4);background:rgba(255,107,107,.09)}
+  .recon b{font-family:var(--mono)}
+
+  .tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+  .tab{background:var(--card2);border:1px solid var(--line);border-radius:8px;
+    padding:7px 13px;font-size:var(--fs-sm);font-weight:600;color:var(--t2);cursor:pointer}
+  .tab.on{background:var(--t1);color:var(--bg);border-color:var(--t1);font-weight:600}
+
+  /* Семь колонок в телефон не влезут — и это нормально. Важно, чтобы
+     вбок ездила ТАБЛИЦА, а не вся страница: иначе уплывают и плитки,
+     и полоса сверки, за которой оператор следит. */
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;
+    border:1px solid var(--line);border-radius:12px;background:var(--card)}
+  table{width:100%;min-width:720px;border-collapse:collapse;background:transparent}
+  th{text-align:left;font-size:var(--fs-xs);text-transform:uppercase;letter-spacing:.7px;
+    color:var(--t3);padding:10px 12px;border-bottom:1px solid var(--line);font-weight:700}
+  td{padding:12px;border-bottom:1px solid var(--line);font-size:var(--fs-md);vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  .num{font-family:var(--mono);text-align:right;white-space:nowrap;
+    font-variant-numeric:tabular-nums}
+  .num b{font-size:var(--fs-lg);font-weight:700;letter-spacing:-.5px}
+  .req{font-family:var(--mono);font-size:var(--fs-sm);color:var(--t2);word-break:break-all}
+  .who{font-weight:600}
+  .who span{display:block;color:var(--t3);font-weight:400;font-size:var(--fs-sm);margin-top:2px}
+  .st{display:inline-block;font-size:var(--fs-xs);text-transform:uppercase;letter-spacing:.5px;
+    padding:4px 8px;border-radius:6px;font-weight:700}
+  .st.queued{background:rgba(246,168,35,.15);color:var(--warn)}
+  .st.processing{background:rgba(74,140,247,.16);color:var(--acc)}
+  .st.paid,.st.approved{background:rgba(61,220,132,.15);color:var(--ok)}
+  .st.rejected,.st.cancelled{background:rgba(255,255,255,.07);color:var(--t3)}
+  .acts{display:flex;gap:6px;flex-wrap:wrap}
+  .empty{padding:32px;text-align:center;color:var(--t3);font-size:var(--fs-md)}
+  .msg{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);
+    background:var(--card2);border:1px solid var(--line);border-radius:10px;
+    padding:12px 18px;font-size:var(--fs-md);opacity:0;transition:opacity .2s;pointer-events:none;z-index:9}
+  .msg.on{opacity:1}
+  .msg.bad{border-color:var(--bad);color:var(--bad)}
+  .note{color:var(--t3);font-size:var(--fs-sm);margin-top:16px;line-height:1.65;max-width:70ch}
+</style>
+</head>
+<body>
+
+<div id="gate" class="gate">
+  <h1>Выплаты BloggerPay</h1>
+  <p>Введите ключ оператора. Он берётся из <span class="req">server/.env</span>,
+     строка <span class="req">ADMIN_KEY</span>. Ключ остаётся в этой вкладке
+     и исчезает, когда вы её закроете.</p>
+  <input type="password" id="key" placeholder="Ключ оператора" autocomplete="off">
+  <div style="margin-top:12px"><button class="btn" id="enter">Войти</button></div>
+  <div id="gateErr" style="color:var(--bad);font-size:var(--fs-sm);margin-top:10px"></div>
+</div>
+
+<div class="wrap" id="app" hidden>
+  <h1 id="pageTitle">Выплаты</h1>
+  <p class="sub" id="pageSub">Сервер деньги не отправляет — переводите своим банком и отмечайте здесь.</p>
+
+  <div class="tiles" id="tiles"></div>
+  <div id="recon"></div>
+
+  <div class="tabs" id="sections">
+    <button class="tab on" data-sec="wd">Выплаты</button>
+    <button class="tab" data-sec="kyc">Верификация</button>
+    <button class="tab" data-sec="deals">Спорные деньги</button>
+    <button class="tab" data-sec="errors">Поломки</button>
+  </div>
+
+  <div class="tabs" id="tabs"></div>
+  <div id="list"></div>
+
+  <p class="note" id="noteWd">
+    Порядок работы: <b>взять в работу</b> → перевести деньги по реквизитам →
+    <b>отмечено: выплачено</b>. Пока заявка в очереди, человек может отменить её сам;
+    как только вы взяли её в работу — уже нет, иначе можно получить перевод и вернуть
+    сумму себе на баланс.
+  </p>
+  <p class="note" id="noteErrors" hidden>
+    Ошибки, которые случились у людей в приложении. Раньше они жили в памяти
+    вкладки и стирались при перезагрузке — человек видел белый экран, а вы об
+    этом не узнавали никогда.<br><br>
+    Одинаковые ошибки собраны в одну строку: важно, <b>что</b> ломается и у
+    <b>скольких людей</b>, а не сколько раз подряд это повторилось у одного.
+    Личных данных здесь нет — только текст ошибки и место в коде.
+  </p>
+  <p class="note" id="noteDeals" hidden>
+    Здесь лежат деньги, замороженные под сделки и бюджеты кампаний. Обычно их
+    закрывают сами участники: заказчик подтверждает работу или возвращает.
+    <b>Вмешиваться нужно только по спору.</b><br><br>
+    Раздел делит <b>остаток</b> заморозки: доля исполнителю в процентах, остальное
+    возвращается заказчику. Копейки не теряются — суммы всегда сходятся ровно.
+    Решение необратимо, поэтому сначала разберитесь в переписке сторон.
+  </p>
+  <p class="note" id="noteKyc" hidden>
+    Люди, которые хотят выводить деньги, присылают сюда анкету и фото разворота
+    паспорта. Порядок: откройте фото, сверьте ФИО и дату рождения с анкетой,
+    затем <b>подтвердите</b> или <b>отклоните</b> с причиной — её человек увидит
+    в приложении и сможет прислать документы заново.<br><br>
+    Пока личность не подтверждена, кнопка вывода у человека закрыта.
+  </p>
+</div>
+
+<!-- Просмотр фото документа на весь экран строится скриптом при первом
+     клике по миниатюре (openZoom) — пустых картинок в разметке нет. -->
+
+<div class="msg" id="msg"></div>
+
+<script>
+'use strict';
+
+var KEY = '';
+var SEC = 'wd';          /* wd — выплаты, kyc — верификация, deals — спорные деньги */
+var TAB = 'queued';
+var TABS = [
+  ['queued', 'В очереди'],
+  ['processing', 'В работе'],
+  ['paid', 'Выплачено'],
+  ['rejected', 'Отклонено'],
+  ['cancelled', 'Отменено'],
+  ['', 'Все'],
+];
+
+function $(id){ return document.getElementById(id); }
+function money(n){ return (Number(n) || 0).toLocaleString('ru') + ' ₽'; }
+function esc(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
+  });
+}
+function when(s){
+  if(!s) return '';
+  var d = new Date(String(s).replace(' ', 'T') + 'Z');
+  if(isNaN(d)) return esc(s);
+  return d.toLocaleString('ru', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+}
+
+var msgTimer = null;
+function say(text, bad){
+  var m = $('msg');
+  m.textContent = text;
+  m.className = 'msg on' + (bad ? ' bad' : '');
+  clearTimeout(msgTimer);
+  msgTimer = setTimeout(function(){ m.className = 'msg'; }, 3200);
+}
+
+/* Ключ уезжает HTTP-заголовком, а туда помещаются только латиница и
+   цифры: кириллица роняет сам fetch с невнятной ошибкой про ISO-8859-1.
+   Проверяем заранее и говорим по-человечески. */
+function keyLooksSane(k){ return /^[!-~]+$/.test(k); }
+
+function api(method, path, body){
+  if(!keyLooksSane(KEY)) return Promise.reject(new Error('ключ-не-подходит'));
+  return fetch(path, {
+    method: method,
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Key': KEY },
+    body: body ? JSON.stringify(body) : undefined,
+  }).then(function(r){
+    return r.json().catch(function(){ return {}; }).then(function(j){
+      if(!r.ok) throw new Error((j && j.error) || ('Ошибка ' + r.status));
+      return j;
+    });
+  });
+}
+
+/* Ключ идемпотентности: повторное нажатие не проведёт операцию дважды. */
+function opKey(kind, id){
+  return 'op-' + kind + '-' + id + '-' + Date.now().toString(36);
+}
+
+function enter(){
+  KEY = $('key').value.trim();
+  if(!KEY){ $('gateErr').textContent = 'Введите ключ'; return; }
+  if(!keyLooksSane(KEY)){
+    $('gateErr').textContent = 'В ключе только латинские буквы, цифры и знаки — похоже, скопировалось лишнее';
+    return;
+  }
+  api('GET', '/api/admin/overview').then(function(){
+    try{ sessionStorage.setItem('bp_op_key', KEY); }catch(e){}
+    $('gate').hidden = true;
+    $('app').hidden = false;
+    renderTabs();
+    refresh();
+  }).catch(function(e){
+    var m = String(e && e.message || '');
+    $('gateErr').textContent =
+        m === 'ключ-не-подходит' ? 'В ключе есть недопустимые символы'
+      : /403|Нужен X-Admin-Key/.test(m) ? 'Ключ не подошёл'
+      : /Failed to fetch|NetworkError/.test(m) ? 'Сервер не отвечает — он запущен?'
+      : m;
+  });
+}
+
+function renderTabs(){
+  $('tabs').innerHTML = TABS.map(function(t){
+    return '<button class="tab' + (t[0] === TAB ? ' on' : '') + '" data-t="' + t[0] + '">' + t[1] + '</button>';
+  }).join('');
+}
+
+function refresh(){
+  var second = SEC === 'deals' ? api('GET', '/api/admin/deals')
+    : SEC === 'errors' ? api('GET', '/api/admin/errors?days=7')
+    : SEC === 'kyc' ? api('GET', '/api/admin/kyc')
+    : api('GET', '/api/admin/withdrawals' + (TAB ? ('?status=' + encodeURIComponent(TAB)) : ''));
+  Promise.all([api('GET', '/api/admin/overview'), second]).then(function(r){
+    paintTiles(r[0]);
+    if(SEC === 'deals') paintDeals(r[1].rows || []);
+    else if(SEC === 'errors') paintErrors(r[1].rows || []);
+    else if(SEC === 'kyc') paintKyc(r[1].rows || []);
+    else paintList(r[1].rows || []);
+  }).catch(function(e){ say(e.message, true); });
+}
+
+function switchSection(sec){
+  SEC = sec;
+  var wd = sec === 'wd';
+  var titles = { wd:'Выплаты', kyc:'Верификация личности', deals:'Спорные деньги', errors:'Поломки у людей' };
+  var subs = {
+    wd: 'Сервер деньги не отправляет — переводите своим банком и отмечайте здесь.',
+    kyc: 'Сверьте анкету с фото паспорта и решите: без подтверждения вывод закрыт.',
+    deals: 'Замороженные деньги по сделкам. Делить их нужно только по спору.',
+    errors: 'Что сломалось у людей за последнюю неделю.',
+  };
+  $('pageTitle').textContent = titles[sec] || 'Выплаты';
+  $('pageSub').textContent = subs[sec] || '';
+  $('tabs').hidden = !wd;
+  $('noteWd').hidden = !wd;
+  $('noteKyc').hidden = sec !== 'kyc';
+  $('noteDeals').hidden = sec !== 'deals';
+  $('noteErrors').hidden = sec !== 'errors';
+  [].forEach.call(document.querySelectorAll('#sections .tab'), function(b){
+    b.classList.toggle('on', b.dataset.sec === sec);
+  });
+  refresh();
+}
+
+function paintDeals(rows){
+  if(!rows.length){
+    $('list').innerHTML = '<div class="empty">Замороженных денег нет — все сделки закрыты</div>';
+    return;
+  }
+  var html = '<div class="scroll"><table><thead><tr>'
+    + '<th>Сделка</th><th>Плательщик</th><th class="num">Заморожено</th>'
+    + '<th class="num">Уже выплачено</th><th class="num">Остаток</th><th>Создана</th><th></th>'
+    + '</tr></thead><tbody>';
+  rows.forEach(function(d){
+    var left = d.amount - d.paid;
+    html += '<tr>'
+      + '<td class="req">' + esc(d.id) + '</td>'
+      + '<td class="who">' + esc(d.payer_name) + '<span>id ' + d.payer_id
+      + (d.payee_id ? (' → исполнитель id ' + d.payee_id) : ' → исполнитель не назначен') + '</span></td>'
+      + '<td class="num">' + money(d.amount) + '</td>'
+      + '<td class="num">' + money(d.paid) + '</td>'
+      + '<td class="num"><b>' + money(left) + '</b></td>'
+      + '<td style="color:var(--t3);font-size:var(--fs-sm);white-space:nowrap">' + when(d.created_at) + '</td>'
+      + '<td><button class="btn sm" data-settle="' + esc(d.id) + '" data-left="' + left
+      + '" data-payee="' + (d.payee_id || '') + '">Решить спор</button></td>'
+      + '</tr>';
+  });
+  $('list').innerHTML = html + '</tbody></table></div>';
+}
+
+/* Раздел верификации: анкета рядом с фото, решение в один клик.
+   Фото открывается на весь экран — паспорт с миниатюры не прочитать. */
+function kycStatusRu(s){
+  return { queued:'Ждёт проверки', approved:'Подтверждена', rejected:'Отклонена' }[s] || s;
+}
+function kycActions(k){
+  if(k.status !== 'queued') return '';
+  /* seenAt уезжает вместе с решением: если человек переотправил заявку,
+     пока вы смотрели, сервер ответит 409 вместо решения вслепую. */
+  return '<div class="acts">'
+    + '<button class="btn ok sm" data-kyc-ok="' + k.id + '" data-seen="' + esc(k.updated_at) + '" data-name="' + esc(k.name) + '">Подтвердить</button>'
+    + '<button class="btn bad sm" data-kyc-no="' + k.id + '" data-seen="' + esc(k.updated_at) + '">Отклонить</button>'
+    + '</div>';
+}
+function paintKyc(rows){
+  if(!rows.length){
+    $('list').innerHTML = '<div class="empty">Заявок на проверку личности нет</div>';
+    return;
+  }
+  var html = '<div class="scroll"><table><thead><tr>'
+    + '<th>Кто в приложении</th><th>Анкета</th><th>Документ</th>'
+    + '<th>Статус</th><th>Прислана</th><th></th>'
+    + '</tr></thead><tbody>';
+  rows.forEach(function(k){
+    html += '<tr>'
+      + '<td class="who">' + esc(k.user_name) + '<span>' + esc(k.email) + ' · id ' + k.user_id + '</span></td>'
+      + '<td class="who">' + esc(k.name) + '<span>дата рождения: ' + esc(k.birth) + '</span></td>'
+      /* фото не грузится вместе со списком (60 паспортов — десятки МБ),
+         а подтягивается по клику */
+      + '<td>' + (k.has_photo
+          ? '<button class="btn ghost sm" data-kyc-photo="' + k.id + '">Открыть фото</button>'
+          : '<span style="color:var(--t3);font-size:var(--fs-sm)">нет фото</span>') + '</td>'
+      + '<td><span class="st ' + esc(k.status) + '">' + kycStatusRu(k.status) + '</span>'
+      + (k.note ? '<div style="color:var(--t3);font-size:var(--fs-sm);margin-top:4px">' + esc(k.note) + '</div>' : '')
+      + '</td>'
+      + '<td style="color:var(--t3);font-size:var(--fs-sm);white-space:nowrap">' + when(k.created_at) + '</td>'
+      + '<td>' + kycActions(k) + '</td>'
+      + '</tr>';
+  });
+  $('list').innerHTML = html + '</tbody></table></div>';
+}
+
+function openZoom(src){
+  var z = $('zoom');
+  if(!z){
+    z = document.createElement('div');
+    z.id = 'zoom';
+    z.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.86);z-index:20;'
+      + 'align-items:center;justify-content:center;cursor:zoom-out;padding:24px;box-sizing:border-box';
+    z.addEventListener('click', function(){ z.style.display = 'none'; });
+    document.body.appendChild(z);
+  }
+  z.innerHTML = '';
+  var im = document.createElement('img');
+  im.alt = 'Фото документа';
+  im.style.cssText = 'max-width:100%;max-height:100%;border-radius:10px';
+  im.src = src;
+  z.appendChild(im);
+  z.style.display = 'flex';
+}
+
+function paintErrors(rows){
+  if(!rows.length){
+    $('list').innerHTML = '<div class="empty">За неделю ни одной ошибки — и это хорошая новость</div>';
+    return;
+  }
+  var html = '<div class="scroll"><table><thead><tr>'
+    + '<th>Что сломалось</th><th>Где</th><th class="num">Раз</th>'
+    + '<th class="num">Людей</th><th>Последний раз</th>'
+    + '</tr></thead><tbody>';
+  rows.forEach(function(e){
+    /* Много людей — это не «часто», это «важно»: одна и та же поломка
+       у разных людей значит, что она системная, а не случайная. */
+    var hot = e.people > 1;
+    html += '<tr>'
+      + '<td' + (hot ? ' style="color:var(--bad)"' : '') + '>' + esc(e.message) + '</td>'
+      + '<td class="req">' + esc(e.where_at || '—') + '</td>'
+      + '<td class="num">' + e.n + '</td>'
+      + '<td class="num">' + (hot ? '<b>' + e.people + '</b>' : e.people) + '</td>'
+      + '<td style="color:var(--t3);font-size:var(--fs-sm);white-space:nowrap">' + when(e.last_at) + '</td>'
+      + '</tr>';
+  });
+  $('list').innerHTML = html + '</tbody></table></div>';
+}
+
+/* Раздел спорных денег. Спрашиваем долю, показываем расчёт до рубля и
+   требуем подтверждения: операция необратима. */
+function settleDialog(dealId, left, payeeId){
+  var raw = window.prompt(
+    'Спор по сделке ' + dealId + '.\n'
+    + 'В заморозке осталось ' + money(left) + '.\n\n'
+    + 'Какая доля достаётся ИСПОЛНИТЕЛЮ, в процентах (0–100)?', '50');
+  if(raw === null) return;
+  var share = Number(String(raw).replace(',', '.').trim());
+  if(!isFinite(share) || share < 0 || share > 100){ say('Доля — число от 0 до 100', true); return; }
+
+  var toBlogger = Math.round(left * share / 100);
+  var toPayer = left - toBlogger;
+  var who = payeeId ? ('исполнителю id ' + payeeId) : 'исполнителю';
+  if(!payeeId && toBlogger > 0){
+    say('У этой заморозки не назначен исполнитель — доля больше нуля невозможна', true);
+    return;
+  }
+  if(!window.confirm(
+      'Разделить ' + money(left) + ':\n\n'
+      + '  ' + who + ' — ' + money(toBlogger) + '\n'
+      + '  заказчику обратно — ' + money(toPayer) + '\n\n'
+      + 'Решение необратимо. Продолжить?')) return;
+
+  api('POST', '/api/deals/settle', {
+    dealId: dealId, bloggerShare: share,
+    toUserId: payeeId || undefined,
+    opKey: opKey('settle', dealId),
+  }).then(function(r){
+    say('Разделено: исполнителю ' + money(r.исполнителю) + ', заказчику ' + money(r.плательщику));
+    refresh();
+  }).catch(function(e){ say(e.message, true); });
+}
+
+function paintTiles(o){
+  var s = o.сверка || {};
+  $('tiles').innerHTML =
+      tile(o.заявок_в_очереди, 'Заявок в очереди', o.заявок_в_очереди ? 'warn' : '')
+    + tile(money(o.сумма_к_выплате), 'К выплате сейчас', o.сумма_к_выплате ? 'warn' : '')
+    + tile(o.взято_в_работу, 'Взято в работу', '')
+    + tile(o.верификаций_в_очереди || 0, 'Ждут проверки личности', o.верификаций_в_очереди ? 'warn' : '')
+    + tile(money(o.доход_платформы), 'Доход сервиса', 'good')
+    + tile(money(o.всего_в_системе.available + o.всего_в_системе.hold), 'Всего в системе', '')
+    + tile(money(o.всего_в_системе.hold), 'Из них заморожено', '')
+    + tile((o.ошибок_за_сутки && o.ошибок_за_сутки.n) || 0, 'Поломок за сутки',
+           (o.ошибок_за_сутки && o.ошибок_за_сутки.n) ? 'bad' : 'good');
+
+  $('recon').className = 'recon ' + (s.сходится ? 'ok' : 'bad');
+  $('recon').innerHTML = s.сходится
+    ? '✓ Сверка сходится: внесено <b>' + money(o.внесено_всего) + '</b> − выплачено наружу <b>'
+      + money(o.выплачено_наружу) + '</b> = <b>' + money(s.фактически_в_системе) + '</b> в системе.'
+    : '✗ <b>Расхождение ' + money(s.расхождение) + '</b>. Ожидалось ' + money(s.ожидается_в_системе)
+      + ', фактически ' + money(s.фактически_в_системе) + '. Останови выплаты и разберись — деньги не сходятся.';
+}
+
+function tile(v, label, cls){
+  return '<div class="tile ' + cls + '"><b>' + esc(v) + '</b><i>' + esc(label) + '</i></div>';
+}
+
+function paintList(rows){
+  if(!rows.length){
+    $('list').innerHTML = '<div class="empty">Здесь пусто</div>';
+    return;
+  }
+  var html = '<div class="scroll"><table><thead><tr>'
+    + '<th>Кому</th><th>Реквизиты</th><th class="num">К выплате</th>'
+    + '<th class="num">Комиссия</th><th>Статус</th><th>Создана</th><th></th>'
+    + '</tr></thead><tbody>';
+  rows.forEach(function(w){
+    html += '<tr>'
+      + '<td class="who">' + esc(w.name) + '<span>' + esc(w.email) + '</span></td>'
+      + '<td class="req">' + esc(w.requisites) + '</td>'
+      + '<td class="num"><b>' + money(w.net) + '</b></td>'
+      + '<td class="num">' + money(w.fee) + '</td>'
+      + '<td><span class="st ' + esc(w.status) + '">' + statusRu(w.status) + '</span>'
+      + (w.note ? '<div style="color:var(--t3);font-size:var(--fs-sm);margin-top:4px">' + esc(w.note) + '</div>' : '')
+      + '</td>'
+      + '<td style="color:var(--t3);font-size:var(--fs-sm);white-space:nowrap">' + when(w.created_at) + '</td>'
+      + '<td>' + actions(w) + '</td>'
+      + '</tr>';
+  });
+  $('list').innerHTML = html + '</tbody></table></div>';
+}
+
+function statusRu(s){
+  return { queued:'В очереди', processing:'В работе', paid:'Выплачено',
+           rejected:'Отклонена', cancelled:'Отменена' }[s] || s;
+}
+
+function actions(w){
+  var a = '<div class="acts">';
+  a += '<button class="btn ghost sm" data-copy="' + esc(w.requisites) + '">Копировать</button>';
+  if(w.status === 'queued')
+    a += '<button class="btn sm" data-take="' + w.id + '">Взять в работу</button>';
+  if(w.status === 'queued' || w.status === 'processing'){
+    a += '<button class="btn ok sm" data-paid="' + w.id + '" data-net="' + w.net + '" data-name="' + esc(w.name) + '">Выплачено</button>';
+    a += '<button class="btn bad sm" data-reject="' + w.id + '">Отклонить</button>';
+  }
+  return a + '</div>';
+}
+
+/* Все действия — через делегирование: список перерисовывается целиком. */
+document.addEventListener('click', function(e){
+  var t = e.target;
+  if(!t || t.tagName !== 'BUTTON') return;
+
+  if(t.dataset.sec){ switchSection(t.dataset.sec); return; }
+
+  if(t.dataset.kycPhoto){
+    t.disabled = true;
+    api('GET', '/api/admin/kyc/photo?id=' + Number(t.dataset.kycPhoto))
+      .then(function(j){ t.disabled = false; if(j.photo) openZoom(j.photo); else say('Фото не найдено', true); })
+      .catch(function(err){ say(err.message, true); t.disabled = false; });
+    return;
+  }
+
+  if(t.dataset.kycOk){
+    var kid = Number(t.dataset.kycOk);
+    if(!window.confirm('Подтвердить личность: ' + t.dataset.name + '?\n\n'
+        + 'После этого человеку откроется вывод денег.')) return;
+    t.disabled = true;
+    api('POST', '/api/admin/kyc/approve', { requestId: kid, seenAt: t.dataset.seen })
+      .then(function(){ say('Личность подтверждена'); refresh(); })
+      .catch(function(err){ say(err.message, true); t.disabled = false; refresh(); });
+    return;
+  }
+
+  if(t.dataset.kycNo){
+    var knid = Number(t.dataset.kycNo);
+    var kwhy = window.prompt('Причина отказа — её увидит человек в приложении:', 'Фото не читается');
+    if(kwhy === null) return;
+    t.disabled = true;
+    api('POST', '/api/admin/kyc/reject', { requestId: knid, note: kwhy, seenAt: t.dataset.seen })
+      .then(function(){ say('Отклонена — человек сможет прислать документы заново'); refresh(); })
+      .catch(function(err){ say(err.message, true); t.disabled = false; refresh(); });
+    return;
+  }
+
+  if(t.dataset.settle){
+    settleDialog(t.dataset.settle, Number(t.dataset.left), Number(t.dataset.payee) || null);
+    return;
+  }
+
+  if(t.dataset.t !== undefined){ TAB = t.dataset.t; renderTabs(); refresh(); return; }
+
+  if(t.dataset.copy){
+    var text = t.dataset.copy;
+    (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject())
+      .then(function(){ say('Реквизиты скопированы'); })
+      .catch(function(){ window.prompt('Скопируйте реквизиты', text); });
+    return;
+  }
+
+  if(t.dataset.take){
+    t.disabled = true;
+    api('POST', '/api/admin/withdrawals/take', { withdrawalId: Number(t.dataset.take) })
+      .then(function(){ say('Заявка взята в работу — теперь её не отменят'); refresh(); })
+      .catch(function(err){ say(err.message, true); t.disabled = false; });
+    return;
+  }
+
+  if(t.dataset.paid){
+    var id = Number(t.dataset.paid);
+    /* Это необратимо: деньги списываются с заморозки, комиссия уходит
+       сервису. Спрашиваем прямо, без бодрых формулировок. */
+    if(!window.confirm('Вы уже перевели ' + money(t.dataset.net) + ' получателю ' + t.dataset.name + '?\n\n'
+        + 'Отметка необратима: сумма спишется с заморозки, комиссия зачтётся сервису.')) return;
+    t.disabled = true;
+    api('POST', '/api/admin/withdrawals/paid', { withdrawalId: id, opKey: opKey('paid', id) })
+      .then(function(){ say('Отмечено: выплачено'); refresh(); })
+      .catch(function(err){ say(err.message, true); t.disabled = false; });
+    return;
+  }
+
+  if(t.dataset.reject){
+    var rid = Number(t.dataset.reject);
+    var why = window.prompt('Причина отказа — её увидит человек в приложении:', '');
+    if(why === null) return;
+    t.disabled = true;
+    api('POST', '/api/admin/withdrawals/reject', { withdrawalId: rid, note: why, opKey: opKey('rej', rid) })
+      .then(function(){ say('Отклонена, деньги вернулись на баланс'); refresh(); })
+      .catch(function(err){ say(err.message, true); t.disabled = false; });
+  }
+});
+
+$('enter').addEventListener('click', enter);
+$('key').addEventListener('keydown', function(e){ if(e.key === 'Enter') enter(); });
+
+/* Ключ переживает перезагрузку вкладки, но не её закрытие. */
+try{
+  var saved = sessionStorage.getItem('bp_op_key');
+  if(saved){ $('key').value = saved; enter(); }
+}catch(e){}
+
+setInterval(function(){ if(!$('app').hidden) refresh(); }, 20000);
+</script>
+</body>
+</html>
