@@ -1,0 +1,14 @@
+{
+  "name": "bloggerpay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BloggerPay — сервер-касса: деньги, эскроу, выплаты, восстановление пароля",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node server/server.js",
+    "bot": "node server/bot.js",
+    "test": "node server/test-scenario.mjs"
+  }
+}
