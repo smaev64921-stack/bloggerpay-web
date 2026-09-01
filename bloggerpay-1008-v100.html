@@ -743,6 +743,12 @@ body{
 /* ── Filter chips ── */
 .fchip{display:inline-flex;align-items:center;gap:5px;padding:7px 13px;border-radius:20px;font-size:12.5px;font-weight:700;font-family:inherit;cursor:pointer;border:1.5px solid rgba(255,255,255,.09);background:rgba(255,255,255,.04);color:var(--t2);white-space:nowrap;transition:all .18s;flex-shrink:0}
 .fchip:active{transform:scale(.95)}
+/* Полоса прокрутки под кнопками соцсетей. У самого ряда стоит
+   scrollbar-width:none, но это правило понимает только Firefox — в Chrome
+   и в вебвью Телеграма под кнопками оставалась серая черта. Ряд и так
+   листается пальцем, полоса ничего не подсказывает. Прячем её тем же
+   способом, что и у остальных горизонтальных рядов в приложении. */
+#catQuickChips::-webkit-scrollbar{display:none}
 .fchip-ic{width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden}
 /* плитки соцсетей в «Редактировать профиль» — тоже круглые */
 .ep-soc-tile{
@@ -74973,6 +74979,211 @@ img.onload = function(){
 };
 img.onerror = function(){ E(new Error('bp-appicon: логотип не загрузился')); };
 img.src = SRC;
+})();
+</script>
+
+
+<style id="bp-regerr-css">
+/* ══ Подсветка ошибок в регистрации ══════════════════════════════════
+   Было две беды.
+
+   1. Подсвечивалась ОДНА галочка согласия. Ошиблись в почте или пароле —
+      всплывала подсказка, но само поле никак не отмечалось: человек читал
+      «введите корректный email» и глазами искал, где же он.
+
+   2. Заливка плоская и бледная — rgba(255,107,129,.12) по всему полю.
+
+   Теперь красное идёт градиентом слева направо: у левого края густо,
+   к правому сходит на нет. Слева же стоит красная грань — глаз цепляется
+   за начало строки, туда, где и написана подпись поля.               */
+
+.bp-fld-err{
+  border-color:#f0475e !important;
+  /* Градиент, а не заливка: слева насыщенно, к правому краю тает. */
+  background-image:linear-gradient(90deg,
+    rgba(240,71,94,.42) 0%,
+    rgba(240,71,94,.22) 38%,
+    rgba(240,71,94,.07) 100%) !important;
+  box-shadow:inset 3px 0 0 0 #f0475e !important;
+}
+/* У полей ввода фон задан своим правилом с высокой специфичностью —
+   поэтому дублируем для input/textarea отдельно. */
+input.bp-fld-err, textarea.bp-fld-err, input.bp-fld-err:focus{
+  background-color:transparent !important;
+}
+/* Подпись над испорченным полем краснеет вместе с ним. */
+.bp-lbl-err{color:#ff8a99 !important}
+
+/* Галочка согласия — та же логика, но она маленькая и квадратная,
+   поэтому грань слева не рисуем, только градиент. */
+.auth-check-box.bp-fld-err{
+  box-shadow:none !important;
+  background-image:linear-gradient(90deg,
+    rgba(240,71,94,.55) 0%, rgba(240,71,94,.18) 100%) !important;
+}
+
+@keyframes bpRegShake{
+  10%,90%{transform:translateX(-2px)} 20%,80%{transform:translateX(3px)}
+  30%,50%,70%{transform:translateX(-5px)} 40%,60%{transform:translateX(5px)}
+}
+.bp-fld-shake{animation:bpRegShake .42s cubic-bezier(.36,.07,.19,.97)}
+
+@media (prefers-reduced-motion:reduce){ .bp-fld-shake{animation:none} }
+</style>
+
+<script id="bp-regerr">
+/* ══ Ошибки регистрации: подсвечиваем ТО поле, где ошибка ═════════════
+   Прежняя обёртка (bp-terms, ~37088) трясла галочку согласия и вешала
+   на неё красное — но только на неё, и снимала его перевёрнутым
+   условием: `if(!termsAccepted) return;` внутри таймера означало «если
+   человек ТАК И НЕ согласился — оставить красное навсегда». Убрать его
+   мог только сам paintTerms при нажатии на галочку.
+
+   Здесь: находим первую настоящую ошибку в том же порядке, в каком её
+   ищет doRegister, красим нужное поле и уводим к нему экран. Красное
+   снимается, как только человек начал править это поле, — а не по
+   таймеру и не навсегда.                                              */
+(function(){
+'use strict';
+if(window.__bpRegErr) return; window.__bpRegErr = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e); }catch(_){} }
+function $(id){ return document.getElementById(id); }
+
+/* Подпись поля — ближайший .auth-lbl перед ним, чтобы покраснела вместе. */
+function labelFor(el){
+  try{
+    var p = el.closest ? el.closest('.auth-field, .auth-row') : null;
+    if(p){ var l = p.querySelector('.auth-lbl'); if(l) return l; }
+    var prev = el.previousElementSibling;
+    while(prev){
+      if(prev.classList && prev.classList.contains('auth-lbl')) return prev;
+      prev = prev.previousElementSibling;
+    }
+  }catch(e){ E(e); }
+  return null;
+}
+
+function clearOne(el){
+  if(!el) return;
+  el.classList.remove('bp-fld-err', 'bp-fld-shake');
+  var l = labelFor(el);
+  if(l) l.classList.remove('bp-lbl-err');
+}
+function clearAll(){
+  var list = document.querySelectorAll('.bp-fld-err, .bp-lbl-err');
+  for(var i = 0; i < list.length; i++){
+    list[i].classList.remove('bp-fld-err', 'bp-fld-shake', 'bp-lbl-err');
+  }
+}
+
+function mark(el){
+  if(!el) return;
+  clearAll();
+  el.classList.add('bp-fld-err');
+  /* Перезапуск анимации: без сброса второе нажатие не тряхнёт. */
+  el.classList.remove('bp-fld-shake'); void el.offsetWidth; el.classList.add('bp-fld-shake');
+  var l = labelFor(el);
+  if(l) l.classList.add('bp-lbl-err');
+  try{ el.scrollIntoView({ block:'center', behavior:'smooth' }); }catch(e){ }
+  /* Курсор ставим в поле — человеку сразу есть что исправлять. */
+  try{ if(el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') el.focus({ preventScroll:true }); }catch(e){ }
+}
+
+/* Красное уходит, как только начали править именно это поле. */
+document.addEventListener('input', function(ev){
+  var t = ev.target;
+  if(t && t.classList && t.classList.contains('bp-fld-err')) clearOne(t);
+}, true);
+
+/* Та же логика для галочек и выбора роли — там input не случается. */
+document.addEventListener('click', function(ev){
+  var t = ev.target;
+  if(!t || !t.closest) return;
+  var hit = t.closest('.bp-fld-err');
+  if(hit) clearOne(hit);
+}, true);
+
+/* Порядок ровно тот же, что внутри doRegister: иначе подсветили бы одно
+   поле, а подсказка говорила бы про другое. */
+/* Возвращает ПЕРВУЮ ошибку сверху вниз — и поле, и текст к нему.
+
+   Текст нужен здесь же, вместе с полем. Иначе выходит рассинхрон: над
+   формой три обёртки (согласие 152-ФЗ, мост к серверу, галочка условий),
+   и каждая проверяет своё в своём порядке. Согласие проверялось первым,
+   поэтому при кривой почте человек видел красным поле email, а подсказку
+   про персональные данные — про совсем другое место. */
+function firstBad(){
+  var val = function(id){ var e = $(id); return e ? String(e.value || '').trim() : ''; };
+  var raw = function(id){ var e = $(id); return e ? String(e.value || '') : ''; };
+
+  if(typeof _regRole === 'undefined' || !_regRole){
+    var role = document.querySelector('#pg-auth .role-opt');
+    return { el: role ? (role.parentNode || role) : null,
+             msg: 'Выберите, кто вы — блогер или рекламодатель' };
+  }
+  if(!val('regName')) return { el: $('regName'), msg: 'Введите ваше имя' };
+
+  var email = val('regEmail').toLowerCase();
+  if(!email) return { el: $('regEmail'), msg: 'Введите email' };
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { el: $('regEmail'), msg: 'Введите корректный email' };
+  try{
+    if(typeof users !== 'undefined' && Array.isArray(users)
+       && users.find(function(u){ return String(u.email || '').toLowerCase() === email; })){
+      return { el: $('regEmail'), msg: 'Этот email уже зарегистрирован' };
+    }
+  }catch(e){ E(e); }
+
+  var pass = raw('regPass');
+  if(!pass) return { el: $('regPass'), msg: 'Придумайте пароль' };
+  if(pass.length < 6) return { el: $('regPass'), msg: 'Пароль минимум 6 символов' };
+  if(pass !== raw('regPass2')) return { el: $('regPass2'), msg: 'Пароли не совпадают' };
+
+  if(typeof termsAccepted !== 'undefined' && !termsAccepted){
+    return { el: $('termsBox'), msg: 'Примите условия соглашения' };
+  }
+  var consent = $('bpConsent152');
+  if(consent && !consent.checked){
+    return { el: $('bpConsentBox'), msg: 'Нужно согласие на обработку персональных данных' };
+  }
+  return null;
+}
+
+function install(){
+  var orig = window.doRegister;
+  if(typeof orig !== 'function' || orig.__bpRegErr) return false;
+  var wrapped = function(){
+    var bad = null;
+    try{ bad = firstBad(); }catch(e){ E(e); }
+    if(bad){
+      /* Дальше по цепочке НЕ идём. Иначе следующая обёртка ругалась бы
+         на своё, и человек получал бы две подсказки разом — про поле,
+         которое мы подсветили, и про другое. Регистрация всё равно не
+         прошла бы: те же проверки есть и в самом doRegister. */
+      try{
+        mark(bad.el);
+        if(typeof showAuthToast === 'function') showAuthToast(bad.msg, 'err');
+      }catch(e){ E(e); }
+      return false;
+    }
+    clearAll();
+    return orig.apply(this, arguments);
+  };
+  wrapped.__bpRegErr = 1; wrapped.__orig = orig;
+  window.doRegister = wrapped;
+  return true;
+}
+
+/* Обёрток над doRegister несколько (согласие 152-ФЗ, мост к серверу),
+   и ставятся они на DOMContentLoaded и ещё раз через 900 мс. Встаём
+   последними, иначе наша проверка не увидит чужих правок. */
+function start(){
+  install();
+  setTimeout(install, 1000);
+  setTimeout(install, 2000);
+}
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+else start();
 })();
 </script>
 
