@@ -34,7 +34,28 @@ const http = require('node:http');
 const crypto = require('node:crypto');
 const path = require('node:path');
 const fs = require('node:fs');
-const { DatabaseSync } = require('node:sqlite');
+/* База встроена в сам Node и появилась только в 22.5. На версии постарше
+   require падает с «No such built-in module: node:sqlite» — стеком, по
+   которому непонятно, что делать. Ловим и объясняем: беда не в коде, а в
+   версии Node на хостинге. */
+let DatabaseSync;
+try {
+  ({ DatabaseSync } = require('node:sqlite'));
+} catch (e) {
+  console.error('');
+  console.error('  ✖ BloggerPay не запустится на этой версии Node.');
+  console.error('');
+  console.error('    Нужен Node 22.5 или новее, сейчас ' + process.version + '.');
+  console.error('    Причина: база данных встроена в сам Node (node:sqlite)');
+  console.error('    и появилась только в 22.5 — на ' + process.version + ' её просто нет.');
+  console.error('');
+  console.error('    Что сделать на хостинге:');
+  console.error('      · если он умеет собирать по Dockerfile — он лежит в корне');
+  console.error('        проекта и уже указывает Node 22, включите сборку из него;');
+  console.error('      · если версия задаётся в панели — поставьте 22 или новее.');
+  console.error('');
+  process.exit(1);
+}
 const { sendCodeEmail, reachableOutside } = require('./mail');
 
 /* ── Настройки из .env ─────────────────────────────────────────────── */
