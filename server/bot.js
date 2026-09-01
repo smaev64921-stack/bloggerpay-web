@@ -38,24 +38,43 @@ function loadEnv(file) {
 
 const ENV = Object.assign(loadEnv(path.join(__dirname, '.env')), process.env);
 const TOKEN = ENV.BOT_TOKEN || '';
-const APP_URL = (ENV.APP_URL || '').trim();
+/* Куда ведёт кнопка. Сайт раздаёт САМ сервер (server.js), поэтому по
+   умолчанию это его собственный адрес — PUBLIC_URL. Отдельный APP_URL
+   нужен, только если сайт лежит не здесь, а на стороннем хостинге. */
+const APP_URL = (ENV.APP_URL || ENV.PUBLIC_URL || '').trim().replace(/\/+$/, '');
 /* Адрес API Телеграма. Меняется, если с сервера api.telegram.org
    недоступен (в России это обычное дело) — тогда сюда ставится адрес
    вашего прокси, который проксирует запросы к Телеграму один в один.
    Тот же ключ используют тесты, чтобы подставить заглушку. */
 const TG_API_BASE = (ENV.TG_API_BASE || 'https://api.telegram.org').replace(/\/+$/, '');
 
-if (!TOKEN) {
-  console.error('[бот] В server/.env нет BOT_TOKEN. Возьмите его у @BotFather и впишите.');
-  process.exit(1);
-}
-/* Телеграм открывает мини-приложения только по HTTPS — это его требование,
-   не наше. С http-адресом кнопка просто не появится. */
-if (!/^https:\/\//i.test(APP_URL)) {
-  console.error('[бот] В server/.env нужен APP_URL — адрес приложения по HTTPS.');
-  console.error('      Например: APP_URL=https://ваш-сайт.netlify.app');
-  console.error('      Сейчас там: ' + (APP_URL || '(пусто)'));
-  process.exit(1);
+/* Проверки НЕ на загрузке файла, а в boot(): этот файл подключает к себе
+   server.js, и падение process.exit(1) здесь убивало бы весь сервер
+   вместе с сайтом — из-за отсутствующего токена бота. */
+function checkConfig() {
+  if (!TOKEN) {
+    return 'В настройках нет BOT_TOKEN. Возьмите его у @BotFather.';
+  }
+  /* Телеграм отвергает адрес без схемы и без точки в домене
+     («Wrong HTTP URL»), поэтому проверяем форму. */
+  if (!/^https?:\/\/[^\s.]+\.[^\s]/i.test(APP_URL)) {
+    return 'Нужен адрес сайта: PUBLIC_URL (или APP_URL), например'
+      + ' https://bloggerpay.up.railway.app. Сейчас там: ' + (APP_URL || '(пусто)');
+  }
+  /* И HTTPS — для всего, что не своя машина. По http пароль и код из
+     письма поехали бы открытым текстом через чужие сети. Локальную
+     разработку не мучаем: там http нормально. */
+  let host = '';
+  try { host = new URL(APP_URL).hostname.toLowerCase(); } catch (e) { host = ''; }
+  const local = host === 'localhost' || host === '127.0.0.1' || host === '::1'
+    || /\.local(host)?$/.test(host)
+    || /^10\./.test(host) || /^192\.168\./.test(host)
+    || /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+  if (!local && !/^https:\/\//i.test(APP_URL)) {
+    return 'адрес сайта должен быть по HTTPS — через приложение идут пароли'
+      + ' и коды. Сейчас там: ' + APP_URL;
+  }
+  return '';
 }
 
 const API = TG_API_BASE + '/bot' + TOKEN + '/';
@@ -227,18 +246,37 @@ function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 /* ── Старт ─────────────────────────────────────────────────────────── */
 
-setup()
-  .then(loop)
-  .catch((e) => {
-    if (e.code === 401) console.error('[бот] Токен не подошёл. Проверьте BOT_TOKEN в server/.env.');
-    else console.error('[бот] не удалось запуститься:', e.message);
-    process.exit(1);
-  });
+/* boot() зовёт и server.js (бот живёт в одном процессе с сайтом), и
+   запуск напрямую. Разница в том, что делать при беде: отдельному
+   процессу правильно упасть, а внутри сервера — нет, иначе сайт ляжет
+   из-за незаполненного токена. Поэтому boot() ничего не роняет, а
+   возвращает false; решает вызывающий. */
+async function boot() {
+  const why = checkConfig();
+  if (why) { console.error('[бот] не запущен: ' + why); return false; }
+  try {
+    await setup();
+  } catch (e) {
+    if (e.code === 401) console.error('[бот] Токен не подошёл. Проверьте BOT_TOKEN.');
+    else console.error('[бот] не удалось запуститься: ' + e.message);
+    return false;
+  }
+  /* Опрос крутится вечно — его не ждём, иначе не вернём управление. */
+  loop().catch((e) => console.error('[бот] опрос прервался: ' + ((e && e.message) || e)));
+  return true;
+}
 
-for (const sig of ['SIGINT', 'SIGTERM']) {
-  process.on(sig, () => {
-    stopping = true;
-    console.log('\n[бот] остановлен');
-    process.exit(0);
-  });
+module.exports = { boot, appUrl, keyboard };
+
+/* Запущен напрямую (node server/bot.js) — работаем как отдельный процесс. */
+if (require.main === module) {
+  boot().then((ok) => { if (!ok) process.exit(1); });
+
+  for (const sig of ['SIGINT', 'SIGTERM']) {
+    process.on(sig, () => {
+      stopping = true;
+      console.log('\n[бот] остановлен');
+      process.exit(0);
+    });
+  }
 }

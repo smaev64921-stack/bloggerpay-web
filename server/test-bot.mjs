@@ -115,7 +115,8 @@ let badOut = '';
 bad.stdout.on('data', (c) => { badOut += c; });
 bad.stderr.on('data', (c) => { badOut += c; });
 await wait(900);
-ok(/APP_URL/.test(badOut) && /HTTPS/i.test(badOut), 'без https бот честно отказывается стартовать', badOut.slice(0, 100));
+ok(/HTTPS/i.test(badOut) && /небезопасно\.ru/.test(badOut),
+   'публичный адрес по http отвергается — через приложение идут пароли', badOut.slice(0, 140));
 bad.kill();
 
 stub.close();

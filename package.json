@@ -2,14 +2,13 @@
   "name": "bloggerpay",
   "version": "1.0.0",
   "private": true,
-  "description": "BloggerPay — телеграм-бот с кнопкой «Открыть» и сервер-касса",
+  "description": "BloggerPay — сайт, касса и телеграм-бот в одном процессе",
   "engines": {
     "node": ">=22.5.0"
   },
   "scripts": {
-    "start": "node server/bot.js",
+    "start": "node server/server.js",
     "bot": "node server/bot.js",
-    "cashier": "node server/server.js",
     "test": "node server/test-scenario.mjs"
   }
 }

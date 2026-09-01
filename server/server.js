@@ -2010,6 +2010,46 @@ function sendRecoverPage(res) {
   res.end(html);
 }
 
+/* ── Раздача сайта ───────────────────────────────────────────────────
+   Приложение — один HTML-файл в папке над сервером. Отдаём его как
+   главную страницу, рядом — то, что ему нужно: знакомство, политика,
+   офлайн-режим и логотип.
+
+   Белый список, а не «отдавай что попросят»: рядом лежат .env, база с
+   паспортами и папки с черновиками. Любая ошибка в разборе пути при
+   свободной раздаче открыла бы их наружу, поэтому путей ровно столько,
+   сколько нужно, и вычисляются они не из запроса. */
+const SITE_DIR = path.join(__dirname, '..');
+const SITE = {
+  '/': { name: 'bloggerpay-1008-v100.html', type: 'text/html; charset=utf-8' },
+  '/index.html': { name: 'bloggerpay-1008-v100.html', type: 'text/html; charset=utf-8' },
+  '/onboarding.html': { name: 'onboarding.html', type: 'text/html; charset=utf-8' },
+  '/privacy.html': { name: 'privacy.html', type: 'text/html; charset=utf-8' },
+  '/sw.js': { name: 'sw.js', type: 'text/javascript; charset=utf-8' },
+  '/logo.jpg': { name: 'logo.jpg', type: 'image/jpeg' },
+};
+function staticFile(pathname) {
+  const rec = SITE[pathname];
+  if (!rec) return null;
+  return { file: path.join(SITE_DIR, rec.name), type: rec.type };
+}
+function sendFile(req, res, file, type) {
+  let buf;
+  try { buf = fs.readFileSync(file); }
+  catch (e) { return send(res, 404, { error: 'Файл не найден: ' + path.basename(file) }); }
+  /* Страницу приложения не кэшируем: иначе у людей застрянет старая
+     версия с деньгами. Картинку — можно, она не меняется. */
+  const fresh = /^image\//.test(type) ? 'public, max-age=86400' : 'no-store';
+  res.writeHead(200, {
+    'Content-Type': type,
+    'Cache-Control': fresh,
+    'X-Content-Type-Options': 'nosniff',
+    'Content-Length': buf.length,
+  });
+  if (req.method === 'HEAD') return res.end();
+  res.end(buf);
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (req.method === 'OPTIONS') return send(res, 204, {});
@@ -2024,19 +2064,13 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && /^\/r\/[a-f0-9]{32}$/i.test(url.pathname)) {
     return sendRecoverPage(res);
   }
-  /* Логотип отдаём сами. Страница показа кода могла бы брать его с сайта
-     приложения, но тогда знак пропадал бы всякий раз, когда сайт ещё не
-     выложен или лежит. Свой файл рядом с сервером — надёжнее. */
-  if (req.method === 'GET' && url.pathname === '/logo.jpg') {
-    try {
-      const buf = fs.readFileSync(path.join(__dirname, 'logo.jpg'));
-      res.writeHead(200, {
-        'Content-Type': 'image/jpeg',
-        'Cache-Control': 'public, max-age=86400',
-        'X-Content-Type-Options': 'nosniff',
-      });
-      return res.end(buf);
-    } catch (e) { return send(res, 404, { error: 'logo.jpg рядом с сервером не найден' }); }
+  /* Сам сайт. Раздаём его отсюда же, из папки над сервером: тогда всё
+     хозяйство — сайт, касса и бот — живёт по одному адресу, и боту
+     некуда ссылаться, кроме как на нас. Отдельный хостинг для статики
+     не нужен. */
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    const hit = staticFile(url.pathname);
+    if (hit) return sendFile(req, res, hit.file, hit.type);
   }
   const handler = routes[req.method + ' ' + url.pathname];
   if (!handler) return send(res, 404, { error: 'Нет такого пути' });
@@ -2100,6 +2134,19 @@ server.listen(PORT, () => {
         ? ' (режим ссылки выключен: PUBLIC_URL=' + PUBLIC_URL + ' не виден из интернета —'
           + ' пропишите адрес сервера, например https://kassa.вашдомен.ru)'
         : ''));
+  /* ── Бот поднимается здесь же ──────────────────────────────────────
+     Один процесс на всё: сайт, касса и бот. Так у бота есть адрес, на
+     который вести человека, — наш собственный, и отдельный хостинг для
+     сайта не нужен. Бот не роняет сервер: не заладилось с токеном —
+     сайт продолжает работать, в консоли причина. */
+  try {
+    require('./bot').boot().then((ok) => {
+      if (ok) console.log('[BloggerPay] бот запущен, кнопка ведёт на ' + PUBLIC_URL);
+    }).catch((e) => console.error('[бот] ' + ((e && e.message) || e)));
+  } catch (e) {
+    console.error('[бот] не подключился: ' + ((e && e.message) || e));
+  }
+
   const appUrlRaw = String(process.env.APP_URL || '').trim();
   if (appUrlRaw && !/^https?:\/\//i.test(appUrlRaw)) {
     console.error('[BloggerPay] ВНИМАНИЕ: APP_URL="' + appUrlRaw + '" без https:// —'
