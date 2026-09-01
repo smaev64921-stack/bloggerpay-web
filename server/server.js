@@ -35,6 +35,7 @@ const crypto = require('node:crypto');
 const path = require('node:path');
 const fs = require('node:fs');
 const { DatabaseSync } = require('node:sqlite');
+const { sendCodeEmail, reachableOutside } = require('./mail');
 
 /* ── Настройки из .env ─────────────────────────────────────────────── */
 
@@ -58,6 +59,22 @@ const ORIGIN = ENV.ORIGIN || '*';
 /* Токен бота из BotFather. Пока его нет, вход по Телеграму отключён —
    приложение работает по email и паролю, как раньше. */
 const BOT_TOKEN = ENV.BOT_TOKEN || '';
+
+/* ── Почта (восстановление пароля) ──────────────────────────────────
+   Ключ Resend и адрес отправителя лежат в .env. Модуль mail.js читает
+   их из process.env, поэтому переливаем сюда. MAIL_DEBUG=1 — режим
+   отладки: код возвращается прямо в ответе /api/password/forgot, чтобы
+   проверять поток без настоящей почты. На бою ДОЛЖЕН быть выключен. */
+for (const k of ['RESEND_API_KEY', 'MAIL_FROM', 'MAIL_REPLY_TO', 'MAIL_LOGO_URL', 'APP_URL', 'PUBLIC_URL']) {
+  if (ENV[k] != null) process.env[k] = ENV[k];
+}
+const MAIL_DEBUG = String(ENV.MAIL_DEBUG || '') === '1';
+
+/* Письмо без кода: вместо цифр — кнопка «Открыть», код показывается на
+   странице /r/<метка> по нажатию. Выключается MAIL_LINK=0, если почему-то
+   захочется вернуть код прямо в письмо. Ниже, после PUBLIC_URL, режим
+   гасится сам, когда сервер не виден снаружи. */
+let PW_LINK_ON = String(ENV.MAIL_LINK == null ? '1' : ENV.MAIL_LINK) !== '0';
 
 /* ── НАСТОЯЩИЙ ПРИЁМ ДЕНЕГ: ЮKassa ─────────────────────────────────
    Ключи выдаёт кабинет yookassa.ru (нужен договор с юр. лицом или ИП):
@@ -93,6 +110,16 @@ const PAY_RETURN_URL = ENV.PAY_RETURN_URL || 'https://t.me';
    Пока ключей нет, кнопка «Подтвердить» честно говорит, что проверка
    ещё не настроена. */
 const PUBLIC_URL = (ENV.PUBLIC_URL || ('http://127.0.0.1:' + (Number(ENV.PORT) || 8090))).replace(/\/+$/, '');
+/* Письмо-ссылка имеет смысл ТОЛЬКО если сервер виден снаружи. Проверять
+   одну схему мало: значение по умолчанию — http://127.0.0.1:<порт> —
+   схему имеет, и режим включался бы сам собой. Тогда человек получал бы
+   письмо без кода и с кнопкой на СВОЙ localhost: восстановить пароль
+   нечем, и ломается это молча — Resend отвечает «отправлено».
+
+   Поэтому отбрасываем всё, что заведомо не адрес в интернете: петля,
+   .local и частные подсети. В этих случаях письмо честно печатает код
+   внутри себя, как раньше. */
+if (!/^https?:\/\//i.test(PUBLIC_URL) || !reachableOutside(PUBLIC_URL)) PW_LINK_ON = false;
 const OAUTH = {
   youtube: {
     id: ENV.YT_CLIENT_ID || '', secret: ENV.YT_CLIENT_SECRET || '',
@@ -293,6 +320,8 @@ const q = {
   session: db.prepare(`SELECT s.token, s.expires_at, u.* FROM sessions s
                        JOIN users u ON u.id = s.user_id WHERE s.token = ?`),
   delSession: db.prepare('DELETE FROM sessions WHERE token = ?'),
+  delUserSessions: db.prepare('DELETE FROM sessions WHERE user_id = ?'),
+  updPass: db.prepare('UPDATE users SET pass_salt = ?, pass_hash = ? WHERE id = ?'),
   opByKey: db.prepare('SELECT * FROM ops WHERE op_key = ?'),
   insOp: db.prepare('INSERT INTO ops (op_key, user_id, kind, result) VALUES (?,?,?,?)'),
   updOpResult: db.prepare('UPDATE ops SET result = ? WHERE op_key = ?'),
@@ -598,20 +627,32 @@ function isAdmin(req) {
    За прокси (Caddy/nginx) поставьте TRUST_PROXY=1 — адрес возьмётся
    из X-Forwarded-For, который прокси перезаписывает сам. */
 const TRUST_PROXY = String(ENV.TRUST_PROXY || '') === '1';
+/* Снять лимиты совсем — только явным флагом и только для тестов. Раньше
+   их снимал адрес 127.0.0.1, и это было опасно: за обратным прокси ВСЕ
+   запросы приходят с петли, так что лимиты молча выключались целиком. */
+const RL_OFF = String(ENV.RL_DISABLE || '') === '1';
 const rlMap = new Map();
 function clientIp(req) {
   if (TRUST_PROXY) {
-    const xf = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-    if (xf) return xf;
+    /* Берём ПОСЛЕДНЮЮ запись X-Forwarded-For, а не первую. Caddy и nginx
+       не переписывают заголовок, а дописывают адрес в конец — значит
+       первую запись сочиняет кто угодно. Взяв первую, мы бы позволили
+       одной строчкой в заголовке притвориться другим адресом и обойти
+       защиту от перебора паролей. Последняя запись — та, что дописал
+       наш собственный прокси. */
+    const parts = String(req.headers['x-forwarded-for'] || '')
+      .split(',').map((s) => s.trim()).filter(Boolean);
+    if (parts.length) return parts[parts.length - 1];
   }
   return String((req.socket && req.socket.remoteAddress) || '');
 }
 function rateLimit(req, key, limit, windowMs) {
+  if (RL_OFF) return true;
   const ip = clientIp(req);
-  /* Локальные вызовы (тесты, операторские скрипты) не ограничиваем.
-     ВАЖНО для боя: за обратным прокси все запросы выглядят локальными —
-     обязательно поставьте TRUST_PROXY=1, иначе лимиты не работают. */
-  if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1') return true;
+  /* Петля не ограничивается только без прокси — это разработка и тесты,
+     где 127.0.0.1 действительно свой. За прокси (TRUST_PROXY=1) петля
+     означает сам прокси, и поблажка выключила бы защиту для всех. */
+  if (!TRUST_PROXY && (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1')) return true;
   const k = key + '|' + ip;
   const now = Date.now();
   let arr = rlMap.get(k);
@@ -749,6 +790,179 @@ setInterval(sweepSessions, 3600000).unref();
 
 /* ── Маршруты ──────────────────────────────────────────────────────── */
 
+/* ── Восстановление пароля: коды в памяти ──────────────────────────
+   Шестизначный код живёт 10 минут. Храним не сам код, а его отпечаток
+   (HMAC на случайном секрете процесса), чтобы дамп памяти не выдал коды.
+   Коды живут в памяти, как и заявки на подтверждение канала: перезапуск
+   сервера обнулит их, человек запросит заново.
+
+   Сколько попыток даём — размен между двумя бедами, и обе настоящие.
+   Считать попытки НАВСЕГДА нельзя: кто угодно, зная чужой адрес, пятью
+   запросами погасил бы человеку восстановление насовсем. Обнулять их с
+   каждым новым кодом — тоже нельзя: перебор становится бесконечным.
+   Поэтому здесь три обруча сразу:
+
+     · пять попыток на КОД (новый код их обнуляет — значит запереть
+       человека нельзя);
+     · пять кодов в час на адрес (потолок перебора — 25 догадок в час
+       против миллиона вариантов);
+     · пятьдесят неверных попыток в сутки на адрес — дальше час паузы
+       и тревога владельцу. Это тот самый случай, когда счётчик суточный:
+       он ловит долгий тихий перебор, который часовые потолки пропускают.
+
+   Ни один обруч не запирает человека навсегда: худшее, что может сделать
+   чужой, — заставить подождать час. */
+const PW_SECRET = crypto.randomBytes(32);
+const PW_TTL_MS = 10 * 60 * 1000;
+const PW_RESEND_MS = 60 * 1000;
+const PW_MAX_PER_HOUR = 5;
+const PW_MAX_ATTEMPTS = 5;
+const PW_MAX_FAILS_DAY = 50;
+const PW_ABUSE_PAUSE_MS = 60 * 60 * 1000;
+/* email → { hash, expires, attempts, sentAt, hourAt, hourN, dayAt, dayFails, pauseUntil } */
+const pwCodes = new Map();
+
+/* ── Ссылка из письма ───────────────────────────────────────────────
+   В письме кода нет — только кнопка «Открыть». Она ведёт на страницу
+   /r/<метка>, где человек сам нажимает «Показать код». Зачем так:
+
+     · код не светится в уведомлении на заблокированном экране и в
+       списке писем — там виден только заголовок;
+     · почтовые сканеры (их держат многие компании) открывают ссылки в
+       письмах автоматически. Показ кода спрятан за НАЖАТИЕМ и отдельным
+       POST-запросом, поэтому сканер его не заберёт.
+
+   Как хранится. Прямо код держать в памяти не хочется: сейчас от него
+   лежит только HMAC, и дамп памяти кодов не выдаёт. Сохраняем это
+   свойство: ключ карты — хеш метки, а сам код лежит ЗАШИФРОВАННЫМ на
+   ключе, выведенном из САМОЙ метки. Метка живёт только в письме. Значит
+   в памяти сервера лежит «хеш метки + шифротекст» — расшифровать это,
+   не имея письма, нельзя.                                              */
+const pwLinks = new Map();   /* sha256(метка) → { email, enc, iv, tag, expires } */
+
+function pwHash(email, code) {
+  return crypto.createHmac('sha256', PW_SECRET).update(email + '|' + code).digest('hex');
+}
+function linkKey(token) {
+  return crypto.createHash('sha256').update(String(token)).digest('hex');
+}
+/* Ключ шифрования выводим из метки, а не из секрета процесса: иначе он
+   лежал бы в той же памяти, что и шифротекст, и защита была бы мнимой. */
+function linkCipherKey(token) {
+  return crypto.createHash('sha256').update('bp-link|' + String(token)).digest();
+}
+function linkSeal(token, code) {
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv('aes-256-gcm', linkCipherKey(token), iv);
+  const enc = Buffer.concat([c.update(String(code), 'utf8'), c.final()]);
+  return { enc: enc.toString('hex'), iv: iv.toString('hex'), tag: c.getAuthTag().toString('hex') };
+}
+function linkOpen(token, rec) {
+  try {
+    const d = crypto.createDecipheriv('aes-256-gcm', linkCipherKey(token), Buffer.from(rec.iv, 'hex'));
+    d.setAuthTag(Buffer.from(rec.tag, 'hex'));
+    return Buffer.concat([d.update(Buffer.from(rec.enc, 'hex')), d.final()]).toString('utf8');
+  } catch (e) { return null; }   /* метка не та — расшифровка не сойдётся */
+}
+/* Запись счётчиков живёт дольше кода: сам код удаляется после смены
+   пароля, а лимиты обязаны пережить это удаление — иначе успешный сброс
+   обнулял бы часовой потолок и делал его бесполезным. */
+function pwRec(email) {
+  const now = Date.now();
+  let rec = pwCodes.get(email);
+  if (!rec) { rec = { hourAt: now, hourN: 0, dayAt: now, dayFails: 0 }; pwCodes.set(email, rec); }
+  if (now - (rec.hourAt || 0) > 3600000) { rec.hourAt = now; rec.hourN = 0; }
+  if (now - (rec.dayAt || 0) > 86400000) { rec.dayAt = now; rec.dayFails = 0; }
+  return rec;
+}
+/* Код НЕ записывается сразу: сначала его надо успеть отправить письмом.
+   Иначе неудачная отправка стирала бы прежний, ещё живой код и сжигала
+   часовой лимит — человек оставался бы вообще без рабочего кода.
+   Поэтому pwIssue только проверяет лимиты и готовит код, а закрепляет
+   его pwCommit — уже после того, как письмо ушло. */
+function pwIssue(email) {
+  const now = Date.now();
+  const rec = pwRec(email);
+  if (rec.pauseUntil && now < rec.pauseUntil) return { error: 'paused' };
+  if (rec.hourN >= PW_MAX_PER_HOUR) return { error: 'too_many' };
+  if (rec.sentAt && now - rec.sentAt < PW_RESEND_MS) {
+    return { error: 'cooldown', wait: Math.ceil((PW_RESEND_MS - (now - rec.sentAt)) / 1000) };
+  }
+  return {
+    code: String(crypto.randomInt(0, 1000000)).padStart(6, '0'),
+    /* Метка для ссылки в письме. Как и код, закрепится только после
+       успешной отправки — см. pwCommit. */
+    token: crypto.randomBytes(16).toString('hex'),
+  };
+}
+function pwCommit(email, code, token) {
+  const now = Date.now();
+  const rec = pwRec(email);
+  rec.hash = pwHash(email, code);
+  rec.expires = now + PW_TTL_MS;
+  rec.attempts = 0;
+  rec.sentAt = now;
+  rec.hourN = (rec.hourN || 0) + 1;
+  if (token) {
+    /* Прежняя метка этого человека гаснет: иначе старое письмо
+       продолжало бы показывать уже недействительный код. */
+    if (rec.linkKey) pwLinks.delete(rec.linkKey);
+    const k = linkKey(token);
+    const sealed = linkSeal(token, code);
+    pwLinks.set(k, {
+      email, expires: now + PW_TTL_MS, shown: 0,
+      enc: sealed.enc, iv: sealed.iv, tag: sealed.tag,
+    });
+    rec.linkKey = k;
+  }
+}
+function pwVerify(email, code, consume) {
+  const rec = pwCodes.get(email);
+  const now = Date.now();
+  if (!rec || !rec.hash || now > rec.expires) return { ok: false, reason: 'expired' };
+  if (rec.attempts >= PW_MAX_ATTEMPTS) return { ok: false, reason: 'locked' };
+  const good = crypto.timingSafeEqual(
+    Buffer.from(rec.hash, 'hex'), Buffer.from(pwHash(email, code), 'hex'));
+  if (!good) {
+    rec.attempts += 1;
+    pwRec(email);                      /* прокрутит суточное окно, если пора */
+    rec.dayFails = (rec.dayFails || 0) + 1;
+    if (rec.dayFails === PW_MAX_FAILS_DAY) {
+      rec.pauseUntil = now + PW_ABUSE_PAUSE_MS;
+      tgAlert('pwbrute:' + email,
+        '🔐 Похоже на перебор кода восстановления\n\nАдрес: ' + email
+        + '\nНеверных попыток за сутки: ' + rec.dayFails
+        + '\nНовые коды на этот адрес — через час.', 'server');
+    }
+    return { ok: false, reason: 'wrong', left: Math.max(0, PW_MAX_ATTEMPTS - rec.attempts) };
+  }
+  /* Гасим только код. Счётчики остаются: успешный сброс не должен
+     открывать заново часовой лимит. */
+  if (consume) { rec.hash = null; rec.expires = 0; rec.attempts = 0; }
+  return { ok: true };
+}
+function pwReason(reason, left) {
+  if (reason === 'expired') return 'Код истёк — запросите новый';
+  if (reason === 'locked') return 'Слишком много попыток — запросите новый код';
+  if (reason === 'wrong') return left ? ('Неверный код. Осталось попыток: ' + left) : 'Неверный код';
+  return 'Код недействителен';
+}
+/* Уборка, чтобы память не росла: запись уходит, когда истёк и код, и оба
+   окна счётчиков, и пауза. */
+setInterval(() => {
+  const now = Date.now();
+  for (const [email, rec] of pwCodes) {
+    const codeDead = now > (rec.expires || 0);
+    const hourDead = now - (rec.hourAt || 0) > 3600000;
+    const dayDead = now - (rec.dayAt || 0) > 86400000;
+    const pauseDead = !rec.pauseUntil || now > rec.pauseUntil;
+    if (codeDead && hourDead && dayDead && pauseDead) pwCodes.delete(email);
+  }
+  for (const [k, rec] of pwLinks) {
+    if (now > (rec.expires || 0)) pwLinks.delete(k);
+  }
+}, 5 * 60 * 1000).unref();
+
 const routes = {
 
   'GET /api/health': async () => ({ status: 200, body: { ok: true, version: 'bp-server-1' } }),
@@ -786,6 +1000,143 @@ const routes = {
     const exp = new Date(Date.now() + SESSION_DAYS * 864e5).toISOString();
     q.insSession.run(token, u.id, exp);
     return { status: 200, body: { token, user: { id: u.id, email: u.email, name: u.name, role: u.role } } };
+  },
+
+  /* ── Восстановление пароля по коду из письма ────────────────────
+     Шаг 1: попросить код. Ответ всегда одинаковый — по нему нельзя
+     узнать, есть ли такой аккаунт. Код уходит письмом через Resend. */
+  'POST /api/password/forgot': async (req, body) => {
+    if (!rateLimit(req, 'pwf', 5, 60000)) return tooOften;
+    const email = String(body.email || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { status: 400, body: { error: 'Некорректный email' } };
+
+    /* Ответ ОДИН И ТОТ ЖЕ во всех случаях: есть аккаунт или нет, ушло
+       письмо или нет, сработал лимит или нет. Иначе страница входа
+       превращается в справочник «кто здесь зарегистрирован».
+       Поэтому же письмо отправляется ФОНОМ, без await: ожидание ответа
+       Resend (сотни миллисекунд) выдавало бы существование аккаунта
+       одним лишь временем ответа. Ошибку отправки узнает владелец
+       тревогой, а не посторонний — по секундомеру. */
+    const generic = { status: 200, body: { ok: true } };
+    const u = q.userByEmail.get(email);
+    if (!u || u.is_blocked) return generic;
+
+    const iss = pwIssue(email);
+    if (!iss.code) return generic;          /* пауза, потолок или минута ожидания */
+
+    /* Ссылка на страницу показа кода. Работает только если сервер виден
+       снаружи: без PUBLIC_URL кнопка вела бы в никуда, поэтому письмо
+       тогда честно печатает код внутри себя, как раньше. */
+    const linkUrl = PW_LINK_ON ? PUBLIC_URL + '/r/' + iss.token : '';
+
+    const send = sendCodeEmail({
+      to: email, code: iss.code, kind: 'reset', minutes: 10, linkUrl,
+    })
+      .then((r) => {
+        if (r.ok) { if (!MAIL_DEBUG) pwCommit(email, iss.code, iss.token); return; }
+        /* Письмо не ушло — код НЕ закрепляем: прежний, если он был, жив,
+           и часовой лимит не сгорел. */
+        if (r.dryRun) {
+          console.error('[почта] Восстановление пароля не работает: RESEND_API_KEY не задан.');
+          tgAlert('mail:off', '📪 Почта не настроена\n\nЧеловек просит код для входа, а RESEND_API_KEY'
+            + ' в server/.env пуст — письмо не отправлено. Восстановление пароля не работает.', 'server', true);
+        } else {
+          tgAlert('mail:fail:' + String(r.error || '').slice(0, 60),
+            '📪 Письмо с кодом не отправилось\n\nПричина: ' + String(r.error || 'неизвестна').slice(0, 300)
+            + '\nЧеловек не может восстановить пароль.', 'server');
+        }
+      })
+      .catch((e) => { console.error('[почта]', (e && e.message) || e); });
+
+    /* В отладке ждём отправки и возвращаем код — этим режимом пользуются
+       только тесты и локальная разработка, там утечка времени не важна. */
+    if (MAIL_DEBUG) {
+      await send; pwCommit(email, iss.code, iss.token);
+      return { status: 200, body: { ok: true, devCode: iss.code, devLink: linkUrl } };
+    }
+    return generic;
+  },
+
+  /* Показать код по метке из письма.
+     Нарочно POST, а не GET: почтовые сканеры и «предпросмотр ссылки»
+     ходят GET-запросами и заранее открыли бы страницу за человека.
+     Показ прячется за нажатием кнопки — сканеру до него не добраться. */
+  'POST /api/password/reveal': async (req, body) => {
+    if (!rateLimit(req, 'pwrv', 20, 60000)) return tooOften;
+    const token = String(body.token || '').trim();
+    const gone = { status: 404, body: { error: 'Ссылка недействительна или устарела. Запросите код заново.' } };
+    if (!/^[a-f0-9]{32}$/i.test(token)) return gone;
+
+    const rec = pwLinks.get(linkKey(token));
+    if (!rec || Date.now() > rec.expires) return gone;
+
+    /* Расшифровать может только сама метка из письма: в памяти сервера
+       лежит её хеш и шифротекст, ключа там нет. */
+    const code = linkOpen(token, rec);
+    if (!code) return gone;
+
+    /* Показов немного: человеку хватает одного-двух (перезагрузил
+       страницу, вернулся назад). Десятки — признак того, что ссылку
+       кому-то передали и её крутят. */
+    rec.shown = (rec.shown || 0) + 1;
+    if (rec.shown > 10) { pwLinks.delete(linkKey(token)); return gone; }
+
+    /* Отдаём НАСТОЯЩИЙ остаток, а не всегда десять минут: письмо могли
+       открыть через восемь минут после запроса, и обещание «код живёт
+       ещё 10:00» было бы неправдой — счётчик дотикал бы до нуля, когда
+       код уже мёртв. */
+    const leftSec = Math.max(0, Math.round((rec.expires - Date.now()) / 1000));
+    return { status: 200, body: { ok: true, code, email: rec.email, leftSec } };
+  },
+
+  /* Шаг 2 (необязательный): проверить код, не тратя его — чтобы экран
+     ввода кода мог подсветить ошибку до запроса нового пароля. */
+  'POST /api/password/verify': async (req, body) => {
+    if (!rateLimit(req, 'pwv', 20, 60000)) return tooOften;
+    const email = String(body.email || '').trim().toLowerCase();
+    const code = String(body.code || '').replace(/\D/g, '');
+    const v = pwVerify(email, code, false);
+    if (v.ok) return { status: 200, body: { ok: true } };
+    return { status: 400, body: { error: pwReason(v.reason, v.left), reason: v.reason } };
+  },
+
+  /* Шаг 3: проверить код и задать новый пароль. Код тратится, все
+     прежние входы сбрасываются, и сразу выдаётся свежая сессия. */
+  'POST /api/password/reset': async (req, body) => {
+    if (!rateLimit(req, 'pwr', 10, 60000)) return tooOften;
+    const email = String(body.email || '').trim().toLowerCase();
+    const code = String(body.code || '').replace(/\D/g, '');
+    const pass = String(body.password || '');
+    if (pass.length < 8) return { status: 400, body: { error: 'Пароль — минимум 8 символов' } };
+    /* Сначала проверяем код НЕ тратя его, потом пишем в базу одной
+       транзакцией, и только после успешной записи гасим код. Иначе
+       падение на середине (например, база только для чтения) оставляло
+       бы человека и без старого пароля, и без кода — с потраченным
+       кодом и нетронутым паролем.
+
+       Между проверкой и тратой нет ни одного await: node:sqlite пишет
+       синхронно, поэтому второй запрос не может вклиниться и пройти по
+       тому же коду. */
+    const v = pwVerify(email, code, false);
+    if (!v.ok) return { status: 400, body: { error: pwReason(v.reason, v.left), reason: v.reason } };
+    const u = q.userByEmail.get(email);
+    if (!u) return { status: 400, body: { error: 'Код недействителен' } };
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hash = scrypt(pass, salt);
+    const token = newToken();
+    const exp = new Date(Date.now() + SESSION_DAYS * 864e5).toISOString();
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      q.updPass.run(salt, hash, u.id);
+      q.delUserSessions.run(u.id);
+      q.insSession.run(token, u.id, exp);
+      db.exec('COMMIT');
+    } catch (e) {
+      try { db.exec('ROLLBACK'); } catch (_) { /* нечего откатывать */ }
+      throw e;                                  /* наверх: 500 и тревога */
+    }
+    pwVerify(email, code, true);                /* код потрачен — пароль уже сменён */
+    return { status: 200, body: { ok: true, token, user: { id: u.id, email: u.email, name: u.name, role: u.role } } };
   },
 
   /* Вход из мини-аппа. Пароль не нужен: личность подтверждает Телеграм,
@@ -1636,6 +1987,29 @@ function sendOperatorPage(res) {
   res.end(html);
 }
 
+/* Страница показа кода — отдельный файл рядом с сервером, как и пульт
+   оператора. Referrer-Policy стоит намеренно: со страницы человек
+   уходит по кнопке в приложение, и адрес с меткой не должен уехать
+   в заголовке Referer на чужой домен. */
+function sendRecoverPage(res) {
+  let html;
+  try { html = fs.readFileSync(path.join(__dirname, 'recover.html'), 'utf8'); }
+  catch (e) { return send(res, 404, { error: 'recover.html рядом с сервером не найден' }); }
+  /* Адрес мини-аппа отдаём атрибутом: страница лежит статикой, а знать,
+     куда возвращать человека, ей надо. Кавычки вычищаем — иначе адресом
+     из .env можно было бы дописать свой атрибут в тег. */
+  const app = String(process.env.APP_URL || '').trim().replace(/[^A-Za-z0-9:/._~%?#\[\]@!$&'()*+,;=-]/g, '');
+  const safe = /^https?:\/\//i.test(app) ? app : '';
+  html = html.replace('<html lang="ru">', '<html lang="ru" data-app="' + safe + '">');
+  res.writeHead(200, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
+  });
+  res.end(html);
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (req.method === 'OPTIONS') return send(res, 204, {});
@@ -1644,6 +2018,25 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'GET' && url.pathname.startsWith('/api/verify/callback/')) {
     return handleVerifyCallback(req, res, url);
+  }
+  /* Страница показа кода. Саму метку страница берёт из адреса уже в
+     браузере — сервер здесь отдаёт только вёрстку и ничего не решает. */
+  if (req.method === 'GET' && /^\/r\/[a-f0-9]{32}$/i.test(url.pathname)) {
+    return sendRecoverPage(res);
+  }
+  /* Логотип отдаём сами. Страница показа кода могла бы брать его с сайта
+     приложения, но тогда знак пропадал бы всякий раз, когда сайт ещё не
+     выложен или лежит. Свой файл рядом с сервером — надёжнее. */
+  if (req.method === 'GET' && url.pathname === '/logo.jpg') {
+    try {
+      const buf = fs.readFileSync(path.join(__dirname, 'logo.jpg'));
+      res.writeHead(200, {
+        'Content-Type': 'image/jpeg',
+        'Cache-Control': 'public, max-age=86400',
+        'X-Content-Type-Options': 'nosniff',
+      });
+      return res.end(buf);
+    } catch (e) { return send(res, 404, { error: 'logo.jpg рядом с сервером не найден' }); }
   }
   const handler = routes[req.method + ' ' + url.pathname];
   if (!handler) return send(res, 404, { error: 'Нет такого пути' });
@@ -1673,6 +2066,46 @@ server.listen(PORT, () => {
   console.log(ALERTS_ON
     ? '[BloggerPay] тревога: ошибки уходят в Телеграм, чат ' + ADMIN_CHAT_ID
     : '[BloggerPay] тревога в Телеграм выключена (нужны BOT_TOKEN и ADMIN_CHAT_ID в .env)');
+  /* Почта — единственный путь восстановить пароль. Молча неработающей
+     она быть не должна: без ключа человек жмёт «Забыли пароль?», видит
+     экран ввода кода и ждёт письмо, которого никто не отправлял. */
+  if (!process.env.RESEND_API_KEY) {
+    console.error('[BloggerPay] ВНИМАНИЕ: RESEND_API_KEY в .env пуст —'
+      + ' письма с кодом никуда не уходят.');
+  } else {
+    console.log('[BloggerPay] почта: письма с кодом уходят через Resend, отправитель '
+      + (process.env.MAIL_FROM || 'BloggerPay <onboarding@resend.dev>'));
+  }
+  /* Предупреждение про MAIL_DEBUG — ОТДЕЛЬНО от проверки ключа: условия
+     независимы, и вложенным оно молчало ровно там, где опаснее всего.
+     Без ключа, но с MAIL_DEBUG=1 сервер раздаёт код прямо в ответе
+     любому, кто знает чей-нибудь адрес: этого достаточно, чтобы сменить
+     чужой пароль одним запросом. */
+  if (MAIL_DEBUG) {
+    console.error('[BloggerPay] ВНИМАНИЕ: MAIL_DEBUG=1 — код восстановления'
+      + ' возвращается прямо в ответе сервера. Любой, кто знает адрес'
+      + ' зарегистрированного человека, сменит ему пароль. Только для тестов,'
+      + ' на бою обязательно выключите.');
+  }
+  /* Адрес приложения без https:// превращает кнопку в письме в'
+     относительную ссылку: почта раскроет её от своего домена и человек
+     упрётся в 404. Сервер об этом никогда не узнает — ошибка целиком на
+     стороне получателя, поэтому предупреждаем при запуске. */
+  /* Про письмо-ссылку говорим прямо: молчаливое переключение назад,
+     на код внутри письма, выглядело бы как «настройка не applied». */
+  console.log(PW_LINK_ON
+    ? '[BloggerPay] письмо с кодом: без кода, кнопка «Открыть» ведёт на ' + PUBLIC_URL + '/r/…'
+    : '[BloggerPay] письмо с кодом: код печатается внутри письма'
+      + (String(ENV.MAIL_LINK == null ? '1' : ENV.MAIL_LINK) !== '0'
+        ? ' (режим ссылки выключен: PUBLIC_URL=' + PUBLIC_URL + ' не виден из интернета —'
+          + ' пропишите адрес сервера, например https://kassa.вашдомен.ru)'
+        : ''));
+  const appUrlRaw = String(process.env.APP_URL || '').trim();
+  if (appUrlRaw && !/^https?:\/\//i.test(appUrlRaw)) {
+    console.error('[BloggerPay] ВНИМАНИЕ: APP_URL="' + appUrlRaw + '" без https:// —'
+      + ' кнопка «Вернуться на сайт» и логотип в письме работать не будут.'
+      + ' Напишите полный адрес, например https://' + appUrlRaw);
+  }
 });
 
 /* ── Падения процесса ────────────────────────────────────────────────

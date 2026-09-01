@@ -42347,7 +42347,6 @@ else setTimeout(boot, 0);
 
   function register(){
     navigator.serviceWorker.register('./sw.js').then(function(reg){
-      document.documentElement.classList.add('bp-sw');
       reg.addEventListener('updatefound', function(){
         var w = reg.installing;
         if (!w) return;
@@ -74151,6 +74150,829 @@ function scrSent(){
   b.push(an('<button type="button" class="vp-ghost" style="margin-top:16px" onclick="bpVpGo(\'videos\')">Понятно</button>', 2));
   return shell('Видео на проверке', 'проверка модератором и уведомление', 'bpVpGo(\'videos\')', 'Готово', b.join(''));
 }
+})();
+</script>
+
+
+<style id="bp-pwreset-css">
+/* ══ Восстановление пароля по коду из письма ══════════════════════════
+   Появилось вместе с почтой (Resend) на сервере. До неё «Забыли пароль?»
+   умело только спросить ТЕКУЩИЙ пароль — то есть не помогало тому, кто
+   его как раз забыл. Теперь код приходит письмом, и это настоящий сброс.
+
+   Слой рисует свою шторку поверх .own-card-sheet, чтобы не трогать
+   старую разметку: если сервер не задан, всё работает как раньше. */
+.pwr-wrap{position:fixed;inset:0;z-index:300;background:rgba(4,4,6,.72);
+  -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
+  display:flex;align-items:flex-end;justify-content:center;
+  opacity:0;transition:opacity .22s var(--ease)}
+.pwr-wrap.on{opacity:1}
+.pwr{width:100%;max-width:420px;background:var(--bg2);border:1px solid var(--brd);
+  border-bottom:none;border-radius:22px 22px 0 0;
+  padding:12px 16px calc(20px + env(safe-area-inset-bottom));
+  box-shadow:var(--e3);transform:translateY(14px);
+  transition:transform .28s var(--ease-out)}
+.pwr-wrap.on .pwr{transform:none}
+.pwr-grip{width:40px;height:4px;border-radius:99px;background:var(--brd2);margin:0 auto 14px}
+
+.pwr-step{display:none}
+.pwr-step.on{display:block;animation:pwrIn .32s var(--ease-out)}
+@keyframes pwrIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+.pwr-ic{width:46px;height:46px;border-radius:14px;margin:2px auto 12px;
+  background:var(--bp-grad);display:flex;align-items:center;justify-content:center;
+  box-shadow:0 4px 14px rgba(109,74,232,.3)}
+.pwr-ttl{font-size:17px;font-weight:800;color:var(--t1);letter-spacing:-.3px;text-align:center}
+.pwr-sub{font-size:12.5px;color:var(--t3);line-height:1.5;text-align:center;margin:5px 0 16px}
+.pwr-sub b{color:var(--t2);font-weight:700}
+
+.pwr-inp{width:100%;padding:13px 14px;background:rgba(255,255,255,.04);
+  border:1px solid var(--brd2);border-radius:var(--r2);color:var(--t1);
+  font:inherit;font-size:14px;box-sizing:border-box;outline:none;
+  transition:border-color .15s,background .15s}
+.pwr-inp::placeholder{color:var(--t3)}
+.pwr-inp:focus{border-color:var(--acc-br);background:rgba(255,255,255,.06)}
+.pwr-lbl{display:block;font-size:11.5px;font-weight:700;color:var(--t3);margin:10px 2px 5px}
+.pwr-pass{position:relative}
+.pwr-pass .pwr-inp{padding-right:46px}
+.pwr-eye{position:absolute;right:5px;top:50%;transform:translateY(-50%);
+  width:36px;height:36px;border:none;border-radius:10px;background:transparent;
+  color:var(--t3);display:flex;align-items:center;justify-content:center;cursor:pointer;
+  transition:color .15s,background .15s}
+.pwr-eye:active{background:var(--card3)}
+.pwr-eye.on{color:var(--acc2)}
+
+/* Разряды кода: шесть отдельных окошек, как в письме */
+.pwr-code{display:flex;gap:7px;justify-content:center;margin:2px 0 4px}
+.pwr-d{width:44px;height:54px;text-align:center;background:rgba(255,255,255,.04);
+  border:1.5px solid var(--brd2);border-radius:13px;color:var(--t1);
+  font:inherit;font-size:23px;font-weight:800;outline:none;box-sizing:border-box;
+  -moz-appearance:textfield;transition:border-color .15s,background .15s,transform .12s var(--ease)}
+.pwr-d::-webkit-outer-spin-button,.pwr-d::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.pwr-d:focus{border-color:var(--acc);background:rgba(109,74,232,.1)}
+.pwr-d.filled{border-color:var(--acc-br);background:rgba(109,74,232,.08)}
+.pwr-code.bad .pwr-d{border-color:var(--red-br);background:var(--red-bg)}
+
+.pwr-btn{width:100%;margin-top:14px;padding:14px;border:none;border-radius:14px;
+  background:var(--bp-grad);color:#fff;font:inherit;font-size:14.5px;font-weight:700;
+  cursor:pointer;transition:transform .12s var(--ease),opacity .15s}
+.pwr-btn:active{transform:scale(.98)}
+.pwr-btn[disabled]{opacity:.5;pointer-events:none}
+.pwr-ghost{width:100%;margin-top:9px;padding:12px;border-radius:13px;
+  background:transparent;border:1px solid var(--brd2);color:var(--t2);
+  font:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s}
+.pwr-ghost:active{background:var(--card3)}
+.pwr-link{display:block;width:100%;margin-top:11px;background:none;border:none;
+  color:var(--acc2);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;text-align:center}
+.pwr-link[disabled]{color:var(--t3);pointer-events:none}
+
+.pwr-msg{margin-top:11px;padding:10px 12px;border-radius:12px;font-size:12.5px;
+  font-weight:600;line-height:1.45;display:none}
+.pwr-msg.on{display:block;animation:pwrIn .25s var(--ease-out)}
+.pwr-msg.err{background:var(--red-bg);border:1px solid var(--red-br);color:#ff9aa8}
+.pwr-msg.ok{background:var(--green-bg);border:1px solid var(--green-br);color:var(--green)}
+
+.pwr-done-ic{width:58px;height:58px;border-radius:50%;margin:6px auto 14px;
+  background:var(--green-bg);border:1.5px solid var(--green-br);
+  display:flex;align-items:center;justify-content:center;animation:pwrPop .45s var(--spring)}
+@keyframes pwrPop{0%{transform:scale(.5);opacity:0}60%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}}
+@media (prefers-reduced-motion:reduce){
+  .pwr-step.on,.pwr-msg.on,.pwr-done-ic{animation:none}
+  .pwr-wrap,.pwr{transition:none}
+}
+</style>
+<script id="bp-pwreset">
+/* ══ Восстановление пароля: письмо с кодом ════════════════════════════
+   Три шага в одной шторке: адрес → код из письма → новый пароль.
+   Работает поверх сервера-кассы (bpSrv.raw):
+     POST /api/password/forgot  {email}
+     POST /api/password/verify  {email, code}      — проверка без траты
+     POST /api/password/reset   {email, code, password}
+   Сервер отвечает одинаково и на существующий, и на несуществующий адрес,
+   поэтому шторка всегда переходит к вводу кода: по её поведению нельзя
+   узнать, зарегистрирован ли адрес.
+
+   Если сервер не задан (bpSrv.configured() === false) — не вмешиваемся,
+   и «Забыли пароль?» работает по-старому, через текущий пароль. */
+(function(){
+'use strict';
+if(window.__bpPwReset) return; window.__bpPwReset = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e); }catch(_){} }
+function srv(){ return window.bpSrv; }
+function haveServer(){
+  try{ return !!(srv() && srv().configured && srv().configured()); }catch(e){ return false; }
+}
+
+var el = null, state = { email:'', sentAt:0, tick:null };
+
+function esc(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
+  });
+}
+
+var ICON = {
+  mail: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none">'
+    + '<rect x="2.5" y="4.5" width="19" height="15" rx="3" stroke="#fff" stroke-width="1.9"/>'
+    + '<path d="M3.5 7l7.4 5.2a2 2 0 002.2 0L20.5 7" stroke="#fff" stroke-width="1.9" stroke-linecap="round"/></svg>',
+  lock: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none">'
+    + '<rect x="4" y="10.5" width="16" height="10.5" rx="3" stroke="#fff" stroke-width="1.9"/>'
+    + '<path d="M7.75 10.5V7.6a4.25 4.25 0 018.5 0v2.9" stroke="#fff" stroke-width="1.9" stroke-linecap="round"/></svg>',
+  done: '<svg width="26" height="26" viewBox="0 0 26 26" fill="none">'
+    + '<path d="M7 13.4l4 4 8-8.6" stroke="#3ddc84" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+};
+
+function close(){
+  if(!el) return;
+  var node = el; el = null;
+  if(state.tick){ clearInterval(state.tick); state.tick = null; }
+  node.classList.remove('on');
+  setTimeout(function(){ try{ node.remove(); }catch(e){} }, 240);
+}
+
+function show(step, keepMsg, kind){
+  if(!el) return;
+  var all = el.querySelectorAll('.pwr-step');
+  for(var i = 0; i < all.length; i++) all[i].classList.toggle('on', all[i].dataset.step === step);
+  /* Переход обычно стирает плашку, но не когда сам переход ею и объясняется
+     (протухший код возвращает на шаг ввода — без причины это выглядит как
+     сбой: окошки вдруг опустели, и непонятно почему). */
+  msg(keepMsg || '', kind);
+  if(step === 'code'){
+    var d = el.querySelector('.pwr-d');
+    setTimeout(function(){ try{ d && d.focus(); }catch(e){} }, 90);
+  }
+}
+
+/* Ошибки сети и HTTP приходят по-английски («Failed to fetch», «HTTP 502»).
+   Показывать это человеку нельзя — переводим в понятную фразу. */
+function ruError(e, fallback){
+  var m = String((e && e.message) || '');
+  if(!m) return fallback || 'Что-то пошло не так';
+  if(/^HTTP\s*5\d\d/i.test(m)) return 'Сервер сейчас не отвечает. Попробуйте через минуту.';
+  if(/^HTTP\s*429/i.test(m)) return 'Слишком часто — подождите минуту.';
+  if(/^HTTP\s*4\d\d/i.test(m)) return fallback || 'Запрос не прошёл';
+  if(/failed to fetch|networkerror|load failed|сет[ьи]/i.test(m)) return 'Нет связи с сервером. Проверьте интернет.';
+  if(/^[\x00-\x7F]+$/.test(m)) return fallback || 'Что-то пошло не так';   /* латиница = техтекст */
+  return m;                                                                /* сервер уже ответил по-русски */
+}
+
+/* ── Пароль в самом приложении ─────────────────────────────────────
+   У приложения своя запись пользователя с местным хешем пароля; сервер
+   о ней не знает. После серверного сброса местный хеш обязан стать
+   таким же, иначе форма входа продолжит ждать прежний пароль. */
+async function syncLocalPass(email, pass){
+  try{
+    var list = (typeof users !== 'undefined' && Array.isArray(users)) ? users : null;
+    if(!list) return;
+    var u = list.find(function(x){ return String(x.email || '').toLowerCase() === String(email).toLowerCase(); });
+    if(!u) return;                       /* местной записи нет — синхронизировать нечего */
+    if(typeof _bpRandSalt !== 'function' || typeof _bpHashPass !== 'function') return;
+    u.passSalt = _bpRandSalt();
+    u.passHash = await _bpHashPass(pass, u.passSalt);
+    delete u.password;                   /* если запись была ещё открытым текстом */
+    if(typeof saveUsers === 'function') saveUsers();
+  }catch(e){ E(e); }
+}
+
+function msg(text, kind){
+  if(!el) return;
+  var box = el.querySelector('.pwr-msg');
+  if(!box) return;
+  box.className = 'pwr-msg' + (text ? ' on ' + (kind || 'err') : '');
+  box.textContent = text || '';
+}
+
+function busy(btn, on, label){
+  if(!btn) return;
+  btn.disabled = !!on;
+  if(on){ btn.dataset.was = btn.textContent; btn.textContent = label || 'Секунду…'; }
+  else if(btn.dataset.was){ btn.textContent = btn.dataset.was; }
+}
+
+function codeValue(){
+  var out = '';
+  var ds = el.querySelectorAll('.pwr-d');
+  for(var i = 0; i < ds.length; i++) out += (ds[i].value || '').replace(/\D/g, '');
+  return out;
+}
+function codeClear(){
+  var ds = el.querySelectorAll('.pwr-d');
+  for(var i = 0; i < ds.length; i++){ ds[i].value = ''; ds[i].classList.remove('filled'); }
+  try{ ds[0].focus(); }catch(e){}
+}
+
+/* Отсчёт до повторной отправки: сервер даёт новый код не чаще раза в минуту */
+function startTick(){
+  var link = el && el.querySelector('.pwr-link');
+  if(!link) return;
+  if(state.tick) clearInterval(state.tick);
+  var run = function(){
+    var left = 60 - Math.floor((Date.now() - state.sentAt) / 1000);
+    if(left > 0){ link.disabled = true; link.textContent = 'Отправить код ещё раз через ' + left + ' с'; }
+    else{ link.disabled = false; link.textContent = 'Отправить код ещё раз'; clearInterval(state.tick); state.tick = null; }
+  };
+  run();
+  state.tick = setInterval(run, 1000);
+}
+
+/* Метка «код просили с ЭТОГО устройства». Нужна кнопке из письма: без
+   неё чужую ссылку можно подсунуть постороннему человеку, и его браузер
+   молча привяжется к чужому аккаунту (подробности — у openFromMail). */
+var ASK_KEY = 'bp_pw_ask';
+function markAsked(email){
+  try{
+    localStorage.setItem(ASK_KEY, JSON.stringify({ email: email, at: Date.now() }));
+  }catch(e){ /* приватный режим — тогда ссылка просто откроется на шаге адреса */ }
+}
+function wasAsked(email){
+  try{
+    var r = JSON.parse(localStorage.getItem(ASK_KEY) || 'null');
+    if(!r || r.email !== email) return false;
+    /* Метка живёт чуть дольше самого кода: код действует 10 минут,
+       но человек мог открыть письмо не сразу. */
+    return (Date.now() - Number(r.at || 0)) < 30 * 60 * 1000;
+  }catch(e){ return false; }
+}
+
+async function askCode(email, btn){
+  busy(btn, true, 'Отправляем…');
+  try{
+    await srv().raw('POST', '/api/password/forgot', { email: email });
+    markAsked(email);
+    state.email = email;
+    state.sentAt = Date.now();
+    var hint = el && el.querySelector('.pwr-sent-to');
+    if(hint) hint.textContent = email;
+    show('code');
+    startTick();
+    return true;
+  }catch(e){
+    E(e);
+    msg(ruError(e, 'Не получилось отправить письмо. Попробуйте позже.'));
+    return false;
+  }finally{ busy(btn, false); }
+}
+
+function build(prefill){
+  close();
+  var w = document.createElement('div');
+  w.className = 'pwr-wrap';
+  w.addEventListener('click', function(ev){ if(ev.target === w) close(); });
+  w.innerHTML =
+      '<div class="pwr" role="dialog" aria-modal="true" aria-label="Восстановление пароля">'
+    +   '<div class="pwr-grip"></div>'
+
+    /* ── шаг 1: адрес ── */
+    +   '<div class="pwr-step on" data-step="email">'
+    +     '<div class="pwr-ic">' + ICON.mail + '</div>'
+    +     '<div class="pwr-ttl">Восстановление пароля</div>'
+    +     '<div class="pwr-sub">Пришлём код на почту, с которой вы регистрировались. Письмо приходит за несколько секунд.</div>'
+    +     '<label class="pwr-lbl" for="pwrEmail">Почта</label>'
+    +     '<input class="pwr-inp" id="pwrEmail" type="email" inputmode="email" autocomplete="email"'
+    +       ' placeholder="Ваш email" value="' + esc(prefill || '') + '">'
+    +     '<button type="button" class="pwr-btn" id="pwrSend">Прислать код</button>'
+    +     '<button type="button" class="pwr-ghost" id="pwrCancel1">Отмена</button>'
+    +   '</div>'
+
+    /* ── шаг 2: код ── */
+    +   '<div class="pwr-step" data-step="code">'
+    +     '<div class="pwr-ic">' + ICON.mail + '</div>'
+    +     '<div class="pwr-ttl">Введите код из письма</div>'
+    +     '<div class="pwr-sub">Мы отправили шестизначный код на <b class="pwr-sent-to"></b>. Код действует 10 минут.</div>'
+    +     '<div class="pwr-code">'
+    +       '<input class="pwr-d" type="text" inputmode="numeric" maxlength="1" autocomplete="one-time-code" aria-label="Цифра 1">'
+    +       '<input class="pwr-d" type="text" inputmode="numeric" maxlength="1" aria-label="Цифра 2">'
+    +       '<input class="pwr-d" type="text" inputmode="numeric" maxlength="1" aria-label="Цифра 3">'
+    +       '<input class="pwr-d" type="text" inputmode="numeric" maxlength="1" aria-label="Цифра 4">'
+    +       '<input class="pwr-d" type="text" inputmode="numeric" maxlength="1" aria-label="Цифра 5">'
+    +       '<input class="pwr-d" type="text" inputmode="numeric" maxlength="1" aria-label="Цифра 6">'
+    +     '</div>'
+    +     '<button type="button" class="pwr-btn" id="pwrCheck">Дальше</button>'
+    +     '<button type="button" class="pwr-link" id="pwrAgain">Отправить код ещё раз</button>'
+    +   '</div>'
+
+    /* ── шаг 3: новый пароль ── */
+    +   '<div class="pwr-step" data-step="pass">'
+    +     '<div class="pwr-ic">' + ICON.lock + '</div>'
+    +     '<div class="pwr-ttl">Новый пароль</div>'
+    +     '<div class="pwr-sub">Придумайте пароль не короче 8 символов. Прежние входы на других устройствах сбросятся.</div>'
+    +     '<label class="pwr-lbl" for="pwrP1">Новый пароль</label>'
+    +     '<div class="pwr-pass">'
+    +       '<input class="pwr-inp" id="pwrP1" type="password" autocomplete="new-password" placeholder="Новый пароль">'
+    +       '<button type="button" class="pwr-eye" id="pwrEye" aria-label="Показать пароль" aria-pressed="false">'
+    +         '<svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M1.7 10S4.6 4.8 10 4.8 18.3 10 18.3 10 15.4 15.2 10 15.2 1.7 10 1.7 10z" stroke="currentColor" stroke-width="1.6"/><circle cx="10" cy="10" r="2.6" stroke="currentColor" stroke-width="1.6"/></svg>'
+    +       '</button>'
+    +     '</div>'
+    +     '<label class="pwr-lbl" for="pwrP2">Повторите пароль</label>'
+    +     '<input class="pwr-inp" id="pwrP2" type="password" autocomplete="new-password" placeholder="Повторите пароль">'
+    +     '<button type="button" class="pwr-btn" id="pwrSave">Сохранить и войти</button>'
+    +   '</div>'
+
+    /* ── шаг 4: готово ── */
+    +   '<div class="pwr-step" data-step="done">'
+    +     '<div class="pwr-done-ic">' + ICON.done + '</div>'
+    +     '<div class="pwr-ttl">Пароль изменён</div>'
+    +     '<div class="pwr-sub">Вы вошли в аккаунт. В следующий раз входите с новым паролем.</div>'
+    +     '<button type="button" class="pwr-btn" id="pwrGo">Продолжить</button>'
+    +   '</div>'
+
+    +   '<div class="pwr-msg" role="status" aria-live="polite"></div>'
+    + '</div>';
+
+  document.body.appendChild(w);
+  el = w;
+  requestAnimationFrame(function(){ w.classList.add('on'); });
+
+  /* ── шаг 1 ── */
+  var send = w.querySelector('#pwrSend');
+  send.addEventListener('click', function(){
+    var f = w.querySelector('#pwrEmail');
+    var email = String((f && f.value) || '').trim().toLowerCase();
+    if(!email){
+      /* Пустое поле — это не опечатка; сказать про опечатку значит
+         обвинить человека в том, чего он не делал. */
+      msg('Введите почту, на которую придёт код'); try{ f.focus(); }catch(e){}
+      return;
+    }
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+      msg('Проверьте адрес — похоже, в нём опечатка'); try{ f.focus(); }catch(e){}
+      return;
+    }
+    askCode(email, send);
+  });
+  w.querySelector('#pwrEmail').addEventListener('keydown', function(ev){
+    if(ev.key === 'Enter'){ ev.preventDefault(); send.click(); }
+  });
+  w.querySelector('#pwrCancel1').addEventListener('click', close);
+
+  /* ── шаг 2: окошки кода ── */
+  var ds = w.querySelectorAll('.pwr-d');
+  for(var i = 0; i < ds.length; i++){
+    (function(inp, idx){
+      inp.addEventListener('input', function(){
+        var v = (inp.value || '').replace(/\D/g, '');
+        inp.value = v.slice(-1);
+        inp.classList.toggle('filled', !!inp.value);
+        w.querySelector('.pwr-code').classList.remove('bad');
+        if(inp.value && idx < ds.length - 1) ds[idx + 1].focus();
+        if(codeValue().length === 6) w.querySelector('#pwrCheck').click();
+      });
+      inp.addEventListener('keydown', function(ev){
+        if(ev.key === 'Backspace' && !inp.value && idx > 0){ ds[idx - 1].focus(); ds[idx - 1].value = ''; ds[idx - 1].classList.remove('filled'); }
+        if(ev.key === 'ArrowLeft' && idx > 0) ds[idx - 1].focus();
+        if(ev.key === 'ArrowRight' && idx < ds.length - 1) ds[idx + 1].focus();
+      });
+      /* Вставка кода целиком — из письма копируют все шесть цифр разом */
+      inp.addEventListener('paste', function(ev){
+        var t = (ev.clipboardData || window.clipboardData).getData('text') || '';
+        var digits = t.replace(/\D/g, '').slice(0, 6);
+        if(!digits) return;
+        ev.preventDefault();
+        for(var k = 0; k < ds.length; k++){
+          ds[k].value = digits[k] || '';
+          ds[k].classList.toggle('filled', !!ds[k].value);
+        }
+        try{ ds[Math.min(digits.length, 5)].focus(); }catch(e){}
+        if(digits.length === 6) w.querySelector('#pwrCheck').click();
+      });
+    })(ds[i], i);
+  }
+
+  var check = w.querySelector('#pwrCheck');
+  check.addEventListener('click', async function(){
+    var code = codeValue();
+    if(code.length !== 6){ msg('Введите все шесть цифр'); return; }
+    busy(check, true, 'Проверяем…');
+    try{
+      await srv().raw('POST', '/api/password/verify', { email: state.email, code: code });
+      state.code = code;
+      show('pass');
+      setTimeout(function(){ try{ w.querySelector('#pwrP1').focus(); }catch(e){} }, 90);
+    }catch(e){
+      w.querySelector('.pwr-code').classList.add('bad');
+      msg((e && e.message) || 'Неверный код');
+      setTimeout(codeClear, 500);
+    }finally{ busy(check, false); }
+  });
+
+  var again = w.querySelector('#pwrAgain');
+  again.addEventListener('click', function(){
+    if(again.disabled) return;                 /* идёт отсчёт — сервер новый код не даст */
+    again.disabled = true;
+    codeClear();
+    /* Радоваться можно только настоящему успеху: раньше «Отправили новый
+       код» показывалось и тогда, когда запрос упал. */
+    askCode(state.email, null).then(function(sent){
+      if(sent) msg('Отправили новый код', 'ok');
+      startTick();
+    });
+  });
+
+  /* ── шаг 3 ── */
+  var save = w.querySelector('#pwrSave');
+  save.addEventListener('click', async function(){
+    var p1 = String(w.querySelector('#pwrP1').value || '');
+    var p2 = String(w.querySelector('#pwrP2').value || '');
+    if(p1.length < 8){ msg('Пароль — минимум 8 символов'); return; }
+    if(p1 !== p2){ msg('Пароли не совпадают'); return; }
+    busy(save, true, 'Сохраняем…');
+    try{
+      var r = await srv().raw('POST', '/api/password/reset',
+        { email: state.email, code: state.code, password: p1 });
+      /* Сервер выдал свежую сессию — кладём её в мост, как при входе */
+      try{ if(r && r.token) localStorage.setItem('bp_srv_token', r.token); }catch(e){ E(e); }
+      /* И — обязательно — меняем пароль В САМОМ ПРИЛОЖЕНИИ.
+         Вход в приложение проверяет местный хеш (_bpVerifyPass), сервер
+         про него ничего не знает. Без этой строки человек увидел бы
+         «Пароль изменён», а форма входа продолжала бы ждать старый:
+         сменилась бы только серверная половина личности. */
+      await syncLocalPass(state.email, p1);
+      show('done');
+    }catch(e){
+      E(e);
+      msg(ruError(e, 'Не удалось сменить пароль'));
+      /* Код мог протухнуть, пока человек придумывал пароль. Возвращаем на
+         шаг кода вместе с объяснением — иначе пустые окошки без причины. */
+      if(e && (e.reason === 'expired' || e.reason === 'locked' || /код/i.test(String(e.message || '')))){
+        setTimeout(function(){ codeClear(); show('code', ruError(e, 'Код больше не действует — запросите новый')); }, 900);
+      }
+    }finally{ busy(save, false); }
+  });
+  w.querySelector('#pwrP2').addEventListener('keydown', function(ev){
+    if(ev.key === 'Enter'){ ev.preventDefault(); save.click(); }
+  });
+  /* Глазик: придумать длинный пароль вслепую и повторить его вслепую —
+     верный путь к опечатке. На экране входа глазик есть, здесь тоже. */
+  var eye = w.querySelector('#pwrEye');
+  eye.addEventListener('click', function(){
+    var p1 = w.querySelector('#pwrP1');
+    var shown = p1.type === 'text';
+    p1.type = shown ? 'password' : 'text';
+    eye.classList.toggle('on', !shown);
+    eye.setAttribute('aria-pressed', String(!shown));
+    eye.setAttribute('aria-label', shown ? 'Показать пароль' : 'Скрыть пароль');
+    try{ p1.focus(); }catch(e){}
+  });
+
+  /* ── шаг 4 ── */
+  w.querySelector('#pwrGo').addEventListener('click', function(){
+    close();
+    try{ location.reload(); }catch(e){}
+  });
+}
+
+/* Подменяем «Забыли пароль?» только когда сервер задан: без него
+   письмо отправить некому и старый путь остаётся единственным. */
+var origForgot = window.forgotPass;
+window.forgotPass = function(){
+  if(!haveServer()){
+    if(typeof origForgot === 'function') return origForgot.apply(this, arguments);
+    return;
+  }
+  var f = document.getElementById('loginEmail');
+  var val = String((f && f.value) || '').trim().toLowerCase();
+  build(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val) ? val : '');
+};
+/* ── Вход по кнопке из письма ──────────────────────────────────────
+   Письмо приносит человека обратно с уже готовым кодом. Открываем
+   шторку сразу на шаге ввода и заполняем окошки: переписывать цифры
+   руками не нужно.
+
+   Код письмом уже отправлен — значит state.email надо проставить самим,
+   иначе «Дальше» уйдёт на сервер с пустым адресом и вернёт отказ. */
+function openFromMail(email, code){
+  if(!haveServer()) return false;
+  var mail = String(email || '').trim().toLowerCase();
+  var digits = String(code || '').replace(/\D/g, '').slice(0, 6);
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) return false;
+
+  /* ── Чужой ссылке не верим ────────────────────────────────────────
+     Ссылку с кодом можно прислать кому угодно. Если бы мы открывали её
+     без разбора, злоумышленник запросил бы код на СВОЙ адрес, отправил
+     ссылку жертве, та нажала бы «Дальше» и задала пароль — а браузер
+     жертвы получил бы в bp_srv_token ключ ЧУЖОГО аккаунта. Местный
+     вход при этом остаётся прежним, поэтому подмену не видно: человек
+     продолжает работать под собой, но деньги на сервере считаются
+     чужому. Проверка личности на сервере тут не спасает — код
+     настоящий, он просто не от этого человека.
+
+     Поэтому подставляем код, только если его просили с этого же
+     устройства. Иначе открываем шторку на первом шаге: человек введёт
+     свой адрес сам и получит собственный код. */
+  if(!wasAsked(mail)){
+    build(mail);
+    msg('Введите адрес и запросите код — так мы убедимся, что письмо ваше.', 'warn');
+    return true;
+  }
+
+  build(mail);
+  state.email = mail;
+  state.sentAt = Date.now();
+  var hint = el && el.querySelector('.pwr-sent-to');
+  if(hint) hint.textContent = mail;
+  show('code');
+  startTick();
+
+  if(digits.length === 6 && el){
+    var ds = el.querySelectorAll('.pwr-d');
+    for(var i = 0; i < ds.length; i++){
+      ds[i].value = digits[i] || '';
+      ds[i].classList.toggle('filled', !!ds[i].value);
+    }
+    /* Сами не жмём «Дальше»: человек должен видеть, что код подставлен,
+       и нажать сам. Молчаливый переход на новый пароль выглядит так,
+       будто приложение что-то сделало за него. */
+    try{ el.querySelector('#pwrCheck').focus(); }catch(e){}
+  }
+  return true;
+}
+
+window.bpPwReset = { open: build, close: close, fromMail: openFromMail };
+})();
+</script>
+
+
+<script id="bp-srvlink">
+/* ══ Мост личностей: аккаунт заводится и на сервере ═══════════════════
+   Мост bpLinkServer (~71762) был написан, но его никто не звал: ни
+   регистрация, ни вход. Из-за этого аккаунт жил только в браузере, а
+   сервер о человеке не знал вовсе. Последствия тихие и разные:
+
+     · деньги не считались на сервере — не было srvId;
+     · «Забыли пароль?» не работал в принципе. Ручка /api/password/forgot
+       ищет человека в серверной базе, не находит и — правильно, чтобы
+       не выдавать чужие адреса — молча отвечает «ок». Человек ждал
+       письмо, которого никто не отправлял.
+
+   Здесь мост подключается к обеим точкам входа. Правила прежние:
+   сервер дублирует местный вход, его отказ НЕ мешает войти локально —
+   приложение просто останется в местном режиме, как и было.        */
+(function(){
+'use strict';
+if(window.__bpSrvLink) return; window.__bpSrvLink = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e); }catch(_){} }
+
+function link(email, password, name, role){
+  try{
+    if(typeof window.bpLinkServer !== 'function') return;
+    var s = window.bpSrv;
+    if(!s || !s.configured || !s.configured()) return;   /* сервер не задан — местный режим */
+    /* Намеренно без await: серверная часть не должна задерживать вход.
+       Ошибку глотаем — она уже уходит в BPERR внутри моста. */
+    window.bpLinkServer(email, password, name, role);
+  }catch(e){ E(e); }
+}
+
+/* ── Регистрация ── */
+var origRegister = window.doRegister;
+if(typeof origRegister === 'function' && !origRegister.__bpLinked){
+  window.doRegister = async function(){
+    /* Значения снимаем ДО вызова: обработчик очищает поля формы. */
+    var email = '', pass = '', name = '', role = null;
+    try{
+      email = String((document.getElementById('regEmail')||{}).value || '').trim().toLowerCase();
+      pass  = String((document.getElementById('regPass')||{}).value || '');
+      name  = String((document.getElementById('regName')||{}).value || '').trim();
+    }catch(e){ E(e); }
+    var before = (typeof users !== 'undefined' && Array.isArray(users)) ? users.length : -1;
+    var r = await origRegister.apply(this, arguments);
+    /* Заводим на сервере только если местная регистрация ПРОШЛА:
+       иначе на любую неудачную попытку (не принято соглашение, короткий
+       пароль) на сервере копился бы мусорный аккаунт. */
+    try{
+      var after = (typeof users !== 'undefined' && Array.isArray(users)) ? users.length : -1;
+      if(after > before && email && pass){
+        var u = users[users.length - 1];
+        role = (u && u.role) || 'blogger';
+        link(email, pass, name || (u && u.name) || 'Без имени', role);
+      }
+    }catch(e){ E(e); }
+    return r;
+  };
+  window.doRegister.__bpLinked = true;
+}
+
+/* ── Вход ──
+   Тем, кто зарегистрировался до этой правки, серверный аккаунт заведётся
+   при первом же входе: мост сначала пробует login, а если такого нет —
+   register с тем же паролем. */
+var origLogin = window.doLogin;
+if(typeof origLogin === 'function' && !origLogin.__bpLinked){
+  window.doLogin = async function(){
+    var val = '', pass = '';
+    try{
+      val  = String((document.getElementById('loginEmail')||{}).value || '').trim().toLowerCase();
+      pass = String((document.getElementById('loginPass')||{}).value || '');
+    }catch(e){ E(e); }
+    var wasUser = (typeof currentUser !== 'undefined') ? currentUser : null;
+    var r = await origLogin.apply(this, arguments);
+    try{
+      var now = (typeof currentUser !== 'undefined') ? currentUser : null;
+      /* Вошли только что и по email (по телефону серверу нечего сказать). */
+      if(now && now !== wasUser && pass && /@/.test(val)){
+        link(now.email || val, pass, now.name || 'Без имени', now.role || 'blogger');
+      }
+    }catch(e){ E(e); }
+    return r;
+  };
+  window.doLogin.__bpLinked = true;
+}
+})();
+</script>
+
+
+<script id="bp-mailback">
+/* ══ Возврат из письма ════════════════════════════════════════════════
+   В письме с кодом есть кнопка «Вернуться на сайт». Она ведёт на адрес
+   вида  <адрес приложения>#/recover?code=042718&email=...  — здесь мы
+   этот адрес разбираем и открываем шторку восстановления сразу на шаге
+   ввода кода, уже заполненном.
+
+   Почему в адресе (в hash), а не в обычных параметрах: hash не уходит
+   на сервер и не попадает в логи хостинга. Сразу после разбора мы его
+   стираем через replaceState — чтобы код не остался в адресной строке,
+   в истории браузера и в заголовке Referer, если человек потом уйдёт
+   по ссылке со страницы.                                              */
+(function(){
+'use strict';
+if(window.__bpMailBack) return; window.__bpMailBack = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e); }catch(_){} }
+
+/* Адрес снимаем СРАЗУ, при разборе файла: роутер приложения
+   (syncHash) переписывает hash на '#/auth' в первые же миллисекунды,
+   и к моменту, когда мы решим им заняться, кода в адресе уже нет. */
+var RAW_HASH = String(location.hash || '');
+
+/* И СРАЗУ стираем. Ждать нельзя: роутер приложения на DOMContentLoaded
+   делает buffer() → history.pushState(location.hash), то есть КЛОНИРУЕТ
+   адрес с кодом во вторую запись истории. Наш replaceState правит только
+   текущую запись, и старая с кодом осталась бы в истории вкладки до конца
+   сессии — одно нажатие «назад» показывало бы код в адресной строке.
+   Стирая здесь, при разборе файла, мы опережаем и роутер, и всё
+   остальное: клонировать будет уже нечего. */
+(function(){
+  if(!/^#\/recover\?/.test(RAW_HASH)) return;
+  try{
+    history.replaceState(history.state, '', location.pathname + location.search);
+  }catch(e){ /* адрес не тронуть — код просто останется видимым */ }
+})();
+
+function parse(){
+  var h = RAW_HASH;
+  var m = /^#\/recover\?(.*)$/.exec(h);
+  if(!m) return null;
+  var q = {};
+  m[1].split('&').forEach(function(pair){
+    var i = pair.indexOf('=');
+    if(i < 0) return;
+    try{
+      q[decodeURIComponent(pair.slice(0, i))] = decodeURIComponent(pair.slice(i + 1));
+    }catch(e){ /* битый процент-код — просто пропускаем параметр */ }
+  });
+  return q;
+}
+
+function wipeHash(){
+  /* Убираем код из адреса, не добавляя записи в историю. */
+  try{
+    history.replaceState(history.state, '', location.pathname + location.search);
+  }catch(e){ E(e); }
+}
+
+function run(){
+  var q;
+  try{ q = parse(); }catch(e){ E(e); return; }
+  if(!q) return;
+
+  var R = window.bpPwReset;
+  if(!R || typeof R.fromMail !== 'function') return;   /* слой ещё не готов */
+
+  try{
+    var ok = R.fromMail(q.email || '', q.code || '');
+    /* Сервер не задан или адрес в ссылке битый — молча ничего не
+       открываем: человек просто окажется на обычном экране входа,
+       откуда «Забыли пароль?» работает как раньше. */
+    if(!ok) E(new Error('bp-mailback: не удалось открыть восстановление'));
+  }catch(e){ E(e); }
+
+  /* Чистим адрес ПОСЛЕ открытия шторки, а не до: роутер приложения
+     дописывает адрес на своём шаге загрузки и возвращает код обратно,
+     если стереть его слишком рано. Второй заход через полсекунды —
+     на случай, если роутер тронет адрес ещё раз после нас. */
+  wipeHash();
+  setTimeout(wipeHash, 600);
+}
+
+/* Шторка живёт в слое, который объявлен выше по файлу, но её строитель
+   доступен сразу — ждём только готовности разметки. Небольшая задержка
+   даёт приложению закончить свою собственную загрузку (заставка,
+   восстановление сессии), иначе шторку перекроет экран входа. */
+function start(){ setTimeout(run, 400); }
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+else start();
+})();
+</script>
+
+
+<script id="bp-appicon">
+/* ══ Иконка приложения: настоящий логотип вместо заглушки ═════════════
+   Что было не так. В шапке стояли rel="icon" и apple-touch-icon с
+   нарисованным на скорую руку квадратом и буквами «BP» — не логотип
+   BloggerPay. А в манифесте (bp-manifest, ~42052) иконок НЕ БЫЛО ВОВСЕ,
+   поэтому предложение «Установить приложение» показывало пустой
+   placeholder браузера.
+
+   Теперь всё берётся из window.BP_LOGO — того же файла, что стоит в
+   шапке приложения и в письме.
+
+   Почему через canvas, а не ссылкой на logo.jpg: приложение живёт одним
+   файлом, и рядом с ним logo.jpg лежит не всегда (его кладут только на
+   хостинг). Логотип уже вшит в файл как BP_LOGO, поэтому перерисовываем
+   его в нужные размеры прямо в браузере.
+
+   Размеры не случайны: Chrome ставит приложение, только если в манифесте
+   есть иконка не меньше 192, а 512 он берёт для заставки при запуске.
+   Логотип 160×160 — растягиваем, это его собственная картинка, пусть и
+   слегка мягче; заглушка была куда хуже.
+
+   Отдельная иконка purpose:'maskable' — для Android. Он обрезает иконку
+   под форму лаунчера (круг, капля, квадрат со скруглением), и если
+   отдать ему картинку впритык, у логотипа отрежет углы. Поэтому для
+   maskable кладём логотип с отступом на фон приложения: обрезка съест
+   поля, а знак останется целым.                                        */
+(function(){
+'use strict';
+if(window.__bpAppIcon) return; window.__bpAppIcon = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e); }catch(_){} }
+
+var SRC = window.BP_LOGO || '';
+if(!SRC) return;                       /* логотипа нет — оставляем как было */
+
+function draw(img, size, maskable){
+  var c = document.createElement('canvas');
+  c.width = c.height = size;
+  var x = c.getContext('2d');
+  if(maskable){
+    /* Фон — цвет приложения: у логотипа своя тёмная подложка, поля
+       сливаются с ней и обрезки не видно. */
+    x.fillStyle = '#08080b';
+    x.fillRect(0, 0, size, size);
+    var pad = Math.round(size * 0.14);          /* безопасная зона Android */
+    x.drawImage(img, pad, pad, size - pad * 2, size - pad * 2);
+  } else {
+    x.drawImage(img, 0, 0, size, size);
+  }
+  return c.toDataURL('image/png');
+}
+
+function setLink(rel, href, sizes){
+  var l = document.querySelector('link[rel="' + rel + '"]');
+  if(!l){ l = document.createElement('link'); l.rel = rel; document.head.appendChild(l); }
+  l.href = href;
+  if(sizes) l.sizes = sizes;
+  l.type = 'image/png';
+}
+
+var img = new Image();
+img.onload = function(){
+  try{
+    var i192 = draw(img, 192, false);
+    var i512 = draw(img, 512, false);
+    var m512 = draw(img, 512, true);
+
+    /* Вкладка и «на экран «Домой»» у Apple */
+    setLink('icon', i192, '192x192');
+    setLink('apple-touch-icon', i192, '180x180');
+
+    /* Манифест пересобираем целиком: у прежнего не было поля icons, а
+       дописать его в уже отданный Blob нельзя. Старую ссылку убираем,
+       иначе браузер возьмёт ту, что нашёл первой. */
+    var old = document.querySelector('link[rel="manifest"]');
+    var m = {
+      name: 'BloggerPay', short_name: 'BloggerPay', start_url: '.', scope: '.',
+      display: 'standalone', orientation: 'portrait',
+      background_color: '#08080b', theme_color: '#08080b',
+      description: 'Безопасные сделки между блогерами и рекламодателями',
+      icons: [
+        { src: i192, sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: i512, sizes: '512x512', type: 'image/png', purpose: 'any' },
+        { src: m512, sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+      ]
+    };
+    var url = URL.createObjectURL(new Blob([JSON.stringify(m)], { type: 'application/manifest+json' }));
+    var l = document.createElement('link');
+    l.rel = 'manifest'; l.href = url;
+    if(old && old.parentNode) old.parentNode.removeChild(old);
+    document.head.appendChild(l);
+  }catch(e){ E(e); }
+};
+img.onerror = function(){ E(new Error('bp-appicon: логотип не загрузился')); };
+img.src = SRC;
 })();
 </script>
 
