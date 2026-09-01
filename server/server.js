@@ -565,7 +565,12 @@ function readBody(req, limit) {
     });
     req.on('end', () => {
       if (!chunks.length) return resolve({});
-      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
+      try {
+        const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        /* «null» и «строка» — валидный JSON, но маршруты ждут объект:
+           без этого body.что-нибудь бросает TypeError и плодит ложные 500. */
+        resolve(parsed !== null && typeof parsed === 'object' ? parsed : {});
+      }
       catch (e) { reject(httpError(400, 'Тело запроса — не JSON')); }
     });
     req.on('error', reject);
@@ -617,6 +622,91 @@ function rateLimit(req, key, limit, windowMs) {
   return true;
 }
 const tooOften = { status: 429, body: { error: 'Слишком часто — подождите минуту и попробуйте снова' } };
+
+/* ── Тревога в Телеграм ──────────────────────────────────────────────
+   Скрытая ошибка не должна ждать, пока владелец откроет пульт: каждая
+   новая летит сообщением админу через того же бота, что и кнопка
+   «Открыть». ADMIN_CHAT_ID — числовой id чата владельца с ботом
+   (чтобы бот мог писать первым, владелец один раз жмёт Start).
+
+   Против потопа несколько предохранителей. Одна и та же ошибка — не
+   чаще раза в 10 минут. Лимиты в час РАЗДЕЛЬНЫЕ: у ошибок с сайта свой
+   (их текст присылает кто угодно, хоть злонамеренно), у серверных —
+   свой, чтобы поток мусора с сайта не заглушил настоящую беду; тревога
+   о расхождении денег проходит всегда. И тревога никогда не
+   задерживает и не роняет сам запрос. */
+const ADMIN_CHAT_ID = String(ENV.ADMIN_CHAT_ID || '').trim();
+const TG_API_BASE = (ENV.TG_API_BASE || 'https://api.telegram.org').replace(/\/+$/, '');
+const ALERTS_ON = Boolean(BOT_TOKEN && ADMIN_CHAT_ID);
+
+const tgSeen = new Map();          /* подпись → { n, lastSent }, свежие в конце */
+const TG_CAP = { client: 15, server: 10 };   /* тревог в час на каждый кошелёк */
+const TG_REPEAT_MS = 10 * 60 * 1000;
+const tgLane = {
+  client: { sent: 0, muted: false },
+  server: { sent: 0, muted: false },
+};
+let tgHourAt = 0;
+
+function tgSendRaw(text) {
+  return fetch(TG_API_BASE + '/bot' + BOT_TOKEN + '/sendMessage', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: ADMIN_CHAT_ID,
+      text: String(text).slice(0, 3800),
+      disable_web_page_preview: true,
+    }),
+    signal: AbortSignal.timeout(8000),
+  }).then(async (r) => {
+    if (!r.ok) console.error('[тревога] Телеграм ответил ' + r.status + ': ' + (await r.text()).slice(0, 200));
+  }).catch((e) => console.error('[тревога] не отправилось: ' + ((e && e.message) || e)));
+}
+
+function tgAlert(sig, text, lane, critical) {
+  if (!ALERTS_ON) return;
+  const now = Date.now();
+  if (now - tgHourAt > 3600000) {
+    tgHourAt = now;
+    tgLane.client.sent = 0; tgLane.client.muted = false;
+    tgLane.server.sent = 0; tgLane.server.muted = false;
+  }
+  const key = lane === 'client' ? 'client' : 'server';
+  const L = tgLane[key];
+
+  const rec = tgSeen.get(sig);
+  if (rec) {
+    rec.n += 1;
+    /* Прикосновение LRU: живая ошибка уезжает в конец очереди на
+       вытеснение, чтобы при переполнении первыми уходили давно
+       замолчавшие, а не самые активные. */
+    tgSeen.delete(sig); tgSeen.set(sig, rec);
+    if (now - rec.lastSent < TG_REPEAT_MS) return;
+  }
+
+  /* Потолок проверяем ДО пометки «отправлено»: иначе ошибка, впервые
+     случившаяся в час молчания, считалась бы отправленной и была бы
+     потеряна для чата навсегда. */
+  if (!critical && L.sent >= TG_CAP[key]) {
+    if (!L.muted) {
+      L.muted = true;
+      tgSendRaw('⚠️ Тревог ' + (key === 'client' ? 'с сайта' : 'серверных')
+        + ' больше ' + TG_CAP[key] + ' за час — молчу про них до конца часа, чтобы не завалить чат.'
+        + ' Полный список: пульт оператора, раздел «Поломки».');
+    }
+    return;
+  }
+
+  if (rec) {
+    rec.lastSent = now;
+    text += '\n\n(эта ошибка повторилась, всего ' + rec.n + ' раз)';
+  } else {
+    tgSeen.set(sig, { n: 1, lastSent: now });
+    if (tgSeen.size > 500) tgSeen.delete(tgSeen.keys().next().value);
+  }
+  L.sent += 1;
+  tgSendRaw(text);
+}
 /* уборка карты, чтобы память не росла бесконечно */
 setInterval(() => {
   const now = Date.now();
@@ -1232,6 +1322,7 @@ const routes = {
   /* Приём ошибок от приложения. Без входа: ломается часто именно то,
      что мешает войти. Поэтому же ограничиваем размер и количество. */
   'POST /api/errors': async (req, body) => {
+    if (!rateLimit(req, 'err', 30, 60000)) return tooOften;
     const list = Array.isArray(body.errors) ? body.errors.slice(0, 20) : [];
     if (!list.length) return { status: 200, body: { taken: 0 } };
     const u = auth(req);
@@ -1239,14 +1330,22 @@ const routes = {
     for (const e of list) {
       const msg = String((e && e.message) || '').trim().slice(0, 300);
       if (!msg) continue;
+      const where = String((e && e.where) || '').slice(0, 120);
+      const ver = String((e && e.version) || '').slice(0, 40);
       q.insError.run(
         u ? u.id : null,
         msg,
-        String((e && e.where) || '').slice(0, 120) || null,
-        String((e && e.version) || '').slice(0, 40) || null,
+        where || null,
+        ver || null,
         String(req.headers['user-agent'] || '').slice(0, 200) || null,
       );
       taken++;
+      /* Каждая новая ошибка тут же уходит владельцу в Телеграм. */
+      tgAlert('site:' + msg.slice(0, 120) + '|' + where,
+        '🐞 Ошибка на сайте\n\n' + msg
+        + (where ? '\n\nГде: ' + where : '')
+        + (ver ? '\nВерсия: ' + ver : '')
+        + '\nКто: ' + (u ? (u.name || 'без имени') + ' (id ' + u.id + ')' : 'гость (не вошёл)'), 'client');
     }
     /* Журнал ошибок — не деньги, его можно и нужно подрезать, иначе
        одна зациклившаяся вкладка забьёт базу. */
@@ -1561,6 +1660,9 @@ const server = http.createServer(async (req, res) => {
   } catch (e) {
     if (e && e.httpStatus) return send(res, e.httpStatus, { error: e.message });
     console.error('[http]', e);
+    tgAlert('http:' + url.pathname + ':' + String((e && e.message) || e).slice(0, 120),
+      '💥 Сервер споткнулся\n\nЗапрос: ' + req.method + ' ' + url.pathname
+      + '\n' + String((e && (e.stack || e.message)) || e).slice(0, 700));
     send(res, 500, { error: 'Внутренняя ошибка' });
   }
 });
@@ -1568,4 +1670,50 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log('[BloggerPay] касса слушает http://127.0.0.1:' + PORT
     + '  база: ' + DB_PATH);
+  console.log(ALERTS_ON
+    ? '[BloggerPay] тревога: ошибки уходят в Телеграм, чат ' + ADMIN_CHAT_ID
+    : '[BloggerPay] тревога в Телеграм выключена (нужны BOT_TOKEN и ADMIN_CHAT_ID в .env)');
 });
+
+/* ── Падения процесса ────────────────────────────────────────────────
+   Самая скрытая ошибка из всех — когда касса умерла, а сайт-статика
+   жива: всё выглядит работающим, только деньги не ходят. Перед смертью
+   успеваем крикнуть в Телеграм и падаем честно, чтобы менеджер
+   процессов (pm2, systemd) перезапустил. */
+function dieLoud(tag, e) {
+  console.error('[' + tag + ']', e);
+  const bye = () => process.exit(1);
+  if (!ALERTS_ON) return bye();
+  const t = setTimeout(bye, 5000);
+  tgSendRaw('💀 СЕРВЕР УПАЛ (' + tag + ') и будет перезапущен\n\n'
+    + String((e && (e.stack || e.message)) || e).slice(0, 700))
+    .finally(() => { clearTimeout(t); bye(); });
+}
+/* Node без обработчика сам роняет процесс и на исключении, и на
+   оборванном обещании. Сохраняем это честное поведение — денежному
+   серверу нельзя жить в неопределённом состоянии — но перед смертью
+   успеваем отправить тревогу. */
+process.on('unhandledRejection', (e) => dieLoud('обещание без catch', e));
+process.on('uncaughtException', (e) => dieLoud('исключение', e));
+
+/* ── Сторож денег ────────────────────────────────────────────────────
+   Та же сверка, что в пульте оператора, но сама, раз в 10 минут:
+   всё внесённое либо лежит в системе, либо выплачено наружу. Если
+   равенство разошлось — это тихая ошибка страшнее любого исключения,
+   и о ней надо узнать раньше, чем позвонит пользователь. */
+function moneyWatch() {
+  try {
+    const t = q.totals.get();
+    const gap = (t.available + t.hold) - (q.toppedUp.get().s - q.paidOut.get().s);
+    if (gap !== 0) {
+      tgAlert('money:' + gap,
+        '🚨 ДЕНЬГИ НЕ СХОДЯТСЯ\n\nРасхождение сверки: ' + gap + ' ₽.'
+        + '\nОткройте пульт оператора и приостановите выплаты, пока не найдена причина.',
+        'server', true);
+    }
+  } catch (e) { console.error('[сторож денег]', (e && e.message) || e); }
+}
+if (ALERTS_ON) {
+  setTimeout(moneyWatch, 15000).unref();
+  setInterval(moneyWatch, 10 * 60 * 1000).unref();
+}
