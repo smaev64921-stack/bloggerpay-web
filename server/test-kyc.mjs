@@ -1,4 +1,4 @@
-/* Проверка личности перед выводом: заявка с фото, решения оператора.
+/* Проверка личности перед выводом: заявка с фото паспорта и селфи, решения оператора.
    Проверяем: отправку, статусы, переотправку, повтор после отказа,
    защиту от кривых данных и от решения по уже решённой заявке.
    Запуск: node test-kyc.mjs (сервер должен работать). */
@@ -25,6 +25,8 @@ async function api(method, path, body, token, admin) {
 
 /* однопиксельный jpeg — роль фото паспорта в тесте */
 const PHOTO = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==';
+/* однопиксельный png — роль селфи с паспортом */
+const SELFIE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 
 const tag = Date.now();
 console.log('\nВерификация личности перед выводом');
@@ -37,17 +39,19 @@ const s0 = await api('GET', '/api/kyc/status', null, T1);
 ok(s0.status === 200 && s0.body.status === 'none', 'до заявки статус none', s0.body);
 
 /* кривые данные не проходят */
-const bad1 = await api('POST', '/api/kyc/submit', { name: 'Иван', birth: '01.01.1990', photo: PHOTO }, T1);
+const bad1 = await api('POST', '/api/kyc/submit', { name: 'Иван', birth: '01.01.1990', photo: PHOTO, selfie: SELFIE }, T1);
 ok(bad1.status === 400, 'одно слово вместо ФИО отклонено', bad1.body);
-const bad2 = await api('POST', '/api/kyc/submit', { name: 'Иванов Иван', birth: '1990-01-01', photo: PHOTO }, T1);
+const bad2 = await api('POST', '/api/kyc/submit', { name: 'Иванов Иван', birth: '1990-01-01', photo: PHOTO, selfie: SELFIE }, T1);
 ok(bad2.status === 400, 'дата не в формате ДД.ММ.ГГГГ отклонена', bad2.body);
-const bad3 = await api('POST', '/api/kyc/submit', { name: 'Иванов Иван', birth: '01.01.1990', photo: 'привет' }, T1);
+const bad3 = await api('POST', '/api/kyc/submit', { name: 'Иванов Иван', birth: '01.01.1990', photo: 'привет', selfie: SELFIE }, T1);
 ok(bad3.status === 400, 'не-картинка вместо фото отклонена', bad3.body);
-const bad4 = await api('POST', '/api/kyc/submit', { name: 'Иванов Иван', birth: '01.01.1990', photo: PHOTO }, null);
+const bad4 = await api('POST', '/api/kyc/submit', { name: 'Иванов Иван', birth: '01.01.1990', photo: PHOTO, selfie: SELFIE }, null);
 ok(bad4.status === 401, 'без входа заявку не подать', bad4.body);
+const bad5 = await api('POST', '/api/kyc/submit', { name: 'Иванов Иван', birth: '01.01.1990', photo: PHOTO }, T1);
+ok(bad5.status === 400 && /селфи/i.test(bad5.body.error || ''), 'без селфи заявка не принята', bad5.body);
 
 /* нормальная заявка встаёт в очередь */
-const sub = await api('POST', '/api/kyc/submit', { name: 'Иванов Иван Иванович', birth: '01.01.1990', photo: PHOTO }, T1);
+const sub = await api('POST', '/api/kyc/submit', { name: 'Иванов Иван Иванович', birth: '01.01.1990', photo: PHOTO, selfie: SELFIE }, T1);
 ok(sub.status === 200 && sub.body.status === 'queued', 'заявка принята в очередь', sub.body);
 const reqId = sub.body.requestId;
 
@@ -55,16 +59,18 @@ const s1 = await api('GET', '/api/kyc/status', null, T1);
 ok(s1.body.status === 'queued', 'статус queued', s1.body);
 
 /* переотправка до решения обновляет ту же заявку, а не плодит новые */
-const re = await api('POST', '/api/kyc/submit', { name: 'Иванов Пётр Иванович', birth: '02.02.1992', photo: PHOTO }, T1);
+const re = await api('POST', '/api/kyc/submit', { name: 'Иванов Пётр Иванович', birth: '02.02.1992', photo: PHOTO, selfie: SELFIE }, T1);
 ok(re.status === 200 && re.body.requestId === reqId, 'переотправка обновила ту же заявку', re.body);
 
 /* оператор видит заявку; фото — отдельным запросом, не в списке */
 const list = await api('GET', '/api/admin/kyc?status=queued', null, null, true);
 const mine = (list.body.rows || []).find((r) => r.id === reqId);
-ok(!!mine && mine.name === 'Иванов Пётр Иванович' && mine.photo === undefined && mine.has_photo === 1,
-   'оператор видит заявку, фото в списке нет', mine && { name: mine.name, has_photo: mine.has_photo });
+ok(!!mine && mine.name === 'Иванов Пётр Иванович' && mine.photo === undefined && mine.selfie === undefined && mine.has_photo === 1 && mine.has_selfie === 1,
+   'оператор видит заявку с отметками о двух фото, самих фото в списке нет', mine && { name: mine.name, has_photo: mine.has_photo });
 const ph = await api('GET', '/api/admin/kyc/photo?id=' + reqId, null, null, true);
 ok(ph.status === 200 && ph.body.photo === PHOTO, 'фото отдаётся по одному', { len: (ph.body.photo || '').length });
+const sf = await api('GET', '/api/admin/kyc/photo?id=' + reqId + '&kind=selfie', null, null, true);
+ok(sf.status === 200 && sf.body.photo === SELFIE && sf.body.kind === 'selfie', 'селфи отдаётся отдельным запросом', sf.body && { kind: sf.body.kind, len: (sf.body.photo || '').length });
 const noKey = await api('GET', '/api/admin/kyc', null, null, false);
 ok(noKey.status === 403, 'без ключа оператора списка нет', noKey.body);
 
@@ -79,18 +85,18 @@ const s2 = await api('GET', '/api/kyc/status', null, T1);
 ok(s2.body.status === 'approved', 'человек видит approved', s2.body);
 const twice = await api('POST', '/api/admin/kyc/approve', { requestId: reqId }, null, true);
 ok(twice.status === 409, 'повторное решение по той же заявке отклонено', twice.body);
-const again = await api('POST', '/api/kyc/submit', { name: 'Иванов Пётр Иванович', birth: '02.02.1992', photo: PHOTO }, T1);
+const again = await api('POST', '/api/kyc/submit', { name: 'Иванов Пётр Иванович', birth: '02.02.1992', photo: PHOTO, selfie: SELFIE }, T1);
 ok(again.status === 200 && again.body.status === 'approved' && again.body.already, 'после подтверждения новая заявка не нужна', again.body);
 
 /* отказ и повторная попытка */
 const u2 = await api('POST', '/api/register', { email: `k2${tag}@t.ru`, name: 'Отклонённый', role: 'blogger', password: 'парольБ12345' });
 const T2 = u2.body.token;
-const sub2 = await api('POST', '/api/kyc/submit', { name: 'Петров Пётр Петрович', birth: '03.03.1993', photo: PHOTO }, T2);
+const sub2 = await api('POST', '/api/kyc/submit', { name: 'Петров Пётр Петрович', birth: '03.03.1993', photo: PHOTO, selfie: SELFIE }, T2);
 const rej = await api('POST', '/api/admin/kyc/reject', { requestId: sub2.body.requestId, note: 'Фото не читается' }, null, true);
 ok(rej.status === 200 && rej.body.status === 'rejected', 'оператор отклонил', rej.body);
 const s3 = await api('GET', '/api/kyc/status', null, T2);
 ok(s3.body.status === 'rejected' && s3.body.note === 'Фото не читается', 'человек видит отказ с причиной', s3.body);
-const sub3 = await api('POST', '/api/kyc/submit', { name: 'Петров Пётр Петрович', birth: '03.03.1993', photo: PHOTO }, T2);
+const sub3 = await api('POST', '/api/kyc/submit', { name: 'Петров Пётр Петрович', birth: '03.03.1993', photo: PHOTO, selfie: SELFIE }, T2);
 ok(sub3.status === 200 && sub3.body.status === 'queued' && sub3.body.requestId !== sub2.body.requestId,
    'после отказа новая заявка встаёт в очередь', sub3.body);
 

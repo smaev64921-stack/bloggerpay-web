@@ -309,6 +309,7 @@ CREATE TABLE IF NOT EXISTS kyc_requests (
   name        TEXT NOT NULL,
   birth       TEXT NOT NULL,
   photo       TEXT NOT NULL,
+  selfie      TEXT,
   status      TEXT NOT NULL CHECK(status IN ('queued','approved','rejected')),
   note        TEXT,
   created_at  TEXT NOT NULL DEFAULT (datetime('now')),
@@ -326,6 +327,9 @@ try { db.exec('ALTER TABLE deals ADD COLUMN paid INTEGER NOT NULL DEFAULT 0'); }
 catch (e) { /* уже есть — это нормально */ }
 
 /* Телеграм-id: по нему узнаём человека, вошедшего из мини-аппа. */
+/* Селфи с паспортом (02.09.2026): второй снимок в заявке на проверку
+   личности. Базы, созданные раньше, получают колонку здесь. */
+try { db.exec('ALTER TABLE kyc_requests ADD COLUMN selfie TEXT'); } catch (e) { /* уже есть */ }
 try { db.exec('ALTER TABLE users ADD COLUMN tg_id TEXT'); }
 catch (e) { /* уже есть */ }
 try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_tg ON users(tg_id) WHERE tg_id IS NOT NULL'); }
@@ -407,21 +411,22 @@ const q = {
   insPay: db.prepare('INSERT INTO payments (id, user_id, amount, status) VALUES (?,?,?,?)'),
   payById: db.prepare('SELECT * FROM payments WHERE id = ?'),
   updPay: db.prepare(`UPDATE payments SET status = ?, updated_at = datetime('now') WHERE id = ?`),
-  insKyc: db.prepare('INSERT INTO kyc_requests (user_id, name, birth, photo, status) VALUES (?,?,?,?,?)'),
+  insKyc: db.prepare('INSERT INTO kyc_requests (user_id, name, birth, photo, selfie, status) VALUES (?,?,?,?,?,?)'),
   kycById: db.prepare('SELECT * FROM kyc_requests WHERE id = ?'),
   myLastKyc: db.prepare('SELECT * FROM kyc_requests WHERE user_id = ? ORDER BY id DESC LIMIT 1'),
-  updKycData: db.prepare(`UPDATE kyc_requests SET name = ?, birth = ?, photo = ?, note = NULL,
+  updKycData: db.prepare(`UPDATE kyc_requests SET name = ?, birth = ?, photo = ?, selfie = ?, note = NULL,
     updated_at = datetime('now') WHERE id = ?`),
   updKyc: db.prepare(`UPDATE kyc_requests SET status = ?, note = ?, updated_at = datetime('now') WHERE id = ?`),
   /* Список БЕЗ фото: 60 паспортов base64 — это десятки мегабайт на каждый
      автообмен консоли. Фото оператор берёт по одному, kycPhoto. */
   kycList: db.prepare(`SELECT k.id, k.user_id, k.name, k.birth, k.status, k.note,
       k.created_at, k.updated_at, u.email, u.name AS user_name,
-      CASE WHEN length(k.photo) > 0 THEN 1 ELSE 0 END AS has_photo
+      CASE WHEN length(k.photo) > 0 THEN 1 ELSE 0 END AS has_photo,
+      CASE WHEN length(k.selfie) > 0 THEN 1 ELSE 0 END AS has_selfie
     FROM kyc_requests k JOIN users u ON u.id = k.user_id
     WHERE (? = '' OR k.status = ?)
     ORDER BY CASE k.status WHEN 'queued' THEN 0 ELSE 1 END, k.id DESC LIMIT 60`),
-  kycPhoto: db.prepare('SELECT id, photo, updated_at FROM kyc_requests WHERE id = ?'),
+  kycPhoto: db.prepare('SELECT id, photo, selfie, updated_at FROM kyc_requests WHERE id = ?'),
   kycQueuedCount: db.prepare(`SELECT COUNT(*) AS n FROM kyc_requests WHERE status = 'queued'`),
 };
 
@@ -1668,14 +1673,21 @@ const routes = {
     const name = String(body.name || '').trim().slice(0, 120);
     const birth = String(body.birth || '').trim().slice(0, 10);
     const photo = String(body.photo || '');
+    const selfie = String(body.selfie || '');
     if (name.split(/\s+/).filter(Boolean).length < 2) {
       return { status: 400, body: { error: 'Укажите фамилию и имя полностью' } };
     }
     if (!/^\d{2}\.\d{2}\.\d{4}$/.test(birth)) {
       return { status: 400, body: { error: 'Дата рождения — в формате ДД.ММ.ГГГГ' } };
     }
-    if (!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(photo) || photo.length > 700 * 1024) {
+    const IMG = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
+    if (!IMG.test(photo) || photo.length > 700 * 1024) {
       return { status: 400, body: { error: 'Нужно фото документа (jpeg/png/webp, до 700 КБ)' } };
+    }
+    /* Селфи с паспортом в руках: оператор сверяет лицо с фото в документе —
+       иначе вывод открывался бы по чужому отсканированному паспорту. */
+    if (!IMG.test(selfie) || selfie.length > 700 * 1024) {
+      return { status: 400, body: { error: 'Нужно селфи с паспортом в руках (jpeg/png/webp, до 700 КБ)' } };
     }
     const last = q.myLastKyc.get(u.id);
     if (last && last.status === 'approved') {
@@ -1683,10 +1695,10 @@ const routes = {
     }
     if (last && last.status === 'queued') {
       /* переотправка, пока оператор не смотрел — просто обновляем заявку */
-      q.updKycData.run(name, birth, photo, last.id);
+      q.updKycData.run(name, birth, photo, selfie, last.id);
       return { status: 200, body: { ok: true, status: 'queued', requestId: last.id } };
     }
-    const info = q.insKyc.run(u.id, name, birth, photo, 'queued');
+    const info = q.insKyc.run(u.id, name, birth, photo, selfie, 'queued');
     return { status: 200, body: { ok: true, status: 'queued', requestId: Number(info.lastInsertRowid) } };
   },
 
@@ -1933,7 +1945,8 @@ const routes = {
     if (!isAdmin(req)) return { status: 403, body: { error: 'Нужен X-Admin-Key' } };
     const k = q.kycPhoto.get(Number(url.searchParams.get('id')));
     if (!k) return { status: 404, body: { error: 'Заявка не найдена' } };
-    return { status: 200, body: { id: k.id, photo: k.photo, updated_at: k.updated_at } };
+    const kind = url.searchParams.get('kind') === 'selfie' ? 'selfie' : 'photo';
+    return { status: 200, body: { id: k.id, kind, photo: k[kind] || '', updated_at: k.updated_at } };
   },
 
   /* seenAt — updated_at заявки на момент, когда оператор её разглядывал.
@@ -2239,12 +2252,12 @@ const handler = async (req, res) => {
   const handler = routes[req.method + ' ' + url.pathname];
   if (!handler) return send(res, 404, { error: 'Нет такого пути' });
   try {
-    /* Фото паспорта в /api/kyc/submit в общий лимит 64 КБ не влезает.
+    /* Фото паспорта и селфи в /api/kyc/submit в общий лимит 64 КБ не влезают.
        Но большой буфер — только для вошедших: токен проверяем ДО чтения
-       тела, чтобы аноним не заставлял сервер глотать по 800 КБ. */
+       тела, чтобы аноним не заставлял сервер глотать по полтора мегабайта. */
     const isKycSubmit = url.pathname === '/api/kyc/submit';
     if (isKycSubmit && !auth(req)) return send(res, 401, { error: 'Нужен вход' });
-    const maxBody = isKycSubmit ? 800 * 1024 : undefined;
+    const maxBody = isKycSubmit ? 1500 * 1024 : undefined;
     const body = req.method === 'POST' ? await readBody(req, maxBody) : {};
     const out = await handler(req, body, url);
     send(res, out.status, out.body);

@@ -185,23 +185,23 @@ function renderCodeEmail(opts) {
 
   /* Знак отправителя. Картинка лежит на хостинге; на подложку ставим тот
      же синий, что и в приложении — пока картинка не загрузилась (или её
-     запретил клиент), человек видит фирменный квадрат с буквой, а не
+     запретил клиент), человек видит фирменный круг с буквой, а не
      сломанную иконку. */
   const logoCell = logoUrl
     ? '<td valign="middle" width="34" style="width:34px;height:34px;background:' + C.acc
-      + ';background-image:linear-gradient(135deg,' + C.acc + ',' + C.acc2 + ');border-radius:9px;'
+      + ';background-image:linear-gradient(135deg,' + C.acc + ',' + C.acc2 + ');border-radius:50%;'
       + 'text-align:center;mso-line-height-rule:exactly;line-height:34px;">'
       /* alt пустой намеренно. Слово «BloggerPay» стоит текстом сразу
          справа, поэтому картинка здесь — украшение, а не сообщение:
          с подписью читалка озвучила бы название дважды. Заодно это
          лучший вид при отказе — если картинку не отдали или человек
-         запретил показ, остаётся чистый фирменный квадрат, а не значок
+         запретил показ, остаётся чистый фирменный круг, а не значок
          сломанного изображения с текстом поверх. */
       + '<img src="' + esc(logoUrl) + '" width="34" height="34" alt="" role="presentation"'
-      + ' style="width:34px;height:34px;display:block;border:0;border-radius:9px;outline:none;text-decoration:none;">'
+      + ' style="width:34px;height:34px;display:block;border:0;border-radius:50%;outline:none;text-decoration:none;">'
       + '</td>'
     : '<td valign="middle" width="34" style="width:34px;height:34px;background:' + C.acc
-      + ';background-image:linear-gradient(135deg,' + C.acc + ',' + C.acc2 + ');border-radius:9px;'
+      + ';background-image:linear-gradient(135deg,' + C.acc + ',' + C.acc2 + ');border-radius:50%;'
       + 'text-align:center;font-family:\'Manrope\',-apple-system,\'Segoe UI\',Arial,sans-serif;'
       + 'font-size:19px;font-weight:800;color:#ffffff;mso-line-height-rule:exactly;line-height:34px;">Б</td>';
 

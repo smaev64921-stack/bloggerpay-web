@@ -111,7 +111,7 @@ console.log('\n5. Вывод: очередь → оператор');
 const KYC_PHOTO = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==';
 const wdEarly = await withdraw(20000, 'карта', BLG);
 ok(wdEarly.status === 403, 'вывод до проверки личности отклонён', wdEarly.body);
-const kycSub = await api('POST', '/api/kyc/submit', { name: 'Блогер Тестовый Сценарный', birth: '01.01.1990', photo: KYC_PHOTO }, BLG);
+const kycSub = await api('POST', '/api/kyc/submit', { name: 'Блогер Тестовый Сценарный', birth: '01.01.1990', photo: KYC_PHOTO, selfie: KYC_PHOTO }, BLG);
 await api('POST', '/api/admin/kyc/approve', { requestId: kycSub.body.requestId }, null, true);
 const wd = await withdraw(20000, 'карта 2200 **** 1234', BLG);
 ok(wd.status === 200 && wd.body.fee === 800 && wd.body.net === 19200, 'заявка: комиссия 4% = 800, к выплате 19 200', wd.body);

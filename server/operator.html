@@ -161,9 +161,11 @@
     Решение необратимо, поэтому сначала разберитесь в переписке сторон.
   </p>
   <p class="note" id="noteKyc" hidden>
-    Люди, которые хотят выводить деньги, присылают сюда анкету и фото разворота
-    паспорта. Порядок: откройте фото, сверьте ФИО и дату рождения с анкетой,
-    затем <b>подтвердите</b> или <b>отклоните</b> с причиной — её человек увидит
+    Люди, которые хотят выводить деньги, присылают сюда анкету, фото разворота
+    паспорта и селфи с паспортом в руках. Порядок: откройте паспорт, сверьте
+    ФИО и дату рождения с анкетой; откройте селфи и сравните лицо с фото в
+    документе — паспорт должен быть в руках у того, кто на снимке. Затем
+    <b>подтвердите</b> или <b>отклоните</b> с причиной — её человек увидит
     в приложении и сможет прислать документы заново.<br><br>
     Пока личность не подтверждена, кнопка вывода у человека закрыта.
   </p>
@@ -348,7 +350,7 @@ function paintKyc(rows){
     return;
   }
   var html = '<div class="scroll"><table><thead><tr>'
-    + '<th>Кто в приложении</th><th>Анкета</th><th>Документ</th>'
+    + '<th>Кто в приложении</th><th>Анкета</th><th>Документ и селфи</th>'
     + '<th>Статус</th><th>Прислана</th><th></th>'
     + '</tr></thead><tbody>';
   rows.forEach(function(k){
@@ -357,9 +359,12 @@ function paintKyc(rows){
       + '<td class="who">' + esc(k.name) + '<span>дата рождения: ' + esc(k.birth) + '</span></td>'
       /* фото не грузится вместе со списком (60 паспортов — десятки МБ),
          а подтягивается по клику */
-      + '<td>' + (k.has_photo
-          ? '<button class="btn ghost sm" data-kyc-photo="' + k.id + '">Открыть фото</button>'
-          : '<span style="color:var(--t3);font-size:var(--fs-sm)">нет фото</span>') + '</td>'
+      + '<td><div class="acts">' + (k.has_photo
+          ? '<button class="btn ghost sm" data-kyc-photo="' + k.id + '">Паспорт</button>'
+          : '<span style="color:var(--t3);font-size:var(--fs-sm)">нет фото</span>')
+        + (k.has_selfie
+          ? '<button class="btn ghost sm" data-kyc-photo="' + k.id + '" data-kind="selfie">Селфи</button>'
+          : '<span style="color:var(--t3);font-size:var(--fs-sm)">без селфи</span>') + '</div></td>'
       + '<td><span class="st ' + esc(k.status) + '">' + kycStatusRu(k.status) + '</span>'
       + (k.note ? '<div style="color:var(--t3);font-size:var(--fs-sm);margin-top:4px">' + esc(k.note) + '</div>' : '')
       + '</td>'
@@ -523,7 +528,7 @@ document.addEventListener('click', function(e){
 
   if(t.dataset.kycPhoto){
     t.disabled = true;
-    api('GET', '/api/admin/kyc/photo?id=' + Number(t.dataset.kycPhoto))
+    api('GET', '/api/admin/kyc/photo?id=' + Number(t.dataset.kycPhoto) + (t.dataset.kind === 'selfie' ? '&kind=selfie' : ''))
       .then(function(j){ t.disabled = false; if(j.photo) openZoom(j.photo); else say('Фото не найдено', true); })
       .catch(function(err){ say(err.message, true); t.disabled = false; });
     return;
