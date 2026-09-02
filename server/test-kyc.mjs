@@ -104,7 +104,15 @@ await api('POST', '/api/topup', { amount: 5000, opKey: randomUUID() }, T2);
 const wdNo = await api('POST', '/api/withdraw', { amount: 1000, requisites: 'карта 0000', opKey: randomUUID() }, T2);
 ok(wdNo.status === 403, 'вывод без подтверждённой личности отклонён сервером', wdNo.body);
 await api('POST', '/api/admin/kyc/approve', { requestId: sub3.body.requestId }, null, true);
-const wdYes = await api('POST', '/api/withdraw', { amount: 1000, requisites: 'карта 0000', opKey: randomUUID() }, T2);
+/* Вывод двухшаговый: первый запрос шлёт код и не двигает деньги.
+   Здесь проверяется гейт KYC, а не почта, поэтому код берём из ответа
+   (сервер для прогона поднят с MAIL_DEBUG=1). Если почта не настроена,
+   сервер пропускает второй фактор сам и заявка создаётся сразу. */
+let wdYes = await api('POST', '/api/withdraw', { amount: 1000, requisites: 'карта 0000', opKey: randomUUID() }, T2);
+if (wdYes.body && wdYes.body.needCode && wdYes.body.devCode) {
+  wdYes = await api('POST', '/api/withdraw',
+    { amount: 1000, requisites: 'карта 0000', code: wdYes.body.devCode, opKey: randomUUID() }, T2);
+}
 ok(wdYes.status === 200 && wdYes.body.status === 'queued', 'после подтверждения вывод проходит', wdYes.body);
 
 console.log(`\nИтого: ${passed} ok, ${failed} fail\n`);

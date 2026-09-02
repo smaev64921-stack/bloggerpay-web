@@ -56,7 +56,7 @@ try {
   console.error('');
   process.exit(1);
 }
-const { sendCodeEmail, reachableOutside } = require('./mail');
+const { sendCodeEmail, reachableOutside, mailConfigured } = require('./mail');
 
 /* ── Настройки из .env ─────────────────────────────────────────────── */
 
@@ -962,6 +962,77 @@ function pwVerify(email, code, consume) {
   if (consume) { rec.hash = null; rec.expires = 0; rec.attempts = 0; }
   return { ok: true };
 }
+/* ── Второй фактор на выводе ────────────────────────────────────────
+   Вывод — единственное место, где деньги уходят наружу, и до сих пор
+   его защищал только сессионный токен: кто им завладел, тот выводил на
+   свои реквизиты без единой преграды. Гейт KYC тут не помогает — он
+   проверяет ЛИЧНОСТЬ ХОЗЯИНА, а не того, кто сейчас за клавиатурой.
+
+   Теперь заявка проходит в два шага: первый запрос ничего не двигает,
+   а высылает код на почту; деньги трогает только второй, с кодом.
+
+   Код привязан к СУММЕ И РЕКВИЗИТАМ: иначе можно было бы запросить код
+   на сто рублей себе, а подтвердить им сто тысяч на чужую карту. */
+const WD_TTL_MS = 10 * 60 * 1000;
+const WD_MAX_ATTEMPTS = 5;
+const wdCodes = new Map();   /* userId → { hash, expires, attempts, sig } */
+
+/* Отпечаток заявки: по нему сверяем, что подтверждают именно то, на что
+   просили код. Сумма и реквизиты — всё, что определяет, куда уйдут деньги. */
+/* Показываем, КУДА ушёл код, но не весь адрес: если заявку создал не
+   хозяин, полный адрес в ответе подсказал бы вору, куда ломиться. */
+function maskEmail(e) {
+  const s = String(e || '');
+  const at = s.indexOf('@');
+  if (at < 1) return '';
+  const name = s.slice(0, at), dom = s.slice(at);
+  if (name.length <= 2) return name[0] + '***' + dom;
+  return name.slice(0, 2) + '***' + dom;
+}
+function wdSig(amount, requisites) {
+  return crypto.createHmac('sha256', PW_SECRET)
+    .update(String(amount) + '|' + String(requisites)).digest('hex');
+}
+function wdIssue(userId, amount, requisites) {
+  const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+  wdCodes.set(userId, {
+    hash: crypto.createHmac('sha256', PW_SECRET).update(userId + '|' + code).digest('hex'),
+    expires: Date.now() + WD_TTL_MS,
+    attempts: 0,
+    sig: wdSig(amount, requisites),
+  });
+  return code;
+}
+/* ПРОВЕРЯЕТ, НО НЕ ГАСИТ. Гасить код здесь нельзя: после проверки заявка
+   может не пройти дальше (например, кривой ключ операции), деньги не
+   сдвинутся — а код уже сгорит, и человеку придётся запрашивать новый
+   без всякой вины. Гасим отдельно, wdBurn, и только после успеха. */
+function wdCheck(userId, code, amount, requisites) {
+  const rec = wdCodes.get(userId);
+  if (!rec || Date.now() > rec.expires) return { ok: false, why: 'Код истёк — запросите вывод заново' };
+  if (rec.attempts >= WD_MAX_ATTEMPTS) {
+    wdCodes.delete(userId);
+    return { ok: false, why: 'Слишком много попыток — запросите вывод заново' };
+  }
+  /* Сумму и реквизиты сверяем ДО кода: если подменили заявку, дело не в
+     коде, и подсказывать «неверный код» было бы ложью. */
+  if (rec.sig !== wdSig(amount, requisites)) {
+    return { ok: false, why: 'Заявка изменилась — запросите код заново' };
+  }
+  const mine = crypto.createHmac('sha256', PW_SECRET)
+    .update(userId + '|' + String(code)).digest('hex');
+  if (!crypto.timingSafeEqual(Buffer.from(rec.hash, 'hex'), Buffer.from(mine, 'hex'))) {
+    rec.attempts += 1;
+    return { ok: false, why: 'Неверный код. Осталось попыток: ' + Math.max(0, WD_MAX_ATTEMPTS - rec.attempts) };
+  }
+  return { ok: true };
+}
+function wdBurn(userId) { wdCodes.delete(userId); }
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, r] of wdCodes) if (now > r.expires) wdCodes.delete(k);
+}, 5 * 60 * 1000).unref();
+
 function pwReason(reason, left) {
   if (reason === 'expired') return 'Код истёк — запросите новый';
   if (reason === 'locked') return 'Слишком много попыток — запросите новый код';
@@ -1507,13 +1578,55 @@ const routes = {
     if (!requisites) return { status: 400, body: { error: 'Укажите реквизиты' } };
     const fee = Math.round(amount * FEE_PCT / 100);
     const net = amount - fee;
-    return moneyOp(String(body.opKey || ''), u.id, 'withdraw', (add) => {
+
+    /* ── Второй фактор ──
+       Без кода первый запрос НИЧЕГО НЕ ДВИГАЕТ: только шлёт код на почту.
+       Деньги трогает лишь повторный запрос, с кодом.
+
+       Если почта не настроена — пропускаем проверку, а не запираем деньги.
+       Запертый вывод хуже: человек не может забрать своё, и виноват в этом
+       не он. О пропуске громко сообщаем владельцу. */
+    const code = String(body.code || '').replace(/\D/g, '');
+    if (mailConfigured()) {
+      if (!code) {
+        const fresh = wdIssue(u.id, amount, requisites);
+        const r = await sendCodeEmail({ to: u.email, code: fresh, kind: 'withdraw', minutes: 10 });
+        /* Письмо не ушло — код гасим и денег не трогаем. Оставить заявку
+           «ждущей кода», которого человек не получит, значит запереть его
+           деньги молча. В отладке письма нет по определению — там не беда. */
+        if (!r.ok && !r.dryRun && !MAIL_DEBUG) {
+          wdCodes.delete(u.id);
+          return { status: 502, body: { error: 'Не удалось отправить код на почту. Попробуйте позже.' } };
+        }
+        const out = { needCode: true, sentTo: maskEmail(u.email), amount, fee, net };
+        /* Тот же отладочный режим, что и у восстановления пароля: код
+           возвращается в ответе, чтобы проверять поток без живой почты.
+           На бою MAIL_DEBUG обязан быть выключен — сервер про это кричит
+           при запуске. */
+        if (MAIL_DEBUG) out.devCode = fresh;
+        return { status: 200, body: out };
+      }
+      const chk = wdCheck(u.id, code, amount, requisites);
+      if (!chk.ok) return { status: 400, body: { error: chk.why, needCode: true } };
+    } else {
+      tgAlert('wd:no2fa', '⚠️ Вывод без второго фактора\n\nПочта не настроена'
+        + ' (RESEND_API_KEY пуст), поэтому заявка на вывод прошла без кода'
+        + ' подтверждения. Настройте почту — иначе украденная сессия выводит деньги'
+        + ' без единой преграды.', 'server');
+    }
+
+    const done = await moneyOp(String(body.opKey || ''), u.id, 'withdraw', (add) => {
       add(u.id, 'available', -amount, 'withdraw', 'заявка на вывод');
       add(u.id, 'hold', amount, 'withdraw', 'заявка на вывод');
       const info = q.insWd.run(u.id, amount, fee, net, requisites, 'queued');
       const id = Number(info.lastInsertRowid);
       return { ok: true, withdrawalId: id, amount, fee, net, status: 'queued' };
     });
+    /* Код гасим ТОЛЬКО когда заявка действительно создана. Иначе любая
+       осечка ниже по пути сжигала бы код, и человек шёл за новым, ничего
+       не сделав не так. */
+    if (done && done.status === 200) wdBurn(u.id);
+    return done;
   },
 
   /* Отмена своей заявки — только пока оператор её не взял. */

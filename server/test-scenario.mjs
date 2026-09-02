@@ -25,6 +25,22 @@ async function api(method, path, body, token, admin) {
   return { status: res.status, body: await res.json() };
 }
 
+
+/* Вывод теперь двухшаговый: первый запрос не двигает деньги, а шлёт код
+   на почту. Чтобы сценарий проверял money-контур, а не почту, сервер для
+   прогона поднимают с MAIL_DEBUG=1 — тогда код приходит прямо в ответе.
+   Если почта не настроена вовсе, второй фактор пропускается сервером
+   сам, и первый же запрос создаёт заявку — helper это тоже переживёт. */
+async function withdraw(amount, requisites, token) {
+  const first = await api('POST', '/api/withdraw', { amount, requisites, opKey: randomUUID() }, token);
+  if (!(first.body && first.body.needCode)) return first;
+  if (!first.body.devCode) {
+    throw new Error('Вывод требует код, но сервер его не показал. Поднимите сервер с MAIL_DEBUG=1.');
+  }
+  return api('POST', '/api/withdraw',
+    { amount, requisites, code: first.body.devCode, opKey: randomUUID() }, token);
+}
+
 const tag = Date.now();
 
 /* База общая для всех прогонов, поэтому сверяем НЕ абсолютные суммы, а
@@ -93,14 +109,14 @@ ok(bAdv.body.available === 20000 && bAdv.body.hold === 0, 'после возвр
 console.log('\n5. Вывод: очередь → оператор');
 /* с v100 вывод открыт только после проверки личности оператором */
 const KYC_PHOTO = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==';
-const wdEarly = await api('POST', '/api/withdraw', { amount: 20000, requisites: 'карта', opKey: randomUUID() }, BLG);
+const wdEarly = await withdraw(20000, 'карта', BLG);
 ok(wdEarly.status === 403, 'вывод до проверки личности отклонён', wdEarly.body);
 const kycSub = await api('POST', '/api/kyc/submit', { name: 'Блогер Тестовый Сценарный', birth: '01.01.1990', photo: KYC_PHOTO }, BLG);
 await api('POST', '/api/admin/kyc/approve', { requestId: kycSub.body.requestId }, null, true);
-const wd = await api('POST', '/api/withdraw', { amount: 20000, requisites: 'карта 2200 **** 1234', opKey: randomUUID() }, BLG);
+const wd = await withdraw(20000, 'карта 2200 **** 1234', BLG);
 ok(wd.status === 200 && wd.body.fee === 800 && wd.body.net === 19200, 'заявка: комиссия 4% = 800, к выплате 19 200', wd.body);
 const wdId = wd.body.withdrawalId;
-const wdOver = await api('POST', '/api/withdraw', { amount: 999999, requisites: 'карта', opKey: randomUUID() }, BLG);
+const wdOver = await withdraw(999999, 'карта', BLG);
 ok(wdOver.status === 409, 'вывод больше баланса отклонён');
 
 const list = await api('GET', '/api/admin/withdrawals?status=queued', null, null, true);
@@ -121,7 +137,7 @@ const bBlg2 = await api('GET', '/api/balance', null, BLG);
 ok(bBlg2.body.available === 10000 && bBlg2.body.hold === 0, 'у блогера осталось 10 000, заморозки нет', bBlg2.body);
 
 console.log('\n6. Отмена заявки, пока она в очереди');
-const wd2 = await api('POST', '/api/withdraw', { amount: 5000, requisites: 'карта', opKey: randomUUID() }, BLG);
+const wd2 = await withdraw(5000, 'карта', BLG);
 const cancel = await api('POST', '/api/withdraw/cancel', { withdrawalId: wd2.body.withdrawalId, opKey: randomUUID() }, BLG);
 ok(cancel.status === 200 && cancel.body.status === 'cancelled', 'отмена из очереди прошла');
 const bBlg3 = await api('GET', '/api/balance', null, BLG);

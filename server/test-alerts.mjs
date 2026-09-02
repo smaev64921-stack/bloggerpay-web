@@ -24,7 +24,13 @@ const stub = http.createServer((req, res) => {
     const method = req.url.split('/').pop();
     let data = {};
     try { data = JSON.parse(body || '{}'); } catch (e) {}
-    if (method === 'sendMessage') sent.push(data);
+    /* «Бот обновлён» — не тревога, а сигнал о запуске: сервер поднимает
+       бота в том же процессе, и тот пишет владельцу одну строку. В счёт
+       тревог он идти не должен, иначе каждый прогон сдвигал бы все
+       ожидаемые числа на единицу. */
+    if (method === 'sendMessage' && !/^Бот обновлён/.test(String(data.text || ''))) {
+      sent.push(data);
+    }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, result: { message_id: sent.length } }));
   });

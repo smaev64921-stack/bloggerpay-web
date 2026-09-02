@@ -78,22 +78,25 @@ ok(!!cmds && cmds.commands.some((c) => c.command === 'start'), 'команда /
 /* обычный /start */
 pushUpdate('/start');
 await wait(1500);
-const first = sent.filter((s) => s.text)[0];
+/* Берём ответ НА /START, а не просто первое сообщение: при запуске бот
+   ещё пишет владельцу «Бот обновлён», и по индексу можно поймать его. */
+const first = sent.filter((s) => s.text && s.reply_markup)[0];
 ok(!!first, 'на /start бот ответил сообщением');
 const kb = first && first.reply_markup && first.reply_markup.inline_keyboard;
 ok(!!kb && kb[0] && kb[0][0].url, 'в ответе — кнопка-ССЫЛКА на сайт', kb && kb[0]);
 ok(!!kb && !kb[0][0].web_app,
    'это не мини-апп: сайт открывается в браузере, а не внутри Телеграма', kb && kb[0][0]);
 ok(!!kb && /Открыть/.test(kb[0][0].text), 'на кнопке написано «Открыть…»', kb && kb[0][0].text);
-ok(!!kb && kb[0][0].url === APP, 'кнопка ведёт ровно на APP_URL', kb && kb[0][0].url);
+/* Метка from=tg говорит сайту, что человек пришёл из Телеграма. */
+ok(!!kb && kb[0][0].url === APP + '?from=tg', 'кнопка ведёт на сайт с меткой from=tg', kb && kb[0][0].url);
 ok(/BloggerPay/.test(first.text) && first.parse_mode === 'HTML', 'приветствие с разметкой');
 
 /* /start с приглашением — метка должна доехать до приложения */
 pushUpdate('/start r_12345');
 await wait(1500);
-const ref = sent.filter((s) => s.text).pop();
+const ref = sent.filter((s) => s.text && s.reply_markup).pop();
 const refUrl = ref && ref.reply_markup.inline_keyboard[0][0].url;
-ok(refUrl === APP + '?startapp=r_12345', 'приглашение передаётся приложению через адрес', refUrl);
+ok(refUrl === APP + '?from=tg&startapp=r_12345', 'приглашение передаётся приложению через адрес', refUrl);
 
 /* произвольное сообщение — бот не молчит */
 pushUpdate('привет');

@@ -71560,7 +71560,15 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
     /* Слот стабильный: повтор той же заявки (двойной тап, обрыв сети)
        уходит под тем же opKey и не проводится дважды. Раньше здесь был
        Date.now() — ключ был уникален на каждый вызов, и защита не работала. */
-    withdraw: function(amount, requisites){ return money('wd:' + amount, 'POST', '/api/withdraw', { amount: amount, requisites: requisites }); },
+    /* code — второй фактор. Без него сервер только шлёт код на почту и
+       отвечает needCode, ничего не двигая; деньги трогает лишь запрос
+       с кодом. Слот в opKey учитывает код, иначе повторная попытка с
+       правильным кодом попала бы под защиту от двойного нажатия и
+       вернула бы старый отказ вместо проведения заявки. */
+    withdraw: function(amount, requisites, code){
+      return money('wd:' + amount + (code ? ':' + code : ''), 'POST', '/api/withdraw',
+        { amount: amount, requisites: requisites, code: code || '' });
+    },
     withdrawCancel: function(id){ return money('wdc:' + id, 'POST', '/api/withdraw/cancel', { withdrawalId: id }); },
     withdrawals: function(){ return req('GET', '/api/withdrawals'); },
   };
@@ -75325,6 +75333,170 @@ if(typeof orig === 'function' && !orig.__bpVer){
     return r;
   };
   window.bpOpenBloggerProfile.__bpVer = true;
+}
+})();
+</script>
+
+
+<style id="bp-wd2fa-css">
+.wd2-wrap{position:fixed;inset:0;z-index:820;background:rgba(4,4,8,.82);
+  display:flex;align-items:flex-end;justify-content:center;opacity:0;visibility:hidden;
+  transition:opacity .2s,visibility .2s}
+.wd2-wrap.on{opacity:1;visibility:visible}
+.wd2{width:100%;max-width:420px;background:var(--card,#141416);
+  border:1px solid rgba(255,255,255,.1);border-top:none;border-radius:22px 22px 0 0;
+  padding:20px 18px calc(env(safe-area-inset-bottom,0px) + 18px);
+  transform:translateY(100%);transition:transform .28s cubic-bezier(.22,1,.36,1)}
+.wd2-wrap.on .wd2{transform:none}
+.wd2-grip{width:36px;height:4px;border-radius:2px;background:rgba(255,255,255,.16);margin:0 auto 16px}
+.wd2-ttl{font-size:17px;font-weight:800;color:var(--t1,#fff);text-align:center;margin-bottom:7px}
+.wd2-sub{font-size:12.5px;font-weight:500;line-height:19px;color:var(--t2,#a9a9b6);text-align:center;margin-bottom:16px}
+.wd2-sub b{color:var(--t1,#fff);font-weight:700}
+.wd2-inp{width:100%;height:52px;border-radius:14px;border:1.5px solid rgba(255,255,255,.13);
+  background:rgba(255,255,255,.05);color:var(--t1,#fff);font-family:inherit;
+  font-size:22px;font-weight:800;text-align:center;letter-spacing:7px;outline:none;
+  transition:border-color .15s}
+.wd2-inp:focus{border-color:var(--acc,#2f6ce0)}
+.wd2-inp.bad{border-color:#f0475e;animation:wd2shake .45s}
+@keyframes wd2shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(5px)}}
+.wd2-msg{font-size:12px;font-weight:600;color:#ff8fa0;text-align:center;min-height:16px;margin-top:9px}
+.wd2-btn{width:100%;height:50px;margin-top:12px;border:none;border-radius:14px;
+  background:linear-gradient(135deg,var(--acc,#2f6ce0),#1b49a8);color:#fff;
+  font-family:inherit;font-size:15px;font-weight:800;cursor:pointer}
+.wd2-btn[disabled]{opacity:.55}
+.wd2-x{width:100%;height:44px;margin-top:7px;border:none;background:none;
+  color:var(--t3,#8a8a99);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer}
+</style>
+<script id="bp-wd2fa">
+/* ══ Второй фактор на выводе ══════════════════════════════════════════
+   Вывод — единственное место, где деньги уходят наружу, и до сих пор его
+   защищал только сессионный токен: кто им завладел, тот выводил на свои
+   реквизиты. Проверка личности (KYC) тут не спасает — она подтверждает
+   ХОЗЯИНА аккаунта, а не того, кто сейчас за клавиатурой.
+
+   Сервер теперь отвечает на первый запрос not «заявка создана», а
+   { needCode: true } и шлёт код на почту. Денег он при этом не трогает.
+
+   Обёртка сделана вокруг САМОГО bpSrv.withdraw, а не вокруг экрана.
+   Причина: вызовов четыре (~71425, ~71613, ~71765, ~72047), и каждый
+   ждёт от withdraw обещание, которое исполняется, когда заявка создана.
+   Перехватив низ, мы сохраняем этот договор: снаружи ничего не меняется,
+   просто между запросом и ответом иногда появляется шторка с кодом.  */
+(function(){
+'use strict';
+if(window.__bpWd2fa) return; window.__bpWd2fa = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e); }catch(_){} }
+
+var el = null;
+
+function sheet(){
+  if(el) return el;
+  el = document.createElement('div');
+  el.className = 'wd2-wrap';
+  el.innerHTML =
+      '<div class="wd2" role="dialog" aria-modal="true" aria-label="Подтверждение вывода">'
+    +   '<div class="wd2-grip"></div>'
+    +   '<div class="wd2-ttl">Подтвердите вывод</div>'
+    +   '<div class="wd2-sub" id="wd2Sub"></div>'
+    +   '<input class="wd2-inp" id="wd2Code" type="text" inputmode="numeric"'
+    +     ' autocomplete="one-time-code" maxlength="6" placeholder="······" aria-label="Код из письма">'
+    +   '<div class="wd2-msg" id="wd2Msg"></div>'
+    +   '<button type="button" class="wd2-btn" id="wd2Go">Подтвердить</button>'
+    +   '<button type="button" class="wd2-x" id="wd2X">Отмена</button>'
+    + '</div>';
+  document.body.appendChild(el);
+  /* Клик по затемнению = отмена: шторка про деньги, запирать человека
+     в ней нельзя. */
+  el.addEventListener('click', function(ev){ if(ev.target === el) close(false); });
+  return el;
+}
+
+var pending = null;   /* { resolve, reject } текущего ожидания кода */
+
+function close(ok){
+  if(el) el.classList.remove('on');
+  if(pending && !ok){ var p = pending; pending = null; p.reject(new Error('Вывод отменён')); }
+}
+
+/* Показывает шторку и обещает ОДИН код — или отказ, если человек
+   передумал. На повторную попытку вызывается заново: так каждое обещание
+   исполняется ровно один раз, и «введите ещё раз» не упирается в уже
+   разрешённое обещание. */
+function askCode(info, errText){
+  return new Promise(function(resolve, reject){
+    var w = sheet();
+    var sub = w.querySelector('#wd2Sub');
+    var inp = w.querySelector('#wd2Code');
+    var msg = w.querySelector('#wd2Msg');
+    var go  = w.querySelector('#wd2Go');
+
+    var sum = (Number(info.amount) || 0).toLocaleString('ru');
+    sub.innerHTML = 'Код отправлен на <b>' + String(info.sentTo || 'вашу почту')
+      .replace(/[&<>"]/g, '') + '</b>.<br>Заявка на <b>' + sum + ' ₽</b>'
+      + (info.net ? ', к получению ' + (Number(info.net) || 0).toLocaleString('ru') + ' ₽' : '') + '.';
+    inp.value = ''; inp.classList.remove('bad');
+    msg.textContent = errText || '';
+    if(errText){ void inp.offsetWidth; inp.classList.add('bad'); }
+    go.disabled = false; go.textContent = 'Подтвердить';
+
+    pending = { resolve: resolve, reject: reject };
+    w.classList.add('on');
+    setTimeout(function(){ try{ inp.focus(); }catch(e){} }, 120);
+
+    function fail(text){
+      msg.textContent = text || '';
+      inp.classList.remove('bad'); void inp.offsetWidth; inp.classList.add('bad');
+      go.disabled = false; go.textContent = 'Подтвердить';
+    }
+    function submit(){
+      var code = (inp.value || '').replace(/\D/g, '');
+      if(code.length !== 6){ fail('Введите шесть цифр из письма'); return; }
+      go.disabled = true; go.textContent = 'Проверяем…';
+      var p = pending; pending = null;
+      p.resolve(code);
+    }
+    go.onclick = submit;
+    inp.oninput = function(){
+      inp.value = inp.value.replace(/\D/g, '').slice(0, 6);
+      inp.classList.remove('bad'); msg.textContent = '';
+      if(inp.value.length === 6) submit();
+    };
+    inp.onkeydown = function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); submit(); } };
+    w.querySelector('#wd2X').onclick = function(){ close(false); };
+  });
+}
+
+var srv = window.bpSrv;
+if(srv && typeof srv.withdraw === 'function' && !srv.withdraw.__bpWd2){
+  var orig = srv.withdraw.bind(srv);
+  srv.withdraw = async function(amount, requisites, code){
+    var r = await orig(amount, requisites, code);
+    /* Сервер сказал «нужен код» — спрашиваем и повторяем, пока не выйдет
+       или пока человек не откажется. Цикл, а не один заход: код можно
+       ввести неверно, и второй шанс должен быть без потери заявки. */
+    var errText = '';
+    while(r && r.needCode){
+      var code2 = await askCode(r, errText);   /* отмена бросит — уйдёт наружу */
+      errText = '';
+      try{
+        r = await orig(amount, requisites, code2);
+      }catch(err){
+        /* Неверный код сервер отдаёт ошибкой. Не роняем весь вывод —
+           возвращаем человека в ту же шторку с пояснением, заявка цела. */
+        var m = String((err && err.message) || 'Не получилось');
+        if(/код/i.test(m)){
+          errText = m;
+          r = { needCode: true, amount: amount, net: r && r.net, sentTo: (r && r.sentTo) || '' };
+          continue;
+        }
+        close(false); throw err;
+      }
+    }
+    close(true);
+    return r;
+  };
+  srv.withdraw.__bpWd2 = true;
 }
 })();
 </script>
