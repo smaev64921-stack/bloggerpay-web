@@ -75188,5 +75188,147 @@ else start();
 </script>
 
 
+<style id="bp-verified-css">
+/* Отметка проверки в карточке блогера. Зелёная — площадка подтвердила
+   вход в канал; серая — цифры со слов блогера. */
+.blp-ver.blp-ok{background:rgba(61,220,132,.16)!important;color:#7ce8a8!important}
+.blp-soc-m .blp-src{display:block;font-size:8.5px;font-weight:700;margin-top:1px}
+.blp-soc-m .blp-src-ok{color:#7ce8a8}
+.blp-soc-m .blp-src-self{color:var(--t3)}
+</style>
+<script id="bp-verified">
+/* ══ Подтверждение канала наконец что-то значит ═══════════════════════
+   Что было не так. Блогер проходил вход на площадку через OAuth, сервер
+   честно сохранял канал и число подписчиков в таблицу channels — а в
+   карточке у ВСЕХ подряд было жёстко написано «не проверено» (строка с
+   blp-unver в слое bp-blogger-page). То есть проверка не давала прошедшему
+   её ничего, а рекламодатель не мог отличить подтверждённый канал от
+   ссылки, вписанной от руки.
+
+   Вдобавок число подписчиков в карточке — это то, что блогер напечатал
+   сам (abcStatInput ставит рядом selfReported, который нигде не читался).
+   Настоящее число с YouTube сервер получал и выбрасывал.
+
+   Теперь: спрашиваем у сервера /api/verify/of по srvId блогера и правим
+   уже отрисованную карточку. Подтверждённым площадкам — зелёная отметка
+   и число подписчиков С ПЛОЩАДКИ; остальным — честное «со слов блогера».
+
+   Почему поверх готовой разметки, а не внутри page(): рисование карточки
+   синхронное, а ответ сервера приходит потом. Так же устроены остальные
+   слои — они не переписывают чужие функции, а дополняют результат.     */
+(function(){
+'use strict';
+if(window.__bpVerified) return; window.__bpVerified = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e); }catch(_){} }
+function esc(v){ return (typeof bpEsc === 'function') ? bpEsc(v) : String(v == null ? '' : v); }
+
+/* Порядок площадок в карточке повторяем ровно тем же чтением, что и
+   сама карточка (socialsOf в bp-blogger-page): один источник, один
+   порядок — значит строки на экране и площадки совпадут по счёту. */
+function platsOf(userId){
+  var out = [];
+  try{
+    var cards = JSON.parse(localStorage.getItem('bp_my_cards') || '[]');
+    (Array.isArray(cards) ? cards : []).forEach(function(card){
+      if(!card || String(card.userId) !== String(userId)) return;
+      var pd = card.platData || {};
+      Object.keys(pd).forEach(function(pid){
+        var p = pd[pid];
+        if(p && p.enabled !== false && p.url) out.push(pid);
+      });
+    });
+  }catch(e){ E(e); }
+  return out;
+}
+
+function srvIdOf(userId){
+  try{
+    var users = JSON.parse(localStorage.getItem('bp_users') || '[]');
+    var u = (Array.isArray(users) ? users : []).find(function(x){
+      return x && String(x.id) === String(userId);
+    });
+    return u && u.srvId ? Number(u.srvId) : null;
+  }catch(e){ E(e); return null; }
+}
+
+function fmt(n){
+  n = Number(n) || 0;
+  if(n >= 1e6) return (n / 1e6).toFixed(n % 1e6 ? 1 : 0).replace('.', ',') + 'M';
+  if(n >= 1e3) return (n / 1e3).toFixed(n % 1e3 ? 1 : 0).replace('.', ',') + 'K';
+  return String(n);
+}
+
+/* Правим уже нарисованное. Ничего не ломаем, если разметка изменится:
+   не нашли строк — просто выходим, карточка останется как была. */
+function paint(rows, pids){
+  var byPlat = {};
+  rows.forEach(function(r){ if(r && r.platform) byPlat[r.platform] = r; });
+
+  var els = document.querySelectorAll('#blpBody .blp-soc');
+  for(var i = 0; i < els.length && i < pids.length; i++){
+    var el = els[i], pid = pids[i], row = byPlat[pid];
+    var badge = el.querySelector('.blp-ver');
+    var meter = el.querySelector('.blp-soc-m');
+
+    if(!row){
+      /* Не подтверждён. Формулировку делаем честной: «не проверено»
+         звучит как обвинение, хотя блогер просто не проходил вход. */
+      if(badge) badge.textContent = 'со слов блогера';
+      if(meter && !meter.querySelector('.blp-src')){
+        meter.insertAdjacentHTML('beforeend',
+          '<span class="blp-src blp-src-self">со слов блогера</span>');
+      }
+      continue;
+    }
+
+    if(badge){
+      badge.textContent = 'проверено';
+      badge.classList.remove('blp-unver');
+      badge.classList.add('blp-ok');
+    }
+    /* Число подписчиков берём С ПЛОЩАДКИ и заменяем им напечатанное
+       руками — ради этого всё и затевалось. Ноль не показываем: у
+       TikTok статистики может не быть, и «0 подписчиков» соврёт хуже,
+       чем её отсутствие. */
+    if(meter && row.subs > 0){
+      meter.innerHTML = esc(fmt(row.subs))
+        + '<br><span style="font-size:9px;color:var(--t3)">подписчиков</span>'
+        + '<span class="blp-src blp-src-ok">данные площадки</span>';
+    } else if(meter && !meter.querySelector('.blp-src')){
+      meter.insertAdjacentHTML('beforeend',
+        '<span class="blp-src blp-src-ok">канал подтверждён</span>');
+    }
+  }
+}
+
+function run(userId){
+  var srv = window.bpSrv;
+  if(!srv || !srv.configured || !srv.configured()) return;   /* местный режим */
+  var sid = srvIdOf(userId);
+  if(!sid) return;                    /* блогер ещё не заводился на сервере */
+  var pids = platsOf(userId);
+  if(!pids.length) return;
+
+  srv.raw('GET', '/api/verify/of?userId=' + encodeURIComponent(sid))
+    .then(function(j){ paint((j && j.rows) || [], pids); })
+    .catch(function(e){ E(e); });     /* нет связи — карточка как была */
+}
+
+/* Обёртка вместо правки page(): открытие карточки — единственная точка,
+   после которой разметка готова и известен блогер. */
+var orig = window.bpOpenBloggerProfile;
+if(typeof orig === 'function' && !orig.__bpVer){
+  window.bpOpenBloggerProfile = function(bp, userId){
+    var r = orig.apply(this, arguments);
+    try{ setTimeout(function(){ run(userId); }, 0); }catch(e){ E(e); }
+    return r;
+  };
+  window.bpOpenBloggerProfile.__bpVer = true;
+}
+})();
+</script>
+
+
 </body>
 </html>
