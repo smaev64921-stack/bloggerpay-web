@@ -16246,7 +16246,7 @@ async function doRegister() {
   if(!email) { showAuthToast('Введите email', 'err'); return; }
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showAuthToast('Введите корректный email', 'err'); return; }
   if(!pass) { showAuthToast('Придумайте пароль', 'err'); return; }
-  if(pass.length < 6) { showAuthToast('Пароль минимум 6 символов', 'err'); return; }
+  if(pass.length < 8) { showAuthToast('Пароль — минимум 8 символов', 'err'); return; }
   if(pass !== pass2) { showAuthToast('Пароли не совпадают', 'err'); return; }
   if(!termsAccepted) { showAuthToast('Примите условия соглашения', 'err'); return; }
   
@@ -16339,7 +16339,7 @@ async function _bpDoReset(){
   var u = window._bpResetUser; if(!u) return;
   var a = (document.getElementById('bpResetP1')||{}).value || '';
   var b = (document.getElementById('bpResetP2')||{}).value || '';
-  if(a.length < 6){ showAuthToast('Пароль — минимум 6 символов', 'err'); return; }
+  if(a.length < 8){ showAuthToast('Пароль — минимум 8 символов', 'err'); return; }
   if(a !== b){ showAuthToast('Пароли не совпадают', 'err'); return; }
   /* Пароли в проекте хранятся хешем с солью. Первая версия этой функции
      писала открытый текст и тем самым понижала защиту аккаунта —
@@ -16478,7 +16478,7 @@ function openSecuritySheet(){
     <div style="font-size:12px;font-weight:700;color:var(--t2);margin-bottom:8px">Смена пароля</div>
     <div style="display:flex;flex-direction:column;gap:10px">
       <input id="secOldPass" type="password" placeholder="Текущий пароль" autocomplete="current-password" style="${inpSt}">
-      <input id="secNewPass" type="password" placeholder="Новый пароль (мин. 6 символов)" autocomplete="new-password" style="${inpSt}">
+      <input id="secNewPass" type="password" placeholder="Новый пароль (мин. 8 символов)" autocomplete="new-password" style="${inpSt}">
       <input id="secNewPass2" type="password" placeholder="Повторите новый пароль" autocomplete="new-password" style="${inpSt}">
     </div>
     <div style="display:flex;gap:8px;align-items:flex-start;background:rgba(255,255,255,0.039);border:1px solid rgba(255,255,255,0.09);border-radius:12px;padding:11px 13px;margin-top:14px">
@@ -16493,7 +16493,7 @@ async function secChangePass(btn){
   const newP = document.getElementById('secNewPass').value;
   const newP2 = document.getElementById('secNewPass2').value;
   if(!oldP){ showAuthToast('Введите текущий пароль','err'); return; }
-  if(newP.length < 6){ showAuthToast('Новый пароль минимум 6 символов','err'); return; }
+  if(newP.length < 8){ showAuthToast('Новый пароль — минимум 8 символов','err'); return; }
   if(newP !== newP2){ showAuthToast('Новые пароли не совпадают','err'); return; }
   btn.disabled = true;
   const ok = await _bpVerifyPass(currentUser, oldP);
@@ -38326,7 +38326,14 @@ window.bpKycPhone = function(){
   var go  = card.querySelector('#kycPhGo');
   if(k.phone && k.phone.value) inp.value = fmtPhone(k.phone.value);
   function check(){ go.disabled = inp.value.replace(/\D/g, '').length !== 11; }
-  inp.addEventListener('input', function(){ inp.value = fmtPhone(inp.value); inp.classList.remove('bad'); check(); });
+  inp.addEventListener('input', function(){
+    inp.value = fmtPhone(inp.value); inp.classList.remove('bad'); check();
+    var digits = inp.value.replace(/\D/g, '');
+    if(digits.length === 11 && !inp.__auto){
+      inp.__auto = 1;
+      setTimeout(function(){ if(inp.value.replace(/\D/g, '').length === 11) otp(inp.value.replace(/\D/g, '')); else inp.__auto = 0; }, 260);
+    }
+  });
   inp.addEventListener('focus', function(){ if(!inp.value) inp.value = '+7 '; });
   check();
   setTimeout(function(){ inp.focus(); }, 320);
@@ -38543,6 +38550,8 @@ window.bpKycIdent = function(){
   );
   var fio = card.querySelector('#kycFio'), dob = card.querySelector('#kycDob');
   var go = card.querySelector('#kycIdGo');
+  /* Правка уже отправленной анкеты (в течение часа) — кнопка говорит об этом честно. */
+  if(idn.status === 'pending' && idn.sent) go.innerHTML = 'Сохранить изменения' + I.goAr;
   var fileInp = card.querySelector('#kycDocFile');
   var selfInp = card.querySelector('#kycSelfFile');
   var photo = '', selfie = '';
@@ -38551,8 +38560,16 @@ window.bpKycIdent = function(){
     if(d.length > 2) o += '.' + d.slice(2, 4);
     if(d.length > 4) o += '.' + d.slice(4, 8);
     dob.value = o; dob.classList.remove('bad'); check();
+    /* Дата набрана полностью — сами уходим к следующему шагу: клавиатура
+       прячется, кнопка фото подъезжает в центр. */
+    if(/^\d{2}\.\d{2}\.\d{4}$/.test(o)){
+      try{ dob.blur(); }catch(e){}
+      var nb = card.querySelector(photo ? (selfie ? '#kycIdGo' : '#kycSelfBtn') : '#kycDocBtn');
+      if(nb){ try{ nb.scrollIntoView({ block:'center', behavior:'smooth' }); }catch(e){} nb.classList.add('kyc-next'); setTimeout(function(){ nb.classList.remove('kyc-next'); }, 1400); }
+    }
   });
   fio.addEventListener('input', function(){ fio.classList.remove('bad'); check(); });
+  fio.addEventListener('keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); dob.focus(); } });
   card.querySelector('#kycDocBtn').addEventListener('click', function(){ fileInp.click(); });
   fileInp.addEventListener('change', function(){
     var f = fileInp.files && fileInp.files[0];
@@ -38595,6 +38612,27 @@ window.bpKycIdent = function(){
     var okFio = fio.value.trim().split(/\s+/).filter(Boolean).length >= 2;
     var okDob = /^\d{2}\.\d{2}\.\d{4}$/.test(dob.value);
     go.disabled = !(okFio && okDob && photo && selfie);
+  }
+  /* Анкета уже заполнялась (не дошла до сервера или правится в течение
+     часа) — снимки поднимаем из IndexedDB. Раньше человек видел пустую
+     форму и думал, что фото пропали. */
+  if(idn.status === 'pending'){
+    docGet(docKey(), function(p){
+      if(!p || photo) return;
+      photo = p;
+      var im = card.querySelector('#kycDocImg'); if(im) im.src = p;
+      var pv = card.querySelector('#kycDocPrev'); if(pv) pv.hidden = false;
+      var t = card.querySelector('#kycDocT'); if(t) t.textContent = 'Фото приложено — нажмите, чтобы заменить';
+      check();
+    });
+    docGet(docKey() + ':selfie', function(p){
+      if(!p || selfie) return;
+      selfie = p;
+      var im = card.querySelector('#kycSelfImg'); if(im) im.src = p;
+      var pv = card.querySelector('#kycSelfPrev'); if(pv) pv.hidden = false;
+      var t = card.querySelector('#kycSelfT'); if(t) t.textContent = 'Селфи приложено — нажмите, чтобы переснять';
+      check();
+    });
   }
   check();
   setTimeout(function(){ if(!fio.value) fio.focus(); }, 320);
@@ -38750,6 +38788,7 @@ window.bpKycPayout = function(){
         var d = c.value.replace(/\D/g, '').slice(0, 16);
         c.value = (d.match(/.{1,4}/g) || []).join(' ');
         c.classList.remove('bad'); check();
+        if(d.length === 16){ try{ c.blur(); }catch(e){} }
       });
     } else {
       fields.innerHTML =
@@ -38757,7 +38796,10 @@ window.bpKycPayout = function(){
         '<div class="kyc-inpwrap"><span class="kyc-inp-ic">' + I.fPhone + '</span>' +
         '<input class="kyc-inp has-ic" id="kycSbp" inputmode="tel" placeholder="+7 (___) ___-__-__" value="' + esc(pv.phone ? fmtPhone(pv.phone) : (phoneOk() ? fmtPhone(k.phone.value) : '')) + '"></div>';
       var sp = card.querySelector('#kycSbp');
-      sp.addEventListener('input', function(){ sp.value = fmtPhone(sp.value); sp.classList.remove('bad'); check(); });
+      sp.addEventListener('input', function(){
+        sp.value = fmtPhone(sp.value); sp.classList.remove('bad'); check();
+        if(sp.value.replace(/\D/g, '').length === 11){ try{ sp.blur(); }catch(e){} }
+      });
     }
     check();
   }
@@ -67736,7 +67778,10 @@ window.bpAdminPanel = function(){
     +att(1,'Споры ждут решения', wait, 'bpaDisputes&&bpaDisputes()')
     +att(1,'Просроченные споры', late, 'bpaDisputes&&bpaDisputes()')
     +att(1,'Отрицательные балансы', neg, "bpaUsers('neg')")
-    +att(0,'Скрытые карточки каталога', hid, 'bpaCards&&bpaCards()');
+    +att(0,'Скрытые карточки каталога', hid, 'bpaCards&&bpaCards()')
+    /* Паспорта и селфи лежат на сервере-кассе — их смотрит консоль
+       оператора (/operator, раздел «Верификация»). Кнопка ведёт туда. */
+    +'<button type="button" class="bpa3-att" onclick="bpaKycOpen&&bpaKycOpen()"><span class="dot"></span>Заявки на проверку документов<b>›</b></button>';
   var I={u:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
     f:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 4v16M17 4v16M2 9h5M2 15h5M17 9h5M17 15h5"/></svg>',
     w:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
@@ -68158,7 +68203,7 @@ window.bpaMore=function(){
     +'<button class="tk-x" onclick="document.getElementById(\'bpaMoreSheet\').remove()">×</button></div>'
     +'<div class="tk-sheet-body"><div class="bpa4-grid">'
     +it('bpaStats','Аналитика')+it('bpaCamps','Кампании')
-    +it('bpaDisputes','Споры')+it('bpaDeals','Сделки')
+    +it('bpaKycOpen','Проверка документов · паспорт и селфи')+it('bpaDisputes','Споры')+it('bpaDeals','Сделки')
     +it('bpaCards','Каталог')+it('bpaReviews','Отзывы')
     +it('bpaJournal','Журнал')+it('bpaCast','Рассылка')
     +it('bpaPromo','Партнёрка'+(pn?' · '+pn:''))+it('bpaCfg','Настройки')
@@ -71816,7 +71861,13 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
         if(j && j.user && j.user.id){ setMySrvId(j.user.id); return j.user.id; }
         return null;
       })
-      .catch(function(e){ E(e); return null; });
+      .catch(function(e){
+        if(e && e.status >= 400 && e.status < 500){
+          try{ showAuthToast(String(e.message || 'Сервер не принял данные'), 'err'); }catch(_){}
+          return null;
+        }
+        E(e); return null;
+      });
   }
   window.bpLinkServer = linkServer;
 
@@ -72424,7 +72475,7 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
 (function(){
   if(window.__bpReport) return; window.__bpReport = 1;
 
-  var VER = 'v96';
+  var VER = 'v101';
 
   function srv(){ return window.bpSrv; }
   function ready(){ var s = srv(); return !!(s && s.configured() && typeof s.raw === 'function'); }
@@ -75182,7 +75233,7 @@ function firstBad(){
 
   var pass = raw('regPass');
   if(!pass) return { el: $('regPass'), msg: 'Придумайте пароль' };
-  if(pass.length < 6) return { el: $('regPass'), msg: 'Пароль минимум 6 символов' };
+  if(pass.length < 8) return { el: $('regPass'), msg: 'Пароль — минимум 8 символов' };
   if(pass !== raw('regPass2')) return { el: $('regPass2'), msg: 'Пароли не совпадают' };
 
   if(typeof termsAccepted !== 'undefined' && !termsAccepted){
@@ -75558,73 +75609,13 @@ html .auth-logo{ width:66px!important; height:66px!important; margin-bottom:10px
 html img.bp-logo-img{ border-radius:50%; width:100%; height:100%; object-fit:cover; display:block }
 </style>
 
-<style id="bp-escrow-mini-css">
-/* ══ Справка «Как устроен холд» на «Балансе» — компактная строка ═════
-   Было: карточка во всю ширину с крупной подписью и стрелкой — выглядела
-   как ещё один денежный блок и спорила с картой баланса. Стало: тонкая
-   строка-подсказка под картой: маленькая иконка замка, подпись 12.5px,
-   метка «эскроу», стрелка. Раскрытие — те же три шага, но плотнее.
-   Разметку строит buildSafeBlock (bp-wallet2), сворачивание — bp-fix100;
-   здесь только вид + короткая подпись (bp-escrow-mini ниже).
-   Откат: удалить style#bp-escrow-mini-css и script#bp-escrow-mini.       */
-html #pg-balance .bpw-card[data-bpw]{
-  margin:6px 0 0!important; padding:0!important; border-radius:14px!important;
-  background:rgba(255,255,255,.035)!important; border:1px solid rgba(255,255,255,.07)!important;
-  box-shadow:none!important;
-}
-html #pg-balance .bpw-card[data-bpw] .bpw-k.bpfold-head{
-  margin:0!important; padding:9px 12px; min-height:40px; gap:9px;
-  font-size:12.5px!important; font-weight:700!important; color:var(--t2)!important;
-  letter-spacing:0!important; text-transform:none!important;
-}
-html #pg-balance .bpw-card[data-bpw] .bpesc-ic{
-  width:24px; height:24px; border-radius:8px; flex-shrink:0;
-  background:rgba(47,108,224,.16); display:flex; align-items:center; justify-content:center;
-}
-html #pg-balance .bpw-card[data-bpw] .bpesc-ic svg{ width:13px!important; height:13px!important; stroke:var(--acc,#2f6ce0)!important }
-html .bpesc-tag{
-  font-size:9.5px; font-weight:700; letter-spacing:.35px; text-transform:uppercase;
-  color:var(--t3,#8a8a99); background:rgba(255,255,255,.06); border-radius:6px; padding:2px 6px;
-}
-html #pg-balance .bpw-card[data-bpw] .bpfold-ar svg{ width:15px; height:15px }
-html #pg-balance .bpw-card[data-bpw] .bpfold-in{ padding:2px 12px 12px }
-html #pg-balance .bpw-card[data-bpw] .bpw-step{ gap:9px; padding-bottom:9px }
-html #pg-balance .bpw-card[data-bpw] .bpw-step-n{ font-size:12px }
-html #pg-balance .bpw-card[data-bpw] .bpw-step-s{ font-size:11px; line-height:1.4 }
-html #pg-balance .bpw-card[data-bpw] .bpfold-in > div:last-child{ font-size:11px!important; margin-top:8px!important; padding-top:8px!important }
+<style id="bp-escrow-off">
+/* ══ Справка «Как устроен холд (эскроу)» на «Балансе» убрана по решению
+   владельца (02.09.2026). Блок по-прежнему строит buildSafeBlock
+   (bp-wallet2) и сворачивает bp-fix100 — строителей не трогаем, просто
+   не показываем. Откат: удалить этот блок стилей.                      */
+html #pg-balance .bal-safe, html #pg-balance [data-bpw="adv"], html #pg-balance [data-bpw="blg"]{ display:none!important }
 </style>
-<script id="bp-escrow-mini">
-(function(){
-'use strict';
-if(window.__bpEscMini) return; window.__bpEscMini = 1;
-function E(e){ try{ if(typeof BPERR === 'function') BPERR(e); }catch(_){} }
-/* Подпись короче: «Как устроен холд» + метка «эскроу». Иконка — в
-   маленькой подложке. Строим поверх того, что собрали buildSafeBlock и
-   foldSafe; при смене роли блок пересобирается — проверяем каждый раз. */
-function slim(){
-  try{
-    var head = document.querySelector('#pg-balance [data-bpw] .bpw-k.bpfold-head');
-    if(!head || head.__bpEsc) return;
-    var svg = head.querySelector('svg:not(.bpfold-ar svg)');
-    var ar = head.querySelector('.bpfold-ar');
-    var icon = '';
-    if(svg && !svg.closest('.bpfold-ar')) icon = svg.outerHTML;
-    head.innerHTML = '<span class="bpesc-ic">' + icon + '</span>Как устроен холд <span class="bpesc-tag">эскроу</span>';
-    if(ar) head.appendChild(ar);
-    head.__bpEsc = 1;
-  }catch(e){ E(e); }
-}
-var og = window.goTo;
-if(typeof og === 'function'){
-  window.goTo = function(page){
-    var r = og.apply(this, arguments);
-    if(String(page) === 'balance'){ setTimeout(slim, 60); setTimeout(slim, 400); }
-    return r;
-  };
-}
-setTimeout(slim, 800);
-})();
-</script>
 
 <style id="bp-kycfirst-css">
 /* ══ Вывод: сначала проверка личности, потом деньги ══════════════════
@@ -75700,6 +75691,12 @@ body.bp-kf-on #bw2WdCta{ display:none!important }
 .bpkf-go.ghost:active{ transform:none }
 .bpkf-link{ display:block; width:100%; margin-top:8px; padding:11px; border:none; background:none; color:var(--acc2,#5b93f5); font-family:inherit; font-size:13px; font-weight:700; cursor:pointer }
 .bpkf-safe{ display:flex; align-items:center; justify-content:center; gap:7px; margin-top:14px; font-size:11px; color:var(--t3,#8a8a99); text-align:center; line-height:1.4 }
+.bpkf-hint{ margin-top:10px; font-size:11.5px; line-height:1.5; color:var(--t3,#8a8a99); text-align:center; padding:0 8px }
+.bpkf-link svg{ width:14px; height:14px; vertical-align:-2px; margin-right:2px }
+.bpkf-go svg{ width:17px; height:17px }
+.bpkf-go.busy{ opacity:.6; pointer-events:none }
+/* поле заполнено — подсвечиваем, куда идти дальше */
+.kyc-doc.kyc-next, .kyc-go.kyc-next{ box-shadow:0 0 0 3px rgba(47,108,224,.45); transition:box-shadow .3s }
 .bpkf-safe svg{ width:13px; height:13px; flex-shrink:0 }
 </style>
 <script id="bp-kycfirst">
@@ -75717,21 +75714,28 @@ var I = {
   alert:'<svg ' + SV + '><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>',
   chev:'<svg ' + SV + '><polyline points="9 18 15 12 9 6"/></svg>',
   lock:'<svg ' + SV + '><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
-  ar:'<svg ' + SV + '><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>'
+  ar:'<svg ' + SV + '><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>',
+  pen:'<svg ' + SV + '><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>'
 };
 
 /* ── состояние берём из того же currentUser.kyc, что и bp-kyc-js ── */
+var EDIT_MS = 3600e3;      /* правка отправленной анкеты — в течение часа */
 function K(){ try{ return (typeof currentUser !== 'undefined' && currentUser && currentUser.kyc) || {}; }catch(e){ return {}; } }
 function phoneOk(){ var k = K(); return !!(k.phone && k.phone.verified); }
 function phoneMask(){
   var d = String((K().phone || {}).value || '').replace(/\D/g, '');
   return d.length >= 11 ? '+7 (' + d.slice(1,4) + ') ***-**-' + d.slice(9,11) : '';
 }
-function idSt(){ var k = K(); return (k.identity && k.identity.status) || 'none'; }
-function idSent(){ var k = K(); return !!(k.identity && k.identity.sent); }
-function idNote(){ var k = K(); return (k.identity && k.identity.note) || ''; }
+function idn(){ return K().identity || {}; }
+function idSt(){ return idn().status || 'none'; }
+function idSent(){ return !!idn().sent; }
+function idNote(){ return idn().note || ''; }
+function editLeftMs(){ var at = Number(idn().at) || 0; return at ? Math.max(0, at + EDIT_MS - Date.now()) : 0; }
+function canEdit(){ return idSt() === 'pending' && idSent() && editLeftMs() > 0; }
 function need(){ return !phoneOk() || idSt() !== 'verified'; }
 function hasUser(){ try{ return !!(typeof currentUser !== 'undefined' && currentUser); }catch(e){ return false; } }
+function mins(ms){ return Math.max(1, Math.ceil(ms / 60000)); }
+function minWord(n){ var m = n % 10, h = n % 100; return (h >= 11 && h <= 14) ? 'минут' : m === 1 ? 'минута' : (m >= 2 && m <= 4) ? 'минуты' : 'минут'; }
 
 function call(fn){ try{ if(typeof window[fn] === 'function') window[fn](); }catch(e){ E(e); } }
 function next(){
@@ -75739,6 +75743,7 @@ function next(){
   var st = idSt();
   if(st === 'none' || st === 'rejected' || (st === 'pending' && !idSent())) return call('bpKycIdent');
 }
+function edit(){ if(canEdit()) call('bpKycIdent'); }
 
 function step(n, cls, title, sub, tap){
   var num = cls === 'done' ? I.tick : cls === 'pending' ? I.clock : cls === 'rejected' ? I.alert : String(n);
@@ -75750,17 +75755,18 @@ function step(n, cls, title, sub, tap){
 }
 
 function paint(box){
-  var p = phoneOk(), st = idSt(), sent = idSent();
+  var p = phoneOk(), st = idSt(), sent = idSent(), ce = canEdit();
   var doneN = (p ? 1 : 0) + (st === 'verified' ? 1 : 0);
   var cur = !p ? 1 : 2;
+  var left = mins(editLeftMs());
 
   var s1 = p ? step(1, 'done', 'Телефон', 'Подтверждён · ' + esc(phoneMask()))
              : step(1, 'now', 'Телефон', 'Пришлём код в SMS — займёт минуту', true);
   var s2;
   if(!p)                       s2 = step(2, 'wait', 'Паспорт и селфи', 'После телефона');
   else if(st === 'verified')   s2 = step(2, 'done', 'Паспорт и селфи', 'Личность подтверждена');
-  else if(st === 'pending' && sent)  s2 = step(2, 'pending', 'Паспорт и селфи', 'На проверке у оператора');
-  else if(st === 'pending')    s2 = step(2, 'now', 'Паспорт и селфи', 'Заявка сохранена — нажмите, чтобы отправить', true);
+  else if(st === 'pending' && sent)  s2 = step(2, 'pending', 'Паспорт и селфи', 'На проверке у оператора' + (ce ? ' · изменить можно ещё ' + left + ' ' + minWord(left) : ''));
+  else if(st === 'pending')    s2 = step(2, 'now', 'Паспорт и селфи', 'Анкета и фото сохранены на телефоне — нажмите, чтобы отправить', true);
   else if(st === 'rejected')   s2 = step(2, 'rejected', 'Паспорт и селфи', 'Отклонено' + (idNote() ? ': ' + esc(idNote()) : '') + ' — отправьте заново', true);
   else                         s2 = step(2, 'now', 'Паспорт и селфи', 'Фото разворота и селфи с паспортом в руках', true);
   var s3 = step(3, 'wait', 'Реквизиты и вывод', 'Откроется сразу после проверки');
@@ -75768,14 +75774,19 @@ function paint(box){
   var note = '';
   if(p && st === 'pending' && sent){
     note = '<div class="bpkf-note pending">' + I.clock + '<div><b>Документы на проверке</b>Оператор сверяет фото с анкетой — обычно до 24 часов. Статус обновится сам, ничего делать не нужно.</div></div>';
+  } else if(p && st === 'pending'){
+    note = '<div class="bpkf-note pending">' + I.alert + '<div><b>Документы ещё не ушли</b>Связь с сервером прервалась. Анкета и оба фото сохранены на этом телефоне — нажмите «Отправить», всё уже заполнено.</div></div>';
   } else if(p && st === 'rejected'){
     note = '<div class="bpkf-note rejected">' + I.alert + '<div><b>Проверка не пройдена</b>' + (idNote() ? esc(idNote()) + '. ' : '') + 'Снимите документы ещё раз — чётко, без бликов, все углы в кадре.</div></div>';
   }
 
   var cta;
   if(!p) cta = '<button type="button" class="bpkf-go" data-go="1">Подтвердить телефон' + I.ar + '</button>';
-  else if(st === 'pending' && sent) cta = '<button type="button" class="bpkf-go ghost" disabled>' + I.clock + 'Ждём решения оператора</button>' +
-      '<button type="button" class="bpkf-link" data-refresh="1">Проверить статус</button>';
+  else if(st === 'pending' && sent){
+    cta = '<button type="button" class="bpkf-go" data-refresh="1">' + I.clock + 'Проверить статус</button>'
+        + (ce ? '<button type="button" class="bpkf-link" data-edit="1">' + I.pen + ' Изменить данные · ещё ' + left + ' ' + minWord(left) + '</button>'
+              : '<div class="bpkf-hint">Изменить анкету можно было в течение часа после отправки. Дальше — только решение оператора.</div>');
+  }
   else if(st === 'rejected') cta = '<button type="button" class="bpkf-go" data-go="1">Отправить документы заново' + I.ar + '</button>';
   else if(st === 'pending') cta = '<button type="button" class="bpkf-go" data-go="1">Отправить документы' + I.ar + '</button>';
   else cta = '<button type="button" class="bpkf-go" data-go="1">Загрузить документы' + I.ar + '</button>';
@@ -75801,7 +75812,11 @@ function title(on){
   }catch(e){}
 }
 
-var last = null;
+/* снимок состояния: меняется — перерисовываем; минуты правки входят в
+   снимок, чтобы счётчик и кнопка «Изменить» обновлялись сами */
+function snap(){ try{ return JSON.stringify(K()) + '|' + (canEdit() ? mins(editLeftMs()) : 0); }catch(e){ return ''; } }
+
+var last = null, busy = false;
 function sync(){
   try{
     var pg = document.getElementById('pg-withdraw'); if(!pg) return;
@@ -75811,14 +75826,23 @@ function sync(){
       box = document.createElement('div'); box.id = 'bpKf';
       body.insertBefore(box, body.firstChild);
       box.addEventListener('click', function(e){
-        var t = e.target.closest('[data-go],[data-tap],[data-refresh]');
+        var t = e.target.closest('[data-go],[data-tap],[data-refresh],[data-edit]');
         if(!t) return;
-        if(t.hasAttribute('data-refresh')){ try{ goTo('withdraw'); }catch(err){} return; }
+        if(t.hasAttribute('data-refresh')){
+          /* повторный заход на экран — bp-kyc-js делает срочный опрос статуса */
+          if(busy) return; busy = true;
+          t.classList.add('busy');
+          try{ goTo('withdraw'); }catch(err){}
+          setTimeout(function(){ busy = false; sync(); }, 1500);
+          return;
+        }
+        if(t.hasAttribute('data-edit')){ edit(); return; }
+        if(t.hasAttribute('data-tap') && idSt() === 'pending' && idSent()) return;
         next();
       });
     }
     if(!hasUser()) return;
-    last = JSON.stringify(K());
+    last = snap();
     if(need()){
       pg.classList.add('bp-kf-on'); document.body.classList.add('bp-kf-on');
       paint(box); title(true);
@@ -75851,8 +75875,7 @@ setInterval(function(){
     if(document.hidden) return;
     var pg = document.getElementById('pg-withdraw');
     if(!pg || !pg.classList.contains('on') || !hasUser()) return;
-    var now = JSON.stringify(K());
-    if(now !== last) sync();
+    if(snap() !== last) sync();
   }catch(e){}
 }, 1200);
 })();
@@ -75877,6 +75900,34 @@ function fix(){
 }
 if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fix); else fix();
 setTimeout(fix, 600);
+})();
+</script>
+
+<script id="bp-admin-kyc">
+/* ══ Админ → заявки на проверку документов ═══════════════════════════
+   Паспорта и селфи хранит сервер-касса, решает по ним оператор в консоли
+   /operator (раздел «Верификация», нужен ADMIN_KEY с хостинга). Кнопка в
+   админ-панели ведёт прямо в этот раздел. Внутри Телеграма ссылку
+   открывает сам Телеграм, в браузере — новая вкладка.                 */
+(function(){
+'use strict';
+window.bpaKycOpen = function(){
+  try{
+    var base = String(window.BP_SERVER || '').replace(/\/+$/, '');
+    if(!base){ try{ base = localStorage.getItem('bp_server_url') || ''; }catch(e){} }
+    if(!base && /^https?:$/.test(location.protocol)) base = location.origin;
+    if(!base){
+      try{ showAuthToast('Заявки лежат на сервере-кассе — он не подключён', 'err'); }catch(e){}
+      return;
+    }
+    var url = base.replace(/\/+$/, '') + '/operator#kyc';
+    var tg = window.Telegram && window.Telegram.WebApp;
+    if(tg && typeof tg.openLink === 'function' && tg.initData){ tg.openLink(url); return; }
+    var w = null;
+    try{ w = window.open(url, '_blank'); }catch(e){}
+    if(!w) location.href = url;
+  }catch(e){ try{ if(typeof BPERR === 'function') BPERR(e); }catch(_){} }
+};
 })();
 </script>
 </body>

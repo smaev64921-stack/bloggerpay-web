@@ -250,7 +250,10 @@ function enter(){
     $('gate').hidden = true;
     $('app').hidden = false;
     renderTabs();
-    refresh();
+    /* Ссылка вида /operator#kyc из админ-панели приложения открывает
+       нужный раздел сразу — без лишнего клика по вкладке. */
+    var want = String(location.hash || '').slice(1);
+    if(/^(kyc|deals|errors)$/.test(want)) switchSection(want); else refresh();
   }).catch(function(e){
     var m = String(e && e.message || '');
     $('gateErr').textContent =
