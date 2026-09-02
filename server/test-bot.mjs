@@ -53,6 +53,7 @@ const bot = spawn(process.execPath, ['bot.js'], {
     ...process.env,
     BOT_TOKEN: '111:TESTTOKEN',
     APP_URL: APP,
+    ADMIN_CHAT_ID: '424242',
     TG_API_BASE: 'http://127.0.0.1:8123',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
@@ -80,6 +81,13 @@ pushUpdate('/start');
 await wait(1500);
 /* Берём ответ НА /START, а не просто первое сообщение: при запуске бот
    ещё пишет владельцу «Бот обновлён», и по индексу можно поймать его. */
+/* Владельцу при запуске уходит одна строка «Бот обновлён»: после
+   обновления из гита хостинг перезапускает процесс молча, и понять,
+   доехала правка или упала на старте, иначе неоткуда. */
+const boot = sent.find((s) => /^Бот обновлён$/.test(String(s.text || '')));
+ok(!!boot && String(boot.chat_id) === '424242',
+   'при запуске владельцу ушло «Бот обновлён»', boot && { chat_id: boot.chat_id, text: boot.text });
+
 const first = sent.filter((s) => s.text && s.reply_markup)[0];
 ok(!!first, 'на /start бот ответил сообщением');
 const kb = first && first.reply_markup && first.reply_markup.inline_keyboard;
