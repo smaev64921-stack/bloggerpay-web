@@ -648,10 +648,51 @@ function auth(req) {
   return row;
 }
 
+/* Неудачные попытки по адресу: подбор ключа владельца должен упираться в
+   стену, а не идти со скоростью сети. Считаем только ПРОМАХИ — у своих
+   оператор работает без ограничений. */
+const adminMiss = new Map();
+const ADMIN_MISS_MAX = 8;
+const ADMIN_MISS_WINDOW = 10 * 60 * 1000;
+function adminBlocked(req) {
+  const ip = clientIp(req);
+  const rec = adminMiss.get(ip);
+  if (!rec) return false;
+  if (Date.now() - rec.at > ADMIN_MISS_WINDOW) { adminMiss.delete(ip); return false; }
+  return rec.n >= ADMIN_MISS_MAX;
+}
+function adminMissed(req) {
+  const ip = clientIp(req);
+  const now = Date.now();
+  const rec = adminMiss.get(ip);
+  if (!rec || now - rec.at > ADMIN_MISS_WINDOW) {
+    adminMiss.set(ip, { n: 1, at: now });
+    return;
+  }
+  rec.n += 1;
+  rec.at = now;
+  if (rec.n === ADMIN_MISS_MAX) {
+    tgAlert('admin:brute:' + ip, '🚨 Подбор ключа владельца\n\nАдрес ' + ip
+      + ' ошибся ключом ' + ADMIN_MISS_MAX + ' раз. Дальнейшие попытки с него отклоняются'
+      + ' десять минут. Если это не вы — смените ADMIN_KEY.', 'server');
+  }
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, rec] of adminMiss) if (now - rec.at > ADMIN_MISS_WINDOW) adminMiss.delete(ip);
+}, 5 * 60 * 1000).unref();
+
 function isAdmin(req) {
-  if (ADMIN_KEY !== '' && String(req.headers['x-admin-key'] || '') === ADMIN_KEY) return true;
+  /* Сначала вошедший владелец: ему перебирать нечего. */
   const u = auth(req);
-  return !!(u && u.is_admin);
+  if (u && u.is_admin) return true;
+  const given = String(req.headers['x-admin-key'] || '');
+  if (!given) return false;
+  if (adminBlocked(req)) return false;
+  if (ADMIN_KEY !== '' && given.length === ADMIN_KEY.length
+      && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(ADMIN_KEY))) return true;
+  adminMissed(req);
+  return false;
 }
 
 /* Почты владельцев из настроек: такие аккаунты получают права админа сами
@@ -1038,21 +1079,23 @@ function wdIssue(userId, amount, requisites) {
    без всякой вины. Гасим отдельно, wdBurn, и только после успеха. */
 function wdCheck(userId, code, amount, requisites) {
   const rec = wdCodes.get(userId);
-  if (!rec || Date.now() > rec.expires) return { ok: false, why: 'Код истёк — запросите вывод заново' };
+  /* dead: код уже не оживить — приложению нужно выслать новый, а не просить
+     ввести ещё раз. Раньше это приходилось угадывать по тексту ошибки. */
+  if (!rec || Date.now() > rec.expires) return { ok: false, dead: true, why: 'Код истёк — запросите новый' };
   if (rec.attempts >= WD_MAX_ATTEMPTS) {
     wdCodes.delete(userId);
-    return { ok: false, why: 'Слишком много попыток — запросите вывод заново' };
+    return { ok: false, dead: true, why: 'Слишком много попыток — запросите новый код' };
   }
   /* Сумму и реквизиты сверяем ДО кода: если подменили заявку, дело не в
      коде, и подсказывать «неверный код» было бы ложью. */
   if (rec.sig !== wdSig(amount, requisites)) {
-    return { ok: false, why: 'Заявка изменилась — запросите код заново' };
+    return { ok: false, dead: true, why: 'Сумма или реквизиты изменились — нужен новый код' };
   }
   const mine = crypto.createHmac('sha256', PW_SECRET)
     .update(userId + '|' + String(code)).digest('hex');
   if (!crypto.timingSafeEqual(Buffer.from(rec.hash, 'hex'), Buffer.from(mine, 'hex'))) {
     rec.attempts += 1;
-    return { ok: false, why: 'Неверный код. Осталось попыток: ' + Math.max(0, WD_MAX_ATTEMPTS - rec.attempts) };
+    return { ok: false, dead: false, why: 'Неверный код. Осталось попыток: ' + Math.max(0, WD_MAX_ATTEMPTS - rec.attempts) };
   }
   return { ok: true };
 }
@@ -1620,6 +1663,7 @@ const routes = {
        Запертый вывод хуже: человек не может забрать своё, и виноват в этом
        не он. О пропуске громко сообщаем владельцу. */
     const code = String(body.code || '').replace(/\D/g, '');
+    let burned = null;                 /* снятый код: вернём, если заявка не пройдёт */
     if (mailConfigured()) {
       if (!code) {
         const fresh = wdIssue(u.id, amount, requisites);
@@ -1640,7 +1684,13 @@ const routes = {
         return { status: 200, body: out };
       }
       const chk = wdCheck(u.id, code, amount, requisites);
-      if (!chk.ok) return { status: 400, body: { error: chk.why, needCode: true } };
+      if (!chk.ok) return { status: 400, body: { error: chk.why, needCode: true, dead: !!chk.dead } };
+      /* Гасим СИНХРОННО, до первого await: иначе соседний запрос с тем же
+         кодом успевал пройти проверку, пока этот ждал базу, и по одному
+         коду создавалось несколько заявок. Если заявка не пройдёт — код
+         вернём на место чуть ниже, человек ничего не заметит. */
+      burned = wdCodes.get(u.id) || null;
+      wdBurn(u.id);
     } else {
       tgAlert('wd:no2fa', '⚠️ Вывод без второго фактора\n\nПочта не настроена'
         + ' (RESEND_API_KEY пуст), поэтому заявка на вывод прошла без кода'
@@ -1655,10 +1705,12 @@ const routes = {
       const id = Number(info.lastInsertRowid);
       return { ok: true, withdrawalId: id, amount, fee, net, status: 'queued' };
     });
-    /* Код гасим ТОЛЬКО когда заявка действительно создана. Иначе любая
-       осечка ниже по пути сжигала бы код, и человек шёл за новым, ничего
-       не сделав не так. */
-    if (done && done.status === 200) wdBurn(u.id);
+    /* Заявка не создалась — человек не виноват: возвращаем ему код, чтобы
+       не идти за новым. Возврат безопасен: пока шла операция, кода в карте
+       не было, и параллельный запрос получил честный отказ. */
+    if (burned && !(done && done.status === 200) && !wdCodes.has(u.id)) {
+      wdCodes.set(u.id, burned);
+    }
     return done;
   },
 
@@ -2044,8 +2096,14 @@ const routes = {
     const u = auth(req);
     if (!u) return { status: 401, body: { error: 'Нужен вход' } };
     if (u.is_admin) return { status: 200, body: { ok: true, isAdmin: true, already: true } };
+    if (adminBlocked(req)) {
+      return { status: 429, body: { error: 'Слишком много попыток — подождите десять минут' } };
+    }
     const key = String(body.key || '');
-    if (!ADMIN_KEY || key !== ADMIN_KEY) {
+    const okKey = !!ADMIN_KEY && key.length === ADMIN_KEY.length
+      && crypto.timingSafeEqual(Buffer.from(key), Buffer.from(ADMIN_KEY));
+    if (!okKey) {
+      adminMissed(req);
       return { status: 403, body: { error: 'Ключ владельца не подошёл' } };
     }
     q.setAdmin.run(1, u.id);

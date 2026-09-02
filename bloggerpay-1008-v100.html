@@ -11533,10 +11533,8 @@ window.BP_LOGO="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAcFBQYFB
     <div class="auth-bottom">Уже есть аккаунт? <a onclick="switchTab('login')">Войти</a></div>
   </div>
 
-  <!-- ВРЕМЕННО: вход в админку без защиты — убрать кнопку перед запуском -->
-  <button type="button" class="bpa3-entry" onclick="if(window.bpAdminPanel)bpAdminPanel()">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-    Админ-панель</button>
+  <!-- Кнопка входа в админку отсюда убрана: панель открывается только
+       владельцу и только изнутри аккаунта (слой bp-guard). -->
   <div class="auth-foot" style="text-align:center;margin-top:14px;font-size:10.5px;color:rgba(255,255,255,.3);letter-spacing:.4px;line-height:1.6"><span style="color:rgba(255,255,255,.2)">Данные хранятся только в вашем браузере</span></div>
 
 </div>
@@ -38654,8 +38652,21 @@ window.bpKycIdent = function(){
    поэтому дозаливать их бессмысленно: переводим шаг в «отклонено» с
    причиной, человек поправит и отправит заново. Возвращает true, если
    ошибка обработана здесь. */
+/* Отказы, при которых сервер заявку НЕ РАССМАТРИВАЛ: повтор её проведёт.
+   408 — таймаут, 409 — гонка, 413 — тело не пролезло, 425/429 — «слишком
+   часто», 401 — сессия. Всё это временное: заявку оставляем в pending,
+   её дошлёт pollIdentity. «Отклонено» ставим только там, где сервер
+   действительно посмотрел данные и они ему не подошли. */
+var SOFT_FAIL = { 401:1, 408:1, 409:1, 413:1, 425:1, 429:1 };
 function badSubmit(e){
-  if(!e || !e.status || e.status < 400 || e.status >= 500 || e.status === 401) return false;
+  if(!e || !e.status || e.status < 400 || e.status >= 500) return false;
+  if(SOFT_FAIL[e.status]){
+    try{ bpNotify('warning', 'Документы пока не ушли',
+      String(e.message || 'Сервер занят') + '. Отправим сами, как только получится.', { duration: 5000 }); }catch(_){}
+    var kk0 = kyc();
+    if(kk0 && kk0.identity && kk0.identity.status === 'pending'){ kk0.identity.sent = false; persist(); render(); }
+    return true;                     /* обработано: шаг остаётся «ждём отправки» */
+  }
   var kk = kyc();
   if(kk && kk.identity && kk.identity.status === 'pending'){
     kk.identity.status = 'rejected';
@@ -38669,7 +38680,21 @@ function badSubmit(e){
 /* отправка документов на сервер-кассу; без связи — честное «отправим позже» */
 function sendIdentity(photo, selfie, gen){
   var srv = window.bpSrv;
-  if(!srv || !srv.configured() || !srv.token()){ if(_sheetGen === gen) checking(false); return; }
+  if(!srv || !srv.configured()){ if(_sheetGen === gen) checking(false); return; }
+  /* Касса есть, а сессии нет (вошли давно) — это не «нет связи», а
+     «подключись». Раньше человек видел «отправим, когда появится связь»
+     и ждал вечно: документы не уходили никогда. */
+  if(!srv.token()){
+    if(typeof window.bpEnsureSrv === 'function'){
+      window.bpEnsureSrv('Документы уходят на проверку через кассу').then(function(ok){
+        if(ok) sendIdentity(photo, selfie, gen);
+        else if(_sheetGen === gen) checking(false);
+      });
+      return;
+    }
+    if(_sheetGen === gen) checking(false);
+    return;
+  }
   var k = kyc();
   var idn = k && k.identity;
   if(!idn || idn.status !== 'pending'){ if(_sheetGen === gen) checking(false); return; }
@@ -38827,8 +38852,11 @@ window.bpKycPayout = function(){
     if(cur === 'card') rec.card = card.querySelector('#kycCard').value.replace(/\D/g, '');
     else rec.phone = card.querySelector('#kycSbp').value.replace(/\D/g, '');
     k2.payout = rec;
+    /* Безусловно в обеих ветках: реквизит — один, и он всегда совпадает
+       с тем, что человек только что выбрал. Префикс sbp: разбирают и
+       payout(), и payoutLabel(). */
     if(cur === 'card') currentUser.withdrawCard = rec.card;
-    else if(!currentUser.withdrawCard) currentUser.withdrawCard = 'sbp:' + rec.phone;
+    else currentUser.withdrawCard = 'sbp:' + rec.phone;
     persist();
     if(typeof wdUpdate === 'function') try{ wdUpdate(); }catch(e){BPERR(e,33838)}
     done('Реквизиты сохранены', (cur === 'card' ? 'Карта •••• ' + rec.card.slice(-4) : 'СБП · ' + maskPhone(rec.phone)) + ' готова к выплатам.');
@@ -62057,8 +62085,8 @@ window.__bpGrow = 1;
    Имена правятся ТОЛЬКО здесь или в админке (Настройки платформы).
    PLACEHOLDER — значения, при которых имя считается ненастроенным. */
 window.BP_LINK = window.BP_LINK || {
-  bot: 'bloggerpay_bot',   /* ← имя бота без @ */
-  app: 'app',              /* ← короткое имя мини-аппа */
+  bot: 'BloggerPay_bot',   /* ← имя бота без @ */
+  app: '',                 /* мини-аппа нет: сайт открывает сам бот */
   PLACEHOLDER: { bot:'bloggerpay_bot', app:'app' }
 };
 /* Владелец может задать имена из админки, не трогая файл. Читаем при
@@ -62076,9 +62104,10 @@ window.bpLinkCfg = function(){
 window.bpLinkReady = function(){
   var o = null;
   try{ o = JSON.parse(localStorage.getItem('bp_link_cfg') || 'null'); }catch(e){}
-  if(o && o.set && o.bot && o.app) return true;
+  if(o && o.set && o.bot) return true;
+  /* Мини-апп необязателен: без него ссылка ведёт на бота с меткой. */
   var c = window.bpLinkCfg(), P = window.BP_LINK.PLACEHOLDER;
-  return !!(c.bot && c.app && c.bot !== P.bot);
+  return !!(c.bot && c.bot !== P.bot);
 };
 /* Предупреждение владельцу — в консоль. Пользователь его не видит. */
 try{ if(!window.bpLinkReady()) console.warn('[BloggerPay] Имена бота и мини-аппа не настроены — все пригласительные ссылки ведут в никуда. Админ-панель → Настройки платформы.'); }catch(e){}
@@ -62090,7 +62119,13 @@ function tgApi(){ try{ return window.Telegram && window.Telegram.WebApp; }catch(
 
 function bpLink(kind, id){
   var c = window.bpLinkCfg();
-  return 'https://t.me/' + c.bot + '/' + c.app + '?startapp=' + kind + '_' + String(id);
+  var tag = kind + '_' + String(id);
+  /* Мини-апп задан — открываем его (t.me/бот/апп?startapp=). Не задан —
+     обычная ссылка на бота с меткой: он поймает её в /start и пришлёт
+     кнопку с сайтом. */
+  return c.app
+    ? ('https://t.me/' + c.bot + '/' + c.app + '?startapp=' + tag)
+    : ('https://t.me/' + c.bot + '?start=' + tag);
 }
 window.bpInviteLink = function(){
   var id = (currentUser && currentUser.id) || '';
@@ -67535,7 +67570,8 @@ window.bpaCfgSave = function(){
   var lb=String((document.getElementById('bpaLinkBot')||{}).value||'').replace(/^@/,'').trim();
   var la=String((document.getElementById('bpaLinkApp')||{}).value||'').replace(/^@/,'').trim();
   try{
-    if(lb&&la) localStorage.setItem('bp_link_cfg', JSON.stringify({ bot:lb, app:la, set:1 }));
+    /* Имя мини-аппа необязательно: пусто — ссылки пойдут через /start бота. */
+    if(lb) localStorage.setItem('bp_link_cfg', JSON.stringify({ bot:lb, app:la||'', set:1 }));
     else localStorage.removeItem('bp_link_cfg');
   }catch(e){ E(e); }
   try{ localStorage.setItem('bp_admin_cfg', JSON.stringify(cfg)); }catch(e){ E(e); toast('Не сохранилось','err'); return; }
@@ -68227,7 +68263,10 @@ function syncFab(){
     var authOn=false;
     var pa=document.getElementById('pg-auth');
     if(pa&&pa.classList&&pa.classList.contains('on')) authOn=true;
-    var need=CFG().fab!==false && !document.getElementById('bpaWrap') && !authOn;
+    /* Кнопка ⚙ ведёт в админ-панель, поэтому по умолчанию её нет ни у
+       кого: включается вручную владельцем («Ещё → Кнопка ⚙»), и слой
+       bp-guard дополнительно прячет её от неадминов. */
+    var need=CFG().fab===true && !document.getElementById('bpaWrap') && !authOn;
     var f=document.getElementById('bpaFab');
     if(need&&!f){
       f=document.createElement('div'); f.id='bpaFab'; f.setAttribute('role','button');
@@ -71521,8 +71560,45 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
 
   var _online = false;
   var TKEY = 'bp_srv_token';
-  function token(){ try{ return localStorage.getItem(TKEY) || ''; }catch(e){ return ''; } }
-  function setToken(t){ try{ t ? localStorage.setItem(TKEY, t) : localStorage.removeItem(TKEY); }catch(e){ E(e); } }
+  /* Ключ сессии хранится ВО ВКЛАДКЕ (sessionStorage): в проекте штатно
+     открывают два окна — блогера и рекламодателя, — и общий ключ означал
+     бы, что деньги первого уходят от имени второго.
+
+     Чтобы вкладку можно было перезагрузить (и чтобы мини-апп Телеграма,
+     который убивает WebView, не терял вход), рядом лежит долговечная
+     копия — но она подписана почтой владельца и достаётся только ему.
+     Имя копии без префикса bp_ — иначе её перехватит bpData и разошлёт
+     между аккаунтами. */
+  function whoNow(){
+    try{ return String((typeof currentUser !== 'undefined' && currentUser && currentUser.email) || '').toLowerCase(); }
+    catch(e){ return ''; }
+  }
+  function keepKey(mail){ return 'bpSrvKeep:' + (mail || whoNow()); }
+  function token(){
+    try{
+      var t = sessionStorage.getItem(TKEY) || '';
+      if(t) return t;
+      var mail = whoNow();
+      if(!mail) return '';
+      var k = localStorage.getItem(keepKey(mail)) || '';
+      if(k) sessionStorage.setItem(TKEY, k);      /* подняли копию во вкладку */
+      return k;
+    }catch(e){ return ''; }
+  }
+  function setToken(t, mail){
+    try{
+      if(t){
+        sessionStorage.setItem(TKEY, t);
+        var m = mail || whoNow();
+        if(m) localStorage.setItem(keepKey(m), t);
+      } else {
+        sessionStorage.removeItem(TKEY);
+        var m2 = mail || whoNow();
+        if(m2) localStorage.removeItem(keepKey(m2));
+        localStorage.removeItem(TKEY);           /* хвост от прежних версий */
+      }
+    }catch(e){ E(e); }
+  }
 
   /* uuid для opKey. crypto.randomUUID есть в вебвью Телеграма; на всякий
      случай — запасной вариант из времени и случайности. */
@@ -71543,14 +71619,31 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
       headers: headers,
       body: body ? JSON.stringify(body) : undefined
     }).then(function(r){
+      /* Сервер ответил — связь есть. 5xx считаем «ещё не готов»: так
+         отвечает прокси, пока контейнер поднимается. */
+      _online = r.status < 500;
       return r.json().catch(function(){ return {}; }).then(function(j){
         if(!r.ok){
+          if(r.status === 401 && t){
+            /* Ключ больше не действует. Держать его — значит и дальше
+               ходить в кассу с мёртвым входом и получать «Нужен вход». */
+            setToken('');
+            try{ localStorage.removeItem('bp_srv_uid'); }catch(e){}
+          }
           var err = new Error((j && j.error) || ('HTTP ' + r.status));
           err.status = r.status;
+          /* Признаки из тела: приложению не приходится гадать по словам.
+             dead — код второго фактора уже не оживить, нужен новый. */
+          if(j && j.dead !== undefined) err.dead = !!j.dead;
+          if(j && j.reason) err.reason = j.reason;
+          if(j && j.needCode) err.needCode = true;
           throw err;
         }
         return j;
       });
+    }, function(netErr){
+      _online = false;               /* до кассы не дозвонились вовсе */
+      throw netErr;
     });
   }
 
@@ -71592,14 +71685,14 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
 
     register: function(data){
       return req('POST', '/api/register', data).then(function(j){
-        if(j && j.token) setToken(j.token);
+        if(j && j.token) setToken(j.token, String((data && data.email) || '').toLowerCase());
         _online = true;
         return j;
       });
     },
     login: function(email, password){
       return req('POST', '/api/login', { email: email, password: password }).then(function(j){
-        if(j && j.token) setToken(j.token);
+        if(j && j.token) setToken(j.token, String(email || '').toLowerCase());
         _online = true;
         return j;
       });
@@ -71611,6 +71704,7 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
       return Promise.resolve();
     },
 
+    setToken: function(t, mail){ setToken(t, mail); },
     me: function(){ return req('GET', '/api/me'); },
     balance: function(){ return req('GET', '/api/balance'); },
     ledger: function(){ return req('GET', '/api/ledger'); },
@@ -72099,9 +72193,25 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
       var t = e.target;
       if(!t || !t.closest) return;
       var btn = t.closest('#wdSubmitBtn');
-      if(!btn || !serverMode()) return;
-      /* Второй заход — наш собственный, пропускаем к прежнему коду. */
+      var _s = srv();
+      if(!btn || !_s || !_s.configured()) return;   /* кассы нет — прежний местный режим */
       if(btn.__bpPass){ btn.__bpPass = 0; return; }
+      if(!_s.token()){
+        e.preventDefault(); e.stopImmediatePropagation();
+        if(typeof window.bpEnsureSrv === 'function'){
+          window.bpEnsureSrv('Вывод проходит через кассу').then(function(ok){
+            if(ok){ try{ btn.click(); }catch(_){} }
+          });
+        } else { try{ showAuthToast('Сначала войдите в аккаунт', 'err'); }catch(_){} }
+        return;
+      }
+      if(!_s.online()){
+        e.preventDefault(); e.stopImmediatePropagation();
+        try{ showAuthToast('Нет связи с кассой — попробуйте ещё раз через минуту', 'err'); }catch(_){}
+        /* Заодно проверим связь: ответ сервера сам поднимет флаг. */
+        try{ _s.probe && _s.probe(); }catch(_){}
+        return;
+      }
       if(btn.dataset && btn.dataset.busy) return;
       /* Свой флаг занятости, НЕ dataset.busy: wdGo первой строкой выходит
          по dataset.busy, и пропущенный клик умирал бы — сервер списал,
@@ -72327,8 +72437,25 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
       var t = e.target;
       if(!t || !t.closest) return;
       var btn = t.closest('#tuBtn');
-      if(!btn || !serverMode()) return;
+      var _s = srv();
+      if(!btn || !_s || !_s.configured()) return;   /* кассы нет — прежний местный режим */
       if(btn.__bpPass){ btn.__bpPass = 0; return; }
+      if(!_s.token()){
+        e.preventDefault(); e.stopImmediatePropagation();
+        if(typeof window.bpEnsureSrv === 'function'){
+          window.bpEnsureSrv('Пополнение проходит через кассу').then(function(ok){
+            if(ok){ try{ btn.click(); }catch(_){} }
+          });
+        } else { try{ showAuthToast('Сначала войдите в аккаунт', 'err'); }catch(_){} }
+        return;
+      }
+      if(!_s.online()){
+        e.preventDefault(); e.stopImmediatePropagation();
+        try{ showAuthToast('Нет связи с кассой — попробуйте ещё раз через минуту', 'err'); }catch(_){}
+        /* Заодно проверим связь: ответ сервера сам поднимет флаг. */
+        try{ _s.probe && _s.probe(); }catch(_){}
+        return;
+      }
       if(btn.dataset && btn.dataset.busy) return;
       if(btn.__bpBusy) return;
       var amount = tuAmountNow();
@@ -74690,7 +74817,12 @@ function build(prefill){
       var r = await srv().raw('POST', '/api/password/reset',
         { email: state.email, code: state.code, password: srvPw });
       /* Сервер выдал свежую сессию — кладём её в мост, как при входе */
-      try{ if(r && r.token) localStorage.setItem('bp_srv_token', r.token); }catch(e){ E(e); }
+      try{
+        if(r && r.token){
+          if(srv() && typeof srv().setToken === 'function') srv().setToken(r.token, String(state.email || '').toLowerCase());
+          else localStorage.setItem('bp_srv_token', r.token);
+        }
+      }catch(e){ E(e); }
       /* И — обязательно — меняем пароль В САМОМ ПРИЛОЖЕНИИ.
          Вход в приложение проверяет местный хеш (_bpVerifyPass), сервер
          про него ничего не знает. Без этой строки человек увидел бы
@@ -75503,6 +75635,7 @@ function sheet(){
     +     ' autocomplete="one-time-code" maxlength="6" placeholder="······" aria-label="Код из письма">'
     +   '<div class="wd2-msg" id="wd2Msg"></div>'
     +   '<button type="button" class="wd2-btn" id="wd2Go">Подтвердить</button>'
+    +   '<button type="button" class="wd2-x" id="wd2New">Выслать код заново</button>'
     +   '<button type="button" class="wd2-x" id="wd2X">Отмена</button>'
     + '</div>';
   document.body.appendChild(el);
@@ -75557,6 +75690,14 @@ function askCode(info, errText){
       p.resolve(code);
     }
     go.onclick = submit;
+    /* «Выслать заново» — тот же путь, что и у мёртвого кода: пустой код
+       заставляет сервер прислать свежий. Ответ придёт в тот же цикл. */
+    var again = w.querySelector('#wd2New');
+    if(again) again.onclick = function(){
+      again.disabled = true; again.textContent = 'Высылаем…';
+      var p = pending; pending = null;
+      if(p) p('');                      /* пустая строка — «нужен новый код» */
+    };
     inp.oninput = function(){
       inp.value = inp.value.replace(/\D/g, '').slice(0, 6);
       inp.classList.remove('bad'); msg.textContent = '';
@@ -75579,12 +75720,37 @@ if(srv && typeof srv.withdraw === 'function' && !srv.withdraw.__bpWd2){
     while(r && r.needCode){
       var code2 = await askCode(r, errText);   /* отмена бросит — уйдёт наружу */
       errText = '';
+      if(!code2){
+        /* Человек попросил новое письмо: запрос без кода его и отправляет. */
+        try{
+          var re = await orig(amount, requisites);
+          r = re && re.needCode ? re : r;
+          errText = 'Новый код отправлен на почту.';
+          continue;
+        }catch(e3){ close(false); throw e3; }
+      }
       try{
         r = await orig(amount, requisites, code2);
       }catch(err){
-        /* Неверный код сервер отдаёт ошибкой. Не роняем весь вывод —
-           возвращаем человека в ту же шторку с пояснением, заявка цела. */
         var m = String((err && err.message) || 'Не получилось');
+        /* Код мёртв (истёк, исчерпаны попытки, изменилась сумма) — сам
+           заказываем новый: запрос без кода отправляет свежее письмо.
+           Раньше человек крутился в одной и той же ошибке. */
+        if(err && err.dead){
+          try{
+            var fresh = await orig(amount, requisites);
+            r = fresh && fresh.needCode ? fresh
+              : { needCode: true, amount: amount, net: r && r.net, sentTo: (r && r.sentTo) || '' };
+            errText = m + '. Выслали новый код на почту.';
+            continue;
+          }catch(e2){ close(false); throw e2; }
+        }
+        /* Просто промах — та же шторка, попытки ещё есть. */
+        if(err && err.needCode){
+          errText = m;
+          r = { needCode: true, amount: amount, net: r && r.net, sentTo: (r && r.sentTo) || '' };
+          continue;
+        }
         if(/код/i.test(m)){
           errText = m;
           r = { needCode: true, amount: amount, net: r && r.net, sentTo: (r && r.sentTo) || '' };
@@ -76540,5 +76706,297 @@ html #bpaFab svg{ width:15px!important; height:15px!important }
 html #bpaFab:active{ opacity:1; transform:scale(.94) }
 @media (hover:hover){ html #bpaFab:hover{ opacity:1 } }
 </style>
+
+<script id="bp-guard">
+/* ══ СТОРОЖ: админка, выход и чужая сессия ═══════════════════════════
+   Три дыры, найденные при разборе, закрываются здесь. Слой стоит
+   последним намеренно: bpAdminPanel переопределяется в файле трижды и
+   ещё раз оборачивается в bp-akyc — обернуть надо самую последнюю
+   версию, иначе сторож окажется под ней.
+
+   1) АДМИН-ПАНЕЛЬ БЫЛА ОТКРЫТА ВСЕМ. Кнопка на экране входа (убрана из
+      разметки) и плавающая ⚙ вызывали bpAdminPanel() без единой
+      проверки: любой посетитель получал чужие балансы, почты, вход в
+      чужой аккаунт и выгрузку всей базы. Теперь право входа даёт только
+      сервер (GET /api/admin/whoami) — из localStorage его взять нельзя,
+      потому что localStorage правит сам пользователь.
+
+   2) ВЫХОД НЕ ГАСИЛ СЕРВЕРНУЮ СЕССИЮ. clearSession снимала только
+      местные ключи, а ключ кассы жил ещё 30 дней. Следующий человек на
+      том же телефоне подавал заявку на вывод с ЧУЖОГО серверного
+      баланса и отправлял свой паспорт в чужой аккаунт.
+
+   3) «ВОЙТИ В АККАУНТ» ИЗ АДМИНКИ разводил личности: приложение
+      показывало пользователя Б, а касса продолжала считать за А.
+      Теперь просмотр чужого аккаунта идёт без кассы вовсе.
+
+   Откат: удалить этот блок.                                          */
+(function(){
+'use strict';
+if(window.__bpGuard) return; window.__bpGuard = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e); }catch(_){} }
+function srv(){ return window.bpSrv; }
+function toast(m, k){ try{ showAuthToast(m, k || 'info'); }catch(e){} }
+function me(){ try{ return (typeof currentUser !== 'undefined' && currentUser) || null; }catch(e){ return null; } }
+
+/* ── 1. Право админа: только слово сервера, только в памяти ── */
+var _admin = false, _asked = 0, _wait = null;
+window.bpIsAdminNow = function(){ return _admin; };
+
+function askAdmin(force){
+  var s = srv();
+  if(!s || !s.configured() || !s.token()){ _admin = false; return Promise.resolve(false); }
+  var now = Date.now();
+  if(!force && _wait) return _wait;
+  if(!force && now - _asked < 60000) return Promise.resolve(_admin);
+  _asked = now;
+  _wait = s.raw('GET', '/api/admin/whoami')
+    .then(function(j){ _admin = !!(j && j.isAdmin); _wait = null; return _admin; })
+    .catch(function(){ _admin = false; _wait = null; return false; });
+  return _wait;
+}
+window.bpAskAdmin = askAdmin;
+
+/* Сторож поверх последней версии панели. */
+var origPanel = window.bpAdminPanel;
+if(typeof origPanel === 'function'){
+  window.bpAdminPanel = function(){
+    var args = arguments, self = this;
+    if(_admin) return origPanel.apply(self, args);
+    var s = srv();
+    if(!s || !s.configured()){
+      toast('Админ-панель работает только с подключённой кассой', 'err');
+      return;
+    }
+    if(!me()){ toast('Сначала войдите в аккаунт владельца', 'err'); return; }
+    /* Сессии может не быть (вошли давно) — подключим и спросим снова. */
+    var pre = s.token() ? Promise.resolve(true)
+      : (typeof window.bpEnsureSrv === 'function'
+          ? window.bpEnsureSrv('Права владельца проверяются на сервере')
+          : Promise.resolve(false));
+    pre.then(function(){ return askAdmin(true); }).then(function(ok){
+      if(ok) origPanel.apply(self, args);
+      else toast('Этот аккаунт не владелец платформы', 'err');
+    });
+  };
+}
+
+/* Плавающая ⚙ — только админу. Она рисуется в цикле (syncFab), поэтому
+   держим её под наблюдением, а не снимаем один раз. */
+setInterval(function(){
+  try{
+    var f = document.getElementById('bpaFab');
+    if(f && !_admin) f.remove();
+  }catch(e){}
+}, 1500);
+
+/* Как только сессия появилась — спрашиваем права один раз, чтобы кнопка
+   у настоящего владельца работала без задержки. */
+setTimeout(function(){ try{ askAdmin(false); }catch(e){} }, 2500);
+
+/* ── 2. Выход гасит серверную сессию ── */
+function dropServer(mail){
+  try{
+    var s = srv();
+    if(s && s.configured && s.configured() && s.token && s.token() && typeof s.logout === 'function'){
+      s.logout().catch(function(){});      /* без await: выход не ждёт сеть */
+    } else if(s && typeof s.setToken === 'function'){
+      s.setToken('', mail);
+    }
+  }catch(e){ E(e); }
+  try{ sessionStorage.removeItem('bp_srv_token'); }catch(e){}
+  try{ localStorage.removeItem('bp_srv_token'); }catch(e){}
+  try{ localStorage.removeItem('bp_srv_uid'); }catch(e){}
+  try{ if(mail) localStorage.removeItem('bpSrvKeep:' + String(mail).toLowerCase()); }catch(e){}
+  _admin = false; _asked = 0;
+}
+window.bpDropServerSession = dropServer;
+
+var origClear = window.clearSession;
+if(typeof origClear === 'function' && !origClear.__bpGuard){
+  window.clearSession = function(){
+    var mail = '';
+    try{ mail = String((me() && me().email) || '').toLowerCase(); }catch(e){}
+    var r;
+    try{ r = origClear.apply(this, arguments); }
+    finally{ dropServer(mail); }
+    return r;
+  };
+  window.clearSession.__bpGuard = true;
+}
+
+/* ── 3. Просмотр чужого аккаунта из админки — без кассы ── */
+var origAs = window.bpaLoginAs;
+if(typeof origAs === 'function' && !origAs.__bpGuard){
+  window.bpaLoginAs = function(){
+    /* Ключ принадлежит АДМИНУ. Не снять его — значит показать одного
+       человека, а деньги считать другому: sync() перепишет чужой баланс
+       в запись просматриваемого и сохранит её. */
+    var mail = '';
+    try{ mail = String((me() && me().email) || '').toLowerCase(); }catch(e){}
+    dropServer(mail);
+    var r = origAs.apply(this, arguments);
+    toast('Просмотр чужого аккаунта: касса отключена, деньги недоступны', 'info');
+    return r;
+  };
+  window.bpaLoginAs.__bpGuard = true;
+}
+})();
+</script>
+
+<script id="bp-pull">
+/* ══ ДАННЫЕ ПРИЕЗЖАЮТ С СЕРВЕРА САМИ ═════════════════════════════════
+   Три дыры одного рода: механизмы написаны, но их никто не звал.
+
+   1) БАЛАНС. bpMoney.sync() дёргался только в хвосте СВОЕЙ операции.
+      Блогер, которому пришла выплата, своих операций не совершает — и
+      не видел поступление никогда: на экране жило старое число, а
+      кнопка вывода считала лимит по нему же.
+
+   2) ЗАЯВКИ НА ВЫВОД. bpWdRefresh() определён и рабочий, но не вызван
+      ни разу: «в очереди» висело вечно, даже когда оператор уже
+      выплатил.
+
+   3) ПРОВЕРКА ЛИЧНОСТИ. Вердикт оператора спрашивался, только если
+      локальная запись уже была в состоянии «pending». Человек, вошедший
+      с другого телефона (или после очистки данных), видел «Подтвердите
+      личность» с нуля, хотя на сервере он давно одобрен, — и не мог
+      добраться до своих денег.
+
+   Здесь всё это подключается к жизни экрана: вход, открытие денежных
+   страниц, возврат в приложение и редкий тик в фоне. Источник правды —
+   сервер, localStorage остаётся кэшем.
+
+   Откат: удалить этот блок.                                          */
+(function(){
+'use strict';
+if(window.__bpPull) return; window.__bpPull = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e); }catch(_){} }
+function srv(){ return window.bpSrv; }
+function live(){ var s = srv(); return !!(s && s.configured() && s.token()); }
+function me(){ try{ return (typeof currentUser !== 'undefined' && currentUser) || null; }catch(e){ return null; } }
+function persist(){ try{ if(typeof saveUsers === 'function') saveUsers(); }catch(e){ E(e); } }
+
+/* ── 1. Баланс и заявки ── */
+var _bal = 0;
+function pullMoney(force){
+  if(!live()) return Promise.resolve(false);
+  var now = Date.now();
+  if(!force && now - _bal < 15000) return Promise.resolve(false);
+  _bal = now;
+  var jobs = [];
+  try{ if(window.bpMoney && typeof bpMoney.sync === 'function') jobs.push(bpMoney.sync()); }catch(e){ E(e); }
+  try{ if(typeof window.bpWdRefresh === 'function') jobs.push(window.bpWdRefresh()); }catch(e){ E(e); }
+  return Promise.all(jobs.map(function(p){ return (p && p.catch) ? p.catch(function(){}) : p; }))
+    .then(function(){ repaint(); return true; })
+    .catch(function(){ return false; });
+}
+function repaint(){
+  try{
+    var p = document.querySelector('.pg.on');
+    var id = p && p.id;
+    if(id === 'pg-balance' && typeof window.renderBalance === 'function') window.renderBalance();
+    if(typeof window.wdUpdate === 'function' && (id === 'pg-withdraw' || id === 'pg-balance')) window.wdUpdate();
+    if(typeof window.tuUpdate === 'function' && id === 'pg-topup') window.tuUpdate();
+    /* Число в шапке живёт своей жизнью — обновляем, если умеет. */
+    if(typeof window.updateTopbarBalance === 'function') window.updateTopbarBalance();
+  }catch(e){}
+}
+
+/* ── 2. Проверка личности: вердикт спрашиваем всегда ── */
+var _kyc = 0;
+function pullKyc(force){
+  if(!live()) return Promise.resolve(false);
+  var now = Date.now();
+  if(!force && now - _kyc < 20000) return Promise.resolve(false);
+  _kyc = now;
+  return srv().raw('GET', '/api/kyc/status').then(function(j){
+    var u = me(); if(!u || !j) return false;
+    if(!u.kyc) u.kyc = { phone:null, identity:{ status:'none' }, payout:null };
+    if(!u.kyc.identity) u.kyc.identity = { status:'none' };
+    var was = u.kyc.identity.status;
+    var st = String(j.status || 'none');
+    if(st === 'approved'){
+      u.kyc.identity.status = 'verified';
+      u.kyc.identity.sent = true;
+      u.kyc.identity.note = '';
+    } else if(st === 'rejected'){
+      u.kyc.identity.status = 'rejected';
+      u.kyc.identity.sent = true;
+      u.kyc.identity.note = String(j.note || '').slice(0, 200);
+    } else if(st === 'queued'){
+      u.kyc.identity.status = 'pending';
+      u.kyc.identity.sent = true;
+      if(!u.kyc.identity.at) u.kyc.identity.at = Date.now();
+    } else {
+      /* Сервер про заявку не знает. Локальное «отправлено» — неправда:
+         пусть человек отправит документы, а не ждёт вечно. */
+      if(u.kyc.identity.sent && u.kyc.identity.status === 'pending') u.kyc.identity.sent = false;
+      if(u.kyc.identity.status === 'verified') u.kyc.identity.status = 'none';
+    }
+    if(was !== u.kyc.identity.status){
+      persist();
+      if(u.kyc.identity.status === 'verified'){
+        try{ bpNotify('success', 'Личность подтверждена', 'Оператор проверил документы — вывод открыт.', { duration: 5000 }); }catch(e){}
+      }
+    } else if(u.kyc.identity.sent !== undefined){ persist(); }
+    return true;
+  }).catch(function(){ return false; });
+}
+window.bpPullKyc = pullKyc;
+
+/* ── 3. Связь: пробуем снова, а не один раз за загрузку ── */
+function reprobe(){
+  try{
+    var s = srv();
+    if(s && s.configured() && !s.online() && typeof s.probe === 'function') s.probe();
+  }catch(e){}
+}
+
+/* ── куда подключаемся ── */
+function onPage(page){
+  var p = String(page || '');
+  if(p === 'balance' || p === 'withdraw' || p === 'topup' || p === 'home' || p === 'profile'){
+    reprobe(); pullMoney(false);
+  }
+  if(p === 'withdraw' || p === 'balance') pullKyc(false);
+}
+var og = window.goTo;
+if(typeof og === 'function' && !og.__bpPull){
+  window.goTo = function(page){
+    var r = og.apply(this, arguments);
+    setTimeout(function(){ try{ onPage(page); }catch(e){} }, 40);
+    return r;
+  };
+  window.goTo.__bpPull = true;
+}
+
+/* вход в приложение — тянем всё сразу */
+var oe = window.enterApp;
+if(typeof oe === 'function' && !oe.__bpPull){
+  window.enterApp = function(){
+    var r = oe.apply(this, arguments);
+    setTimeout(function(){ reprobe(); pullMoney(true); pullKyc(true); }, 1200);
+    return r;
+  };
+  window.enterApp.__bpPull = true;
+}
+
+/* возврат к вкладке и редкий фоновый тик */
+document.addEventListener('visibilitychange', function(){
+  if(document.hidden) return;
+  reprobe(); pullMoney(false); pullKyc(false);
+});
+setInterval(function(){
+  if(document.hidden) return;
+  reprobe(); pullMoney(false); pullKyc(false);
+}, 60000);
+
+/* первый заход после загрузки */
+setTimeout(function(){ reprobe(); pullMoney(true); pullKyc(true); }, 3000);
+})();
+</script>
 </body>
 </html>

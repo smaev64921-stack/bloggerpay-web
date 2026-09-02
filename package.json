@@ -9,6 +9,6 @@
   "scripts": {
     "start": "node server/server.js",
     "bot": "node server/bot.js",
-    "test": "node server/test-scenario.mjs"
+    "test": "node server/test-all.mjs"
   }
 }
