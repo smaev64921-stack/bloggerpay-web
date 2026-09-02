@@ -69,6 +69,26 @@ function reachableOutside(u) {
   return true;
 }
 
+/* Свой внешний адрес. Хостинги дают его по-разному, и полагаться только
+   на PUBLIC_URL нельзя: у Bothost, например, в настройках по умолчанию
+   стоит http://127.0.0.1:8090 — адрес «внутри контейнера», снаружи по
+   нему никто не придёт. Зато хостинг сам кладёт домен в DOMAIN.
+
+   Порядок: явный внешний PUBLIC_URL → домен от хостинга → пусто.
+   Так на Bothost ничего настраивать не нужно, а тот, кто прописал свой
+   домен руками, получает именно его. */
+function externalBase(env) {
+  const e = env || process.env;
+  const pub = String(e.PUBLIC_URL || '').trim().replace(/\/+$/, '');
+  if (pub && /^https?:\/\//i.test(pub) && reachableOutside(pub)) return pub;
+  const dom = String(e.DOMAIN || '').trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+  if (dom && /\./.test(dom)) {
+    const url = 'https://' + dom;
+    if (reachableOutside(url)) return url;
+  }
+  return '';
+}
+
 const esc = (s) => String(s == null ? '' : s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -409,4 +429,4 @@ async function sendCodeEmail(opts) {
   return sendMail({ to: opts.to, subject: mail.subject, html: mail.html, text: mail.text });
 }
 
-module.exports = { renderCodeEmail, sendMail, sendCodeEmail, reachableOutside, mailConfigured: () => !!cfg().key };
+module.exports = { renderCodeEmail, sendMail, sendCodeEmail, reachableOutside, externalBase, mailConfigured: () => !!cfg().key };

@@ -21,7 +21,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { reachableOutside } = require('./mail');
+const { reachableOutside, externalBase } = require('./mail');
 
 /* ── Настройки ─────────────────────────────────────────────────────── */
 
@@ -50,11 +50,12 @@ const TOKEN = ENV.BOT_TOKEN || '';
    это можно было только вручную сверив адрес. Забытая настройка не
    должна пересиливать живой адрес. */
 function pickAppUrl() {
-  const pub = String(ENV.PUBLIC_URL || '').trim().replace(/\/+$/, '');
+  const own = externalBase(ENV);                 /* PUBLIC_URL или DOMAIN хостинга */
+  if (own) return { url: own, from: 'адреса сервера' };
   const app = String(ENV.APP_URL || '').trim().replace(/\/+$/, '');
-  if (pub && reachableOutside(pub)) return { url: pub, from: 'PUBLIC_URL' };
   if (app) return { url: app, from: 'APP_URL' };
-  return { url: pub, from: 'PUBLIC_URL' };   /* локальная разработка */
+  const pub = String(ENV.PUBLIC_URL || '').trim().replace(/\/+$/, '');
+  return { url: pub, from: 'PUBLIC_URL' };       /* локальная разработка */
 }
 const PICKED = pickAppUrl();
 const APP_URL = PICKED.url;

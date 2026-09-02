@@ -56,7 +56,7 @@ try {
   console.error('');
   process.exit(1);
 }
-const { sendCodeEmail, reachableOutside, mailConfigured } = require('./mail');
+const { sendCodeEmail, reachableOutside, externalBase, mailConfigured } = require('./mail');
 
 /* ── Настройки из .env ─────────────────────────────────────────────── */
 
@@ -130,7 +130,11 @@ const PAY_RETURN_URL = ENV.PAY_RETURN_URL || 'https://t.me';
      TikTok  — developers.tiktok.com, Login Kit, доступ user.info.basic.
    Пока ключей нет, кнопка «Подтвердить» честно говорит, что проверка
    ещё не настроена. */
-const PUBLIC_URL = (ENV.PUBLIC_URL || ('http://127.0.0.1:' + (Number(ENV.PORT) || 8090))).replace(/\/+$/, '');
+/* Свой внешний адрес. Хостинг может подставить его сам (Bothost кладёт
+   домен в DOMAIN), и тогда настраивать ничего не надо. Если внешнего
+   адреса нет — работаем как локальный сервер. */
+const PUBLIC_URL = externalBase(ENV)
+  || (ENV.PUBLIC_URL || ('http://127.0.0.1:' + (Number(ENV.PORT) || 8090))).replace(/\/+$/, '');
 /* Письмо-ссылка имеет смысл ТОЛЬКО если сервер виден снаружи. Проверять
    одну схему мало: значение по умолчанию — http://127.0.0.1:<порт> —
    схему имеет, и режим включался бы сам собой. Тогда человек получал бы
