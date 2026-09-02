@@ -47827,6 +47827,18 @@ function escrowHold(req){
   var amount = Math.round(num(req.budget));
   if(amount <= 0) return {ok:true, zero:true};
 
+  /* Есть касса — деньги уже в холде на сервере, и второй раз их снимать
+     нельзя. Ставим отметку в журнале, чтобы дальнейшие шаги сделки
+     видели «заморожено», и уходим: настоящие числа принесёт синхронизация. */
+  var onServer = false;
+  try{ onServer = typeof window.bpMoneyServerMode === 'function' && window.bpMoneyServerMode(); }catch(e){}
+  if(onServer){
+    ledgerAdd({ key:key, dealKey:did, kind:'escrow', amount:amount,
+                advId:req.fromAdvertiserId, at:Date.now(), server:1,
+                reason:'Заморожено кассой при отправке заявки' });
+    return {ok:true, amount:amount, server:true};
+  }
+
   var adv = findUser(req.fromAdvertiserId);
   if(!adv) return {ok:false, why:'Рекламодатель не найден'};
   if((Number(adv.balance) || 0) < amount)
@@ -48513,17 +48525,24 @@ window.bpTplSaveFrom = function(target){
   if(!T){ return; }
   var data = T.read();
   if(!data.task && !data.format){ toast('Сначала заполните задание', 'err'); return; }
-  var name = prompt('Название шаблона:', (data.format || 'Задание') + (data.price ? ' · ' + money(data.price) + ' ₽' : ''));
-  if(name == null) return;
-  name = String(name).trim().slice(0, 60);
-  if(!name){ toast('Нужно название', 'err'); return; }
+  var guess = (data.format || 'Задание') + (data.price ? ' · ' + money(data.price) + ' ₽' : '');
+  var ask = (typeof window.bpPrompt === 'function')
+    ? window.bpPrompt({ title:'Название шаблона', sub:'По нему вы найдёте его в списке.',
+                        value:guess, okText:'Сохранить', required:true,
+                        requiredText:'Нужно название', maxLength:60 })
+    : Promise.resolve(prompt('Название шаблона:', guess));
+  ask.then(function(name){
+    if(name == null) return;
+    name = String(name).trim().slice(0, 60);
+    if(!name){ toast('Нужно название', 'err'); return; }
 
-  var all = tpls();
-  if(all.length >= 30){ toast('Больше 30 шаблонов не храним — удалите лишние', 'err'); return; }
-  all.unshift({ id:'tpl_' + Date.now(), name:name, format:data.format, price:data.price,
-                deadline:data.deadline, task:data.task, videoPreview:!!data.videoPreview,
-                usedCount:0, createdAt:Date.now() });
-  if(tplsSave(all)) toast('Шаблон сохранён', 'ok');
+    var all = tpls();
+    if(all.length >= 30){ toast('Больше 30 шаблонов не храним — удалите лишние', 'err'); return; }
+    all.unshift({ id:'tpl_' + Date.now(), name:name, format:data.format, price:data.price,
+                  deadline:data.deadline, task:data.task, videoPreview:!!data.videoPreview,
+                  usedCount:0, createdAt:Date.now() });
+    if(tplsSave(all)) toast('Шаблон сохранён', 'ok');
+  });
 };
 
 /* Ряд кнопок «взять / сохранить» поверх существующих форм. */
@@ -72100,7 +72119,27 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
         srv().hold(campKey(campId), budget).then(function(){ return sync(); })
           .catch(function(e){
             if(e && /уже есть/.test(e.message || '')) return;   /* уже заморожен */
-            toast('Бюджет кампании не заморожен: ' + (e.message || ''), 'err');
+            /* Касса денег не дала — кампанию нельзя оставлять активной:
+               блогеры возьмут задания, а платить будет нечем. Возвращаем
+               её в черновик и говорим об этом прямо. */
+            var back = false;
+            try{
+              if(typeof window._loadCamps === 'function' && typeof window._saveCamps === 'function'){
+                var arr = window._loadCamps() || [];
+                for(var i = 0; i < arr.length; i++){
+                  if(arr[i] && String(arr[i].id) === String(campId) && String(arr[i].status) === 'active'){
+                    arr[i].status = 'draft'; back = true;
+                  }
+                }
+                if(back){
+                  window._saveCamps(arr);
+                  if(typeof window.renderCampaignsPage === 'function') window.renderCampaignsPage();
+                }
+              }
+            }catch(e2){ E(e2); }
+            toast(back
+              ? ('Кампания не запущена: ' + (e.message || 'касса не заморозила бюджет') + '. Вернули в черновики.')
+              : ('Бюджет кампании не заморожен: ' + (e.message || '')), 'err');
           });
       }catch(e){ E(e); }
       return r;
@@ -76996,6 +77035,121 @@ setInterval(function(){
 
 /* первый заход после загрузки */
 setTimeout(function(){ reprobe(); pullMoney(true); pullKyc(true); }, 3000);
+})();
+</script>
+
+<script id="bp-prompt">
+/* ══ Свой ввод строки вместо системного prompt() ═════════════════════
+   В вебвью Телеграма — на главной площадке приложения — window.prompt
+   не работает: диалога нет, возвращается null. Кнопки «Вставить ссылку»,
+   «Сохранить шаблон» и «Отклонить работу» в нём просто ничего не делали.
+
+   Здесь та же шторка, что и у остального приложения, и она возвращает
+   обещание. Глобально подменять window.prompt нельзя: он синхронный, а
+   шторка — нет; подмена вернула бы объект-обещание, и в шаблон записался
+   бы «[object Promise]». Поэтому три места переведены на bpPrompt явно.
+
+   Откат: удалить этот блок и вернуть prompt() в трёх местах.         */
+(function(){
+'use strict';
+if(window.bpPrompt) return;
+
+function esc(s){ return String(s == null ? '' : s).replace(/[<>&"]/g, function(c){
+  return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]; }); }
+
+/* Вопрос строкой. Возвращает обещание: строка или null, если отменили. */
+window.bpPrompt = function(opts){
+  opts = (typeof opts === 'string') ? { title: opts } : (opts || {});
+  return new Promise(function(resolve){
+    var ov = document.createElement('div');
+    ov.className = 'bpsa-ov';
+    ov.style.zIndex = '870';
+    var multi = !!opts.multiline;
+    ov.innerHTML =
+      '<div class="bpsa" role="dialog" aria-modal="true">' +
+        '<div class="bpsa-grip"></div>' +
+        '<div class="bpsa-t">' + esc(opts.title || 'Введите значение') + '</div>' +
+        (opts.sub ? '<div class="bpsa-s">' + esc(opts.sub) + '</div>' : '') +
+        (multi
+          ? '<textarea class="bpsa-inp" id="bpPromptV" rows="3" style="height:96px;padding:13px 15px;resize:none;font-weight:500;line-height:1.5"></textarea>'
+          : '<input class="bpsa-inp" id="bpPromptV" type="text">') +
+        '<div class="bpsa-msg" id="bpPromptMsg"></div>' +
+        '<button type="button" class="bpsa-go" id="bpPromptGo">' + esc(opts.okText || 'Сохранить') + '</button>' +
+        '<button type="button" class="bpsa-x" id="bpPromptX">Отмена</button>' +
+      '</div>';
+    document.body.appendChild(ov);
+    var inp = ov.querySelector('#bpPromptV');
+    var msg = ov.querySelector('#bpPromptMsg');
+    inp.value = String(opts.value || '');
+    if(opts.placeholder) inp.placeholder = String(opts.placeholder);
+    if(opts.maxLength) inp.maxLength = Number(opts.maxLength);
+    requestAnimationFrame(function(){ ov.classList.add('on'); });
+    setTimeout(function(){ try{ inp.focus(); inp.select(); }catch(e){} }, 220);
+
+    var done = false;
+    function close(val){
+      if(done) return; done = true;
+      ov.classList.remove('on');
+      setTimeout(function(){ try{ ov.remove(); }catch(e){} }, 220);
+      resolve(val);
+    }
+    function ok(){
+      var v = String(inp.value || '').trim();
+      if(opts.required && !v){ msg.textContent = opts.requiredText || 'Заполните поле'; inp.classList.add('bad'); return; }
+      close(v);
+    }
+    ov.querySelector('#bpPromptGo').onclick = ok;
+    ov.querySelector('#bpPromptX').onclick = function(){ close(null); };
+    ov.addEventListener('click', function(e){ if(e.target === ov) close(null); });
+    inp.oninput = function(){ inp.classList.remove('bad'); msg.textContent = ''; };
+    if(!multi) inp.onkeydown = function(e){ if(e.key === 'Enter'){ e.preventDefault(); ok(); } };
+  });
+};
+
+/* ── Три места, где стоял системный prompt ── */
+
+/* Вставка ссылки в чате */
+var origInsert = window.insertLink;
+if(typeof origInsert === 'function'){
+  window.insertLink = function(){
+    try{ if(typeof toggleAttachMenu === 'function') toggleAttachMenu(false); }catch(e){}
+    window.bpPrompt({
+      title: 'Вставить ссылку',
+      sub: 'Она добавится к тексту сообщения.',
+      placeholder: 'https://…', okText: 'Вставить', required: true,
+      requiredText: 'Введите адрес'
+    }).then(function(url){
+      if(!url) return;
+      var inp = document.getElementById('cdTextInput');
+      if(inp){
+        inp.value += (inp.value ? '\n' : '') + url.trim();
+        try{ if(typeof autoResizeCdInput === 'function') autoResizeCdInput(inp); }catch(e){}
+        try{ inp.focus(); }catch(e){}
+      }
+    });
+  };
+}
+
+/* Отклонение работы: причину видит блогер */
+var origDecide = window.bpTaskDecide;
+if(typeof origDecide === 'function' && !origDecide.__bpPrompt){
+  window.bpTaskDecide = function(campId, uid, decision, reason){
+    var self = this, args = arguments;
+    if(decision !== 'rejected' || (reason && String(reason).trim())){
+      return origDecide.apply(self, args);
+    }
+    window.bpPrompt({
+      title: 'Причина отклонения',
+      sub: 'Блогер увидит её и сможет переснять работу.',
+      multiline: true, okText: 'Отклонить работу', required: true,
+      requiredText: 'Без причины отклонять нельзя', maxLength: 300
+    }).then(function(why){
+      if(!why) return;
+      origDecide.call(self, campId, uid, 'rejected', why);
+    });
+  };
+  window.bpTaskDecide.__bpPrompt = true;
+}
 })();
 </script>
 </body>
