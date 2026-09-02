@@ -2212,7 +2212,9 @@ function sendFile(req, res, file, type) {
   res.end(buf);
 }
 
-const server = http.createServer(async (req, res) => {
+/* Обработчик вынесен отдельно: слушать приходится не один порт (почему —
+   у listenOn ниже), а один http.Server умеет слушать только один. */
+const handler = async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (req.method === 'OPTIONS') return send(res, 204, {});
   if (req.method === 'GET' && (url.pathname === '/operator' || url.pathname === '/operator.html')) {
@@ -2254,15 +2256,50 @@ const server = http.createServer(async (req, res) => {
       + '\n' + String((e && (e.stack || e.message)) || e).slice(0, 700));
     send(res, 500, { error: 'Внутренняя ошибка' });
   }
-});
+};
 
-/* Слушаем 0.0.0.0, а не «как получится». Без явного адреса Node берёт
-   :: — и в контейнере, где IPv6 выключен или не проброшен, обратный
-   прокси хостинга стучится на 127.0.0.1 и получает отказ. Снаружи это
-   выглядит как 502 Bad Gateway при живом и здоровом процессе: в логах
-   «сервер слушает», а сайт не открывается. */
-server.listen(PORT, '0.0.0.0', () => {
-  console.log('[BloggerPay] касса слушает 0.0.0.0:' + PORT
+const server = http.createServer(handler);
+
+/* ── На каком порту слушать ─────────────────────────────────────────
+   Слушаем 0.0.0.0, а не «как получится»: без явного адреса Node берёт
+   :: , и в контейнере, где IPv6 не проброшен, обратный прокси стучится
+   на 127.0.0.1 и получает отказ.
+
+   И слушаем НЕСКОЛЬКО портов, а не один. Причина неприятная: хостинг
+   не всегда говорит, куда на самом деле идёт его прокси. На Bothost
+   системная переменная PORT=8090 перебивает пользовательскую, сервер
+   честно занимает 8090 — а прокси идёт на 3000, и снаружи 502 при
+   совершенно здоровом процессе, без единой строки в логах.
+
+   Лишний слушатель внутри контейнера ничего не стоит и никому не виден
+   снаружи, поэтому дешевле занять оба, чем гадать. Если порт занят —
+   молча пропускаем, это не беда. */
+const PORTS = [...new Set([PORT, 3000, 8090].map(Number).filter((p) => p > 0))];
+let listening = 0;
+
+function listenOn(port, first) {
+  const srv = first ? server : http.createServer(handler);
+  srv.on('error', (e) => {
+    /* EADDRINUSE на запасном порту — норма: значит его занял кто-то
+       ещё. Ронять из-за этого весь сервер нельзя. */
+    if (e && e.code === 'EADDRINUSE') {
+      console.warn('[BloggerPay] порт ' + port + ' занят — пропускаем');
+      return;
+    }
+    console.error('[BloggerPay] порт ' + port + ': ' + ((e && e.message) || e));
+  });
+  srv.listen(port, '0.0.0.0', () => {
+    listening += 1;
+    console.log('[BloggerPay] слушаю 0.0.0.0:' + port);
+    if (first) boot();
+  });
+}
+
+PORTS.slice(1).forEach((p) => listenOn(p, false));
+listenOn(PORTS[0], true);
+
+function boot() {
+  console.log('[BloggerPay] касса поднята, портов занято: ' + PORTS.length
     + '  база: ' + DB_PATH);
   console.log(ALERTS_ON
     ? '[BloggerPay] тревога: ошибки уходят в Телеграм, чат ' + ADMIN_CHAT_ID
@@ -2320,7 +2357,7 @@ server.listen(PORT, '0.0.0.0', () => {
       + ' кнопка «Вернуться на сайт» и логотип в письме работать не будут.'
       + ' Напишите полный адрес, например https://' + appUrlRaw);
   }
-});
+}
 
 /* ── Падения процесса ────────────────────────────────────────────────
    Самая скрытая ошибка из всех — когда касса умерла, а сайт-статика
