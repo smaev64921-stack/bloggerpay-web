@@ -72758,7 +72758,16 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
   window.bpVerifyOwn = function(platform){
     var name = platform === 'youtube' ? 'YouTube' : 'TikTok';
     if(!online()){ toast('Подтверждение работает, когда подключён сервер', 'err'); return; }
-    if(!srv().token()){ toast('Сначала войдите в аккаунт — подтверждение привязывается к нему', 'err'); return; }
+    /* Сессии на сервере может не быть (вошли давно, до подключения кассы).
+       Спрашиваем пароль один раз и продолжаем — вместо тупика «войдите». */
+    if(!srv().token()){
+      if(typeof window.bpEnsureSrv === 'function'){
+        window.bpEnsureSrv('Подтверждение канала привязывается к вашему аккаунту')
+          .then(function(ok){ if(ok) window.bpVerifyOwn(platform); });
+        return;
+      }
+      toast('Сначала войдите в аккаунт — подтверждение привязывается к нему', 'err'); return;
+    }
     var btn = $(BTN[platform]);
     if(btn){ btn.disabled = true; btn.textContent = 'Открываем…'; }
     var holder = openHolder();
@@ -74676,8 +74685,10 @@ function build(prefill){
     if(p1 !== p2){ msg('Пароли не совпадают'); return; }
     busy(save, true, 'Сохраняем…');
     try{
+      var srvPw = p1;
+      try{ if(typeof window.bpSrvPass === 'function') srvPw = await window.bpSrvPass(state.email, p1); }catch(e){ E(e); }
       var r = await srv().raw('POST', '/api/password/reset',
-        { email: state.email, code: state.code, password: p1 });
+        { email: state.email, code: state.code, password: srvPw });
       /* Сервер выдал свежую сессию — кладём её в мост, как при входе */
       try{ if(r && r.token) localStorage.setItem('bp_srv_token', r.token); }catch(e){ E(e); }
       /* И — обязательно — меняем пароль В САМОМ ПРИЛОЖЕНИИ.
@@ -75629,75 +75640,104 @@ html #pg-balance .bal-safe, html #pg-balance [data-bpw="adv"], html #pg-balance 
 body.bp-kf-on #bw2WdCta{ display:none!important }
 #bpKf{ display:none }
 #pg-withdraw.bp-kf-on #bpKf{ display:block }
-.bpkf{ padding:2px 0 28px }
-.bpkf-hero{ text-align:center; padding:8px 6px 18px }
+
+/* Палитра экрана: не «предупреждение», а спокойный служебный шаг.
+   Синий — только у активного действия, зелёный — у сделанного, тёплый
+   янтарь — у ожидания. Карточки на один тон светлее фона, границы тонкие:
+   на чёрном телефоне это читается аккуратно и дорого. */
+.bpkf{ --kf-line:rgba(255,255,255,.08); --kf-card:rgba(255,255,255,.035);
+  padding:4px 0 30px }
+.bpkf-hero{ text-align:center; padding:10px 6px 22px }
 .bpkf-shield{
-  width:70px; height:70px; margin:0 auto 14px; border-radius:24px;
-  background:linear-gradient(160deg,#2f6ce0,#1b49a8);
+  width:76px; height:76px; margin:0 auto 16px; border-radius:26px;
+  background:linear-gradient(158deg,#3b7bef 0%,#2f6ce0 42%,#1b49a8 100%);
   display:flex; align-items:center; justify-content:center;
-  box-shadow:0 14px 34px rgba(27,73,168,.42);
+  box-shadow:0 18px 42px rgba(27,73,168,.45), inset 0 1px 0 rgba(255,255,255,.25);
 }
-.bpkf-shield svg{ width:32px; height:32px }
-.bpkf-h1{ font-size:21px; font-weight:800; letter-spacing:-.4px; color:var(--t1,#fff); margin-bottom:8px }
-.bpkf-h2{ font-size:13px; line-height:1.55; color:var(--t2,#a9a9b6); max-width:330px; margin:0 auto }
-.bpkf-prog{ display:flex; align-items:center; gap:12px; margin:0 2px 12px }
-.bpkf-prog-k{ font-size:11.5px; font-weight:700; color:var(--t3,#8a8a99); white-space:nowrap }
+.bpkf-shield svg{ width:34px; height:34px }
+.bpkf-h1{ font-size:22px; font-weight:800; letter-spacing:-.5px; color:var(--t1,#fff); margin-bottom:9px; line-height:1.2 }
+.bpkf-h2{ font-size:13px; line-height:1.6; color:var(--t2,#a9a9b6); max-width:320px; margin:0 auto }
+
+/* полоса прогресса */
+.bpkf-prog{ display:flex; align-items:center; gap:12px; margin:0 2px 14px }
+.bpkf-prog-k{ font-size:11.5px; font-weight:700; color:var(--t3,#8a8a99); white-space:nowrap; letter-spacing:.1px }
 .bpkf-prog-k b{ color:var(--t1,#fff) }
-.bpkf-bar{ flex:1; height:4px; border-radius:2px; background:rgba(255,255,255,.08); overflow:hidden }
-.bpkf-bar i{ display:block; height:100%; border-radius:2px; background:linear-gradient(90deg,#2f6ce0,#5b93f5); transition:width .4s ease }
-.bpkf-steps{ display:flex; flex-direction:column; gap:8px }
+.bpkf-bar{ flex:1; height:5px; border-radius:3px; background:rgba(255,255,255,.07); overflow:hidden }
+.bpkf-bar i{ display:block; height:100%; border-radius:3px;
+  background:linear-gradient(90deg,#2f6ce0,#5b93f5); transition:width .45s cubic-bezier(.22,1,.36,1) }
+
+/* шаги */
+.bpkf-steps{ display:flex; flex-direction:column; gap:9px }
 .bpkf-step{
-  display:flex; align-items:center; gap:12px; padding:13px 14px; border-radius:16px;
-  background-color:var(--card,#141416); border:1px solid rgba(255,255,255,.07);
-  -webkit-tap-highlight-color:transparent;
+  display:flex; align-items:center; gap:13px; padding:14px 15px; border-radius:18px;
+  background-color:var(--kf-card); border:1px solid var(--kf-line);
+  -webkit-tap-highlight-color:transparent; transition:transform .12s, border-color .2s;
 }
-.bpkf-step.now{ border-color:rgba(47,108,224,.5); background-image:linear-gradient(160deg,rgba(47,108,224,.16),rgba(47,108,224,.03)); cursor:pointer }
-.bpkf-step.rejected{ border-color:rgba(240,71,94,.4); cursor:pointer }
-.bpkf-step.done{ border-color:rgba(61,220,132,.22) }
-.bpkf-step.wait{ opacity:.55 }
+.bpkf-step.now{
+  border-color:rgba(91,147,245,.42);
+  background-image:linear-gradient(158deg,rgba(47,108,224,.20) 0%,rgba(47,108,224,.05) 70%);
+  cursor:pointer;
+}
+.bpkf-step.done{ border-color:rgba(61,220,132,.20); background-color:rgba(61,220,132,.045) }
+.bpkf-step.pending{ border-color:rgba(255,190,60,.26); background-color:rgba(255,190,60,.05) }
+.bpkf-step.rejected{ border-color:rgba(240,71,94,.38); background-color:rgba(240,71,94,.06); cursor:pointer }
+.bpkf-step.wait{ opacity:.42 }
 .bpkf-step.now:active,.bpkf-step.rejected:active{ transform:scale(.99) }
 .bpkf-num{
-  width:34px; height:34px; border-radius:12px; flex-shrink:0;
+  width:36px; height:36px; border-radius:13px; flex-shrink:0;
   display:flex; align-items:center; justify-content:center;
-  font-size:14px; font-weight:800; color:var(--t2,#a9a9b6); background:rgba(255,255,255,.06);
+  font-size:14.5px; font-weight:800; color:var(--t2,#a9a9b6); background:rgba(255,255,255,.06);
 }
-.bpkf-step.now .bpkf-num{ background:var(--acc,#2f6ce0); color:#fff; box-shadow:0 6px 16px rgba(47,108,224,.45) }
-.bpkf-step.done .bpkf-num{ background:#3ddc84; color:#0b1a12 }
-.bpkf-step.pending .bpkf-num{ background:rgba(255,190,60,.18); color:#ffc94d }
-.bpkf-step.rejected .bpkf-num{ background:rgba(240,71,94,.18); color:#ff8fa0 }
-.bpkf-num svg{ width:16px; height:16px }
+.bpkf-step.now .bpkf-num{
+  background:linear-gradient(158deg,#3b7bef,#1b49a8); color:#fff;
+  box-shadow:0 7px 18px rgba(47,108,224,.5);
+}
+.bpkf-step.done .bpkf-num{ background:rgba(61,220,132,.17); color:#5fe0a0 }
+.bpkf-step.pending .bpkf-num{ background:rgba(255,190,60,.16); color:#ffc94d }
+.bpkf-step.rejected .bpkf-num{ background:rgba(240,71,94,.16); color:#ff8fa0 }
+.bpkf-num svg{ width:17px; height:17px }
 .bpkf-info{ flex:1; min-width:0 }
-.bpkf-name{ font-size:14px; font-weight:700; color:var(--t1,#fff); line-height:1.25 }
-.bpkf-sub{ font-size:11.5px; color:var(--t2,#a9a9b6); line-height:1.4; margin-top:3px }
-.bpkf-step.rejected .bpkf-sub{ color:#ff8fa0 }
+.bpkf-name{ font-size:14.5px; font-weight:700; color:var(--t1,#fff); line-height:1.25; letter-spacing:-.1px }
+.bpkf-sub{ font-size:11.5px; color:var(--t2,#a9a9b6); line-height:1.45; margin-top:3px }
+.bpkf-step.done .bpkf-sub{ color:#7fd9a8 }
+.bpkf-step.pending .bpkf-sub{ color:#e8c274 }
+.bpkf-step.rejected .bpkf-sub{ color:#ff9aa8 }
 .bpkf-chev{ color:var(--t3,#8a8a99); display:flex; flex-shrink:0 }
-.bpkf-chev svg{ width:16px; height:16px }
-.bpkf-note{ display:flex; gap:11px; align-items:flex-start; margin-top:12px; padding:12px 13px; border-radius:14px; font-size:12px; line-height:1.5 }
-.bpkf-note.pending{ background:rgba(255,190,60,.09); border:1px solid rgba(255,190,60,.22); color:#f3d38a }
-.bpkf-note.rejected{ background:rgba(240,71,94,.09); border:1px solid rgba(240,71,94,.25); color:#ffb3bd }
-.bpkf-note b{ display:block; color:var(--t1,#fff); font-weight:800; margin-bottom:2px }
+.bpkf-chev svg{ width:17px; height:17px }
+
+/* пояснение под шагами */
+.bpkf-note{ display:flex; gap:12px; align-items:flex-start; margin-top:13px; padding:13px 14px; border-radius:16px; font-size:12px; line-height:1.55 }
+.bpkf-note.pending{ background:rgba(255,190,60,.07); border:1px solid rgba(255,190,60,.20); color:#e3c489 }
+.bpkf-note.rejected{ background:rgba(240,71,94,.07); border:1px solid rgba(240,71,94,.22); color:#ffb3bd }
+.bpkf-note b{ display:block; color:var(--t1,#fff); font-weight:800; margin-bottom:3px; font-size:13px }
 .bpkf-note svg{ width:18px; height:18px; flex-shrink:0; margin-top:1px }
+
+/* действия */
 .bpkf-go{
-  width:100%; height:52px; margin-top:16px; border:none; border-radius:15px;
-  background:linear-gradient(135deg,var(--acc,#2f6ce0),#1b49a8); color:#fff;
-  font-family:inherit; font-size:15px; font-weight:800; cursor:pointer;
-  box-shadow:0 10px 26px rgba(27,73,168,.38);
-  display:flex; align-items:center; justify-content:center; gap:8px;
-  -webkit-tap-highlight-color:transparent; transition:transform .12s;
+  width:100%; height:54px; margin-top:18px; border:none; border-radius:17px;
+  background:linear-gradient(135deg,#3b7bef,#1b49a8); color:#fff;
+  font-family:inherit; font-size:15.5px; font-weight:800; cursor:pointer;
+  box-shadow:0 12px 30px rgba(27,73,168,.42), inset 0 1px 0 rgba(255,255,255,.2);
+  display:flex; align-items:center; justify-content:center; gap:9px;
+  -webkit-tap-highlight-color:transparent; transition:transform .12s, filter .2s;
 }
-.bpkf-go:active{ transform:scale(.985) }
+.bpkf-go:active{ transform:scale(.985); filter:brightness(1.06) }
 .bpkf-go svg{ width:17px; height:17px }
-.bpkf-go.ghost{ background:rgba(255,255,255,.06); box-shadow:none; color:var(--t2,#a9a9b6); cursor:default }
-.bpkf-go.ghost:active{ transform:none }
-.bpkf-link{ display:block; width:100%; margin-top:8px; padding:11px; border:none; background:none; color:var(--acc2,#5b93f5); font-family:inherit; font-size:13px; font-weight:700; cursor:pointer }
-.bpkf-safe{ display:flex; align-items:center; justify-content:center; gap:7px; margin-top:14px; font-size:11px; color:var(--t3,#8a8a99); text-align:center; line-height:1.4 }
-.bpkf-hint{ margin-top:10px; font-size:11.5px; line-height:1.5; color:var(--t3,#8a8a99); text-align:center; padding:0 8px }
-.bpkf-link svg{ width:14px; height:14px; vertical-align:-2px; margin-right:2px }
-.bpkf-go svg{ width:17px; height:17px }
+.bpkf-go.ghost{
+  background:var(--kf-card); border:1px solid var(--kf-line);
+  box-shadow:none; color:var(--t2,#a9a9b6); cursor:default;
+}
+.bpkf-go.ghost:active{ transform:none; filter:none }
 .bpkf-go.busy{ opacity:.6; pointer-events:none }
-/* поле заполнено — подсвечиваем, куда идти дальше */
-.kyc-doc.kyc-next, .kyc-go.kyc-next{ box-shadow:0 0 0 3px rgba(47,108,224,.45); transition:box-shadow .3s }
-.bpkf-safe svg{ width:13px; height:13px; flex-shrink:0 }
+.bpkf-link{
+  display:block; width:100%; margin-top:10px; padding:12px; border:none; background:none;
+  color:var(--acc2,#5b93f5); font-family:inherit; font-size:13px; font-weight:700; cursor:pointer;
+}
+.bpkf-link svg{ width:14px; height:14px; vertical-align:-2px; margin-right:3px }
+.bpkf-hint{ margin-top:12px; font-size:11.5px; line-height:1.55; color:var(--t3,#8a8a99); text-align:center; padding:0 10px }
+.bpkf-safe{ display:flex; align-items:flex-start; justify-content:center; gap:8px; margin-top:18px;
+  font-size:11px; color:var(--t3,#8a8a99); text-align:left; line-height:1.5; padding:0 4px }
+.bpkf-safe svg{ width:13px; height:13px; flex-shrink:0; margin-top:2px }
 </style>
 <script id="bp-kycfirst">
 (function(){
@@ -75791,6 +75831,7 @@ function paint(box){
   else if(st === 'pending') cta = '<button type="button" class="bpkf-go" data-go="1">Отправить документы' + I.ar + '</button>';
   else cta = '<button type="button" class="bpkf-go" data-go="1">Загрузить документы' + I.ar + '</button>';
 
+  paintGuard(box);
   box.innerHTML =
     '<div class="bpkf">' +
       '<div class="bpkf-hero"><div class="bpkf-shield">' + I.shield + '</div>' +
@@ -75801,6 +75842,19 @@ function paint(box){
       note + cta +
       '<div class="bpkf-safe">' + I.lock + 'Фото и данные видит только оператор выплат. Третьим лицам не передаём.</div>' +
     '</div>';
+}
+
+/* Сторож зелёного (bp-v71, ~51176) ходит по дереву и красит фон инлайном.
+   Наши карточки он трогать не должен — метим их и чистим следы. */
+function paintGuard(box){
+  try{
+    setTimeout(function(){
+      box.querySelectorAll('.bpkf-num, .bpkf-step, .bpkf-note, .bpkf-go').forEach(function(el){
+        el.__bpGreenDone = 1;
+        if(el.style && el.style.backgroundColor) el.style.removeProperty('background-color');
+      });
+    }, 0);
+  }catch(e){}
 }
 
 function title(on){
@@ -75903,32 +75957,588 @@ setTimeout(fix, 600);
 })();
 </script>
 
-<script id="bp-admin-kyc">
-/* ══ Админ → заявки на проверку документов ═══════════════════════════
-   Паспорта и селфи хранит сервер-касса, решает по ним оператор в консоли
-   /operator (раздел «Верификация», нужен ADMIN_KEY с хостинга). Кнопка в
-   админ-панели ведёт прямо в этот раздел. Внутри Телеграма ссылку
-   открывает сам Телеграм, в браузере — новая вкладка.                 */
+
+<style id="bp-srvauth-css">
+/* ══ Шторка «подключите аккаунт» ═════════════════════════════════════ */
+.bpsa-ov{position:fixed;inset:0;z-index:840;background:rgba(4,4,8,.82);
+  display:flex;align-items:flex-end;justify-content:center;opacity:0;visibility:hidden;
+  transition:opacity .2s,visibility .2s}
+.bpsa-ov.on{opacity:1;visibility:visible}
+.bpsa{width:100%;max-width:420px;box-sizing:border-box;background:var(--card,#141416);
+  border:1px solid rgba(255,255,255,.1);border-bottom:none;border-radius:24px 24px 0 0;
+  padding:20px 18px calc(env(safe-area-inset-bottom,0px) + 18px);
+  transform:translateY(100%);transition:transform .3s cubic-bezier(.22,1,.36,1)}
+.bpsa-ov.on .bpsa{transform:none}
+.bpsa-grip{width:38px;height:4px;border-radius:2px;background:rgba(255,255,255,.16);margin:0 auto 16px}
+.bpsa-ic{width:54px;height:54px;margin:0 auto 14px;border-radius:18px;
+  background:linear-gradient(158deg,#3b7bef,#1b49a8);display:flex;align-items:center;justify-content:center;
+  box-shadow:0 12px 28px rgba(27,73,168,.42)}
+.bpsa-ic svg{width:26px;height:26px}
+.bpsa-t{font-size:18px;font-weight:800;color:var(--t1,#fff);text-align:center;margin-bottom:8px;letter-spacing:-.3px}
+.bpsa-s{font-size:12.5px;font-weight:500;line-height:1.6;color:var(--t2,#a9a9b6);text-align:center;margin-bottom:16px}
+.bpsa-s b{color:var(--t1,#fff);font-weight:700}
+.bpsa-lbl{font-size:11.5px;font-weight:700;color:var(--t3,#8a8a99);margin-bottom:7px}
+.bpsa-inp{width:100%;box-sizing:border-box;height:52px;border-radius:15px;
+  border:1.5px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);
+  color:var(--t1,#fff);font-family:inherit;font-size:15px;font-weight:600;
+  padding:0 15px;outline:none;transition:border-color .15s}
+.bpsa-inp:focus{border-color:var(--acc,#2f6ce0)}
+.bpsa-inp.bad{border-color:#f0475e}
+.bpsa-msg{font-size:12px;font-weight:600;color:#ff8fa0;text-align:center;min-height:17px;margin-top:9px;line-height:1.4}
+.bpsa-go{width:100%;height:52px;margin-top:12px;border:none;border-radius:15px;
+  background:linear-gradient(135deg,#3b7bef,#1b49a8);color:#fff;font-family:inherit;
+  font-size:15px;font-weight:800;cursor:pointer;box-shadow:0 10px 26px rgba(27,73,168,.4)}
+.bpsa-go[disabled]{opacity:.55}
+.bpsa-x{width:100%;height:44px;margin-top:6px;border:none;background:none;
+  color:var(--t3,#8a8a99);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer}
+</style>
+<script id="bp-srvauth">
+/* ══ ОДНА ЛИЧНОСТЬ: приложение ↔ сервер ══════════════════════════════
+   Что было сломано. Аккаунт заводился на сервере в момент входа: мост
+   брал пароль из формы и звал login, а если такого нет — register. Две
+   дыры:
+
+     1) сервер требует пароль от 8 символов, а приложение раньше пускало
+        от шести. У всех, кто зарегистрировался с коротким паролем,
+        register отвечал 400 — серверной сессии не появлялось никогда.
+        Отказ при этом улетал владельцу в Телеграм как «ошибка сайта».
+     2) кто уже сидел во входе (сессия из localStorage), пароля не
+        вводил вовсе — значит связать было нечем.
+
+   Итог: bpSrv.token() пуст, и всё серверное (подтверждение канала,
+   проверка личности, вывод) отвечало «Сначала войдите в аккаунт»
+   человеку, который вошёл. Именно это и происходило.
+
+   Как чиним:
+
+   · На сервер уходит НЕ пароль человека, а его производная —
+     SHA-256 от «bp-srv-v1:почта:пароль», всегда 64 знака. Длина
+     перестаёт быть проблемой, а настоящий пароль вообще не покидает
+     устройство. Порядок попыток при связывании: производная → сам
+     пароль (для аккаунтов, заведённых до этой правки) → регистрация
+     с производной.
+   · Если сессии нет, а она нужна — спрашиваем пароль один раз в
+     аккуратной шторке и продолжаем прерванное действие. Раньше на этом
+     месте был тупик.
+
+   Откат: удалить style#bp-srvauth-css и script#bp-srvauth.          */
 (function(){
 'use strict';
-window.bpaKycOpen = function(){
+if(window.__bpSrvAuth) return; window.__bpSrvAuth = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e); }catch(_){} }
+function srv(){ return window.bpSrv; }
+function on(){ var s = srv(); return !!(s && s.configured && s.configured()); }
+function toast(m, k){ try{ showAuthToast(m, k || 'info'); }catch(e){} }
+
+/* ── производный пароль для сервера ── */
+function hex(buf){
+  var a = new Uint8Array(buf), o = '';
+  for(var i = 0; i < a.length; i++) o += ('0' + a[i].toString(16)).slice(-2);
+  return o;
+}
+window.bpSrvPass = async function(email, pass){
+  var raw = 'bp-srv-v1:' + String(email || '').trim().toLowerCase() + ':' + String(pass || '');
   try{
-    var base = String(window.BP_SERVER || '').replace(/\/+$/, '');
-    if(!base){ try{ base = localStorage.getItem('bp_server_url') || ''; }catch(e){} }
-    if(!base && /^https?:$/.test(location.protocol)) base = location.origin;
-    if(!base){
-      try{ showAuthToast('Заявки лежат на сервере-кассе — он не подключён', 'err'); }catch(e){}
-      return;
+    if(window.crypto && crypto.subtle){
+      return hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw)));
     }
-    var url = base.replace(/\/+$/, '') + '/operator#kyc';
-    var tg = window.Telegram && window.Telegram.WebApp;
-    if(tg && typeof tg.openLink === 'function' && tg.initData){ tg.openLink(url); return; }
-    var w = null;
-    try{ w = window.open(url, '_blank'); }catch(e){}
-    if(!w) location.href = url;
-  }catch(e){ try{ if(typeof BPERR === 'function') BPERR(e); }catch(_){} }
+  }catch(e){ E(e); }
+  /* Крипто недоступно (очень старый вебвью) — отдаём пароль как есть,
+     дополнив до нужной длины: связывание важнее идеала. */
+  return String(pass || '') + '::bp';
 };
+
+/* ── связывание: одна попытка за другой, пока не выйдет ── */
+async function linkNow(email, password, name, role){
+  var s = srv();
+  if(!s || !s.configured()) return null;
+  email = String(email || '').trim().toLowerCase();
+  var dp = await window.bpSrvPass(email, password);
+  var attempts = [
+    function(){ return s.login(email, dp); },
+    function(){ return s.login(email, password); },
+    function(){ return s.register({ email: email, password: dp,
+      name: name || 'Без имени', role: role === 'advertiser' ? 'advertiser' : 'blogger' }); }
+  ];
+  var lastErr = null;
+  for(var i = 0; i < attempts.length; i++){
+    try{
+      var j = await attempts[i]();
+      if(j && j.user && j.user.id){
+        try{ if(window.bpMoney && typeof bpMoney.setMySrvId === 'function') bpMoney.setMySrvId(j.user.id); }catch(e){}
+        return j.user.id;
+      }
+      if(j && j.token) return true;
+    }catch(e){
+      lastErr = e;
+      /* 409 «email уже занят» на регистрации означает, что пароль не тот:
+         дальше пробовать нечего — нужен настоящий пароль от этого адреса. */
+      if(e && e.status === 409) break;
+    }
+  }
+  if(lastErr) lastErr.__bpLink = true;
+  throw (lastErr || new Error('Не удалось подключить аккаунт'));
+}
+/* Прежний мост звал window.bpLinkServer — оставляем то же имя, но с
+   новой начинкой и молчаливым отказом (его зовут в фоне при входе). */
+window.bpLinkServer = function(email, password, name, role){
+  return linkNow(email, password, name, role).catch(function(e){
+    if(!(e && e.status >= 400 && e.status < 500)) E(e);
+    return null;
+  });
+};
+
+/* ── шторка «подключите аккаунт» ── */
+var el = null, pending = null;
+function sheet(){
+  if(el) return el;
+  el = document.createElement('div');
+  el.className = 'bpsa-ov';
+  el.innerHTML =
+    '<div class="bpsa" role="dialog" aria-modal="true" aria-label="Подключение аккаунта">' +
+      '<div class="bpsa-grip"></div>' +
+      '<div class="bpsa-ic"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+        '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>' +
+      '<div class="bpsa-t">Подтвердите пароль</div>' +
+      '<div class="bpsa-s" id="bpsaSub"></div>' +
+      '<div class="bpsa-lbl">Пароль от аккаунта</div>' +
+      '<input class="bpsa-inp" id="bpsaPw" type="password" autocomplete="current-password" placeholder="Ваш пароль">' +
+      '<div class="bpsa-msg" id="bpsaMsg"></div>' +
+      '<button type="button" class="bpsa-go" id="bpsaGo">Подключить</button>' +
+      '<button type="button" class="bpsa-x" id="bpsaX">Не сейчас</button>' +
+    '</div>';
+  document.body.appendChild(el);
+  el.addEventListener('click', function(ev){ if(ev.target === el) close(false); });
+  return el;
+}
+function close(ok){
+  if(el) el.classList.remove('on');
+  var p = pending; pending = null;
+  if(p) p(!!ok);
+}
+function me(){ try{ return (typeof currentUser !== 'undefined' && currentUser) || null; }catch(e){ return null; } }
+
+/* Гарантирует серверную сессию. Возвращает обещание true/false.
+   reason — одна строка, зачем это нужно прямо сейчас. */
+window.bpEnsureSrv = function(reason){
+  var s = srv();
+  if(!s || !s.configured()) return Promise.resolve(false);
+  if(s.token()) return Promise.resolve(true);
+  var u = me();
+  if(!u || !u.email){ toast('Сначала войдите в аккаунт', 'err'); return Promise.resolve(false); }
+
+  var w = sheet();
+  var sub = w.querySelector('#bpsaSub');
+  var inp = w.querySelector('#bpsaPw');
+  var msg = w.querySelector('#bpsaMsg');
+  var go  = w.querySelector('#bpsaGo');
+  sub.innerHTML = (reason ? String(reason).replace(/[<>&]/g, '') + '.<br>' : '') +
+    'Введите пароль от <b>' + String(u.email).replace(/[<>&]/g, '') + '</b> — один раз, дальше не спросим.';
+  inp.value = ''; inp.classList.remove('bad'); msg.textContent = '';
+  go.disabled = false; go.textContent = 'Подключить';
+  w.classList.add('on');
+  setTimeout(function(){ try{ inp.focus(); }catch(e){} }, 220);
+
+  return new Promise(function(resolve){
+    pending = resolve;
+    function fail(text){
+      msg.textContent = text || '';
+      inp.classList.add('bad');
+      go.disabled = false; go.textContent = 'Подключить';
+    }
+    async function submit(){
+      var pw = String(inp.value || '');
+      if(pw.length < 4){ fail('Введите пароль'); return; }
+      go.disabled = true; go.textContent = 'Подключаем…';
+      msg.textContent = ''; inp.classList.remove('bad');
+      try{
+        var okLocal = true;
+        /* Сверяем пароль с местным аккаунтом: чужой человек за чужим
+           телефоном не должен заводить серверную сессию наугад. */
+        try{
+          if(typeof window._bpHashPass === 'function' && u.passSalt && u.passHash){
+            okLocal = (await window._bpHashPass(pw, u.passSalt)) === u.passHash;
+          }
+        }catch(e){ okLocal = true; }
+        if(!okLocal){ fail('Пароль не подходит'); return; }
+        await linkNow(u.email, pw, u.name, u.role);
+        close(true);
+        toast('Аккаунт подключён', 'ok');
+      }catch(e){
+        if(e && e.status === 409) fail('Этот адрес уже занят на сервере с другим паролем. Смените пароль через «Забыли пароль?».');
+        else fail(String((e && e.message) || 'Не получилось подключить'));
+      }
+    }
+    go.onclick = submit;
+    inp.onkeydown = function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); submit(); } };
+    inp.oninput = function(){ inp.classList.remove('bad'); msg.textContent = ''; };
+    w.querySelector('#bpsaX').onclick = function(){ close(false); };
+  });
+};
+
+/* ── мёртвый токен убираем сами ──
+   Сессия на сервере живёт ограниченное время. Протухший токен молча
+   ломал бы всё серверное: запросы уходили бы с ним и получали 401. */
+(function(){
+  if(!on()) return;
+  var s = srv();
+  if(!s.token()) return;
+  s.raw('GET', '/api/me').catch(function(e){
+    if(e && e.status === 401){ try{ localStorage.removeItem('bp_srv_token'); }catch(_){} }
+  });
+})();
 })();
 </script>
+
+<style id="bp-akyc-css">
+/* ══ Проверка документов внутри админ-панели ════════════════════════ */
+.akyc-wrap{position:fixed;inset:0;z-index:610;background:var(--bg,#08080b);
+  display:flex;flex-direction:column;overflow:hidden}
+.akyc-hd{display:flex;align-items:center;gap:12px;padding:calc(env(safe-area-inset-top,0px) + 14px) 16px 13px;
+  border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0;background:var(--bg2,#0d0d12)}
+.akyc-back{width:36px;height:36px;border-radius:12px;background:rgba(255,255,255,.06);
+  display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;color:var(--t2,#a9a9b6)}
+.akyc-back svg{width:17px;height:17px}
+.akyc-t b{display:block;font-size:16px;font-weight:800;color:var(--t1,#fff);letter-spacing:-.2px}
+.akyc-t span{display:block;font-size:11.5px;color:var(--t3,#8a8a99);margin-top:2px}
+.akyc-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 16px calc(env(safe-area-inset-bottom,0px) + 24px)}
+.akyc-tabs{display:flex;gap:7px;margin-bottom:14px;overflow-x:auto;scrollbar-width:none}
+.akyc-tabs::-webkit-scrollbar{display:none}
+.akyc-tab{flex-shrink:0;padding:8px 14px;border-radius:11px;border:1px solid rgba(255,255,255,.08);
+  background:rgba(255,255,255,.035);color:var(--t2,#a9a9b6);font-family:inherit;font-size:12.5px;
+  font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.akyc-tab.on{background:var(--acc,#2f6ce0);border-color:transparent;color:#fff}
+.akyc-card{background:var(--card,#141416);border:1px solid rgba(255,255,255,.07);
+  border-radius:18px;padding:15px;margin-bottom:11px}
+.akyc-card.queued{border-color:rgba(255,190,60,.28)}
+.akyc-top{display:flex;align-items:flex-start;gap:11px;margin-bottom:12px}
+.akyc-av{width:40px;height:40px;border-radius:14px;flex-shrink:0;background:rgba(47,108,224,.16);
+  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:var(--acc2,#5b93f5)}
+.akyc-who{flex:1;min-width:0}
+.akyc-who b{display:block;font-size:14.5px;font-weight:700;color:var(--t1,#fff);line-height:1.3;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.akyc-who span{display:block;font-size:11.5px;color:var(--t3,#8a8a99);margin-top:2px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.akyc-st{flex-shrink:0;font-size:10.5px;font-weight:800;padding:5px 9px;border-radius:8px;letter-spacing:.2px}
+.akyc-st.queued{background:rgba(255,190,60,.16);color:#ffc94d}
+.akyc-st.approved{background:rgba(61,220,132,.14);color:#5fe0a0}
+.akyc-st.rejected{background:rgba(240,71,94,.14);color:#ff8fa0}
+.akyc-rows{border-top:1px solid rgba(255,255,255,.06);padding-top:11px;margin-bottom:12px}
+.akyc-row{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;padding:4px 0}
+.akyc-row span{color:var(--t3,#8a8a99);flex-shrink:0}
+.akyc-row b{color:var(--t1,#fff);font-weight:700;text-align:right;word-break:break-word}
+.akyc-shots{display:flex;gap:9px;margin-bottom:11px}
+.akyc-shot{flex:1;height:88px;border-radius:14px;overflow:hidden;position:relative;
+  background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);cursor:pointer}
+.akyc-shot img{width:100%;height:100%;object-fit:cover;display:block}
+.akyc-shot i{position:absolute;left:0;right:0;bottom:0;padding:5px 8px;font-style:normal;
+  font-size:10.5px;font-weight:700;color:#fff;background:linear-gradient(0deg,rgba(0,0,0,.85),transparent)}
+.akyc-shot.load{display:flex;align-items:center;justify-content:center;color:var(--t3,#8a8a99);font-size:11.5px;font-weight:600}
+.akyc-acts{display:flex;gap:9px}
+.akyc-b{flex:1;height:46px;border:none;border-radius:14px;font-family:inherit;font-size:13.5px;
+  font-weight:800;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.akyc-b.ok{background:rgba(61,220,132,.16);color:#5fe0a0;border:1px solid rgba(61,220,132,.34)}
+.akyc-b.no{background:rgba(240,71,94,.14);color:#ff8fa0;border:1px solid rgba(240,71,94,.3)}
+.akyc-b[disabled]{opacity:.5;pointer-events:none}
+.akyc-empty{text-align:center;padding:48px 20px;color:var(--t3,#8a8a99);font-size:13px;line-height:1.6}
+.akyc-empty svg{width:40px;height:40px;display:block;margin:0 auto 12px;opacity:.5}
+.akyc-gate{background:var(--card,#141416);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:18px}
+.akyc-gate b{display:block;font-size:15px;font-weight:800;color:var(--t1,#fff);margin-bottom:8px}
+.akyc-gate p{font-size:12.5px;line-height:1.6;color:var(--t2,#a9a9b6);margin:0 0 14px}
+.akyc-gate input{width:100%;box-sizing:border-box;height:48px;border-radius:14px;border:1.5px solid rgba(255,255,255,.12);
+  background:rgba(255,255,255,.05);color:var(--t1,#fff);font-family:inherit;font-size:13px;padding:0 14px;outline:none}
+.akyc-gate input:focus{border-color:var(--acc,#2f6ce0)}
+.akyc-gate button{width:100%;height:48px;margin-top:10px;border:none;border-radius:14px;
+  background:linear-gradient(135deg,#3b7bef,#1b49a8);color:#fff;font-family:inherit;font-size:14px;font-weight:800;cursor:pointer}
+.akyc-gate .err{font-size:12px;color:#ff8fa0;font-weight:600;margin-top:9px;min-height:16px}
+</style>
+<script id="bp-akyc">
+/* ══ Заявки на проверку личности — прямо в админ-панели ══════════════
+   Было: кнопка уводила в отдельную консоль оператора, и та просила
+   ADMIN_KEY из настроек хостинга. Две панели и ключ руками — лишнее.
+
+   Стало: раздел живёт внутри приложения и ходит на сервер обычной
+   сессией владельца. Права даёт сервер: почта из настройки ADMIN_EMAIL
+   получает их сама, а если настройки нет — один раз вводится ключ
+   владельца, и аккаунт помечается админом навсегда (POST /api/admin/claim).
+
+   Консоль оператора никуда не делась — она нужна для выплат, но для
+   документов туда ходить больше не надо.
+   Откат: удалить style#bp-akyc-css и script#bp-akyc.                 */
+(function(){
+'use strict';
+if(window.__bpAKyc) return; window.__bpAKyc = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e); }catch(_){} }
+function srv(){ return window.bpSrv; }
+function toast(m, k){ try{ showAuthToast(m, k || 'info'); }catch(e){} }
+function esc(s){ return String(s == null ? '' : s).replace(/[<>&"]/g, function(c){
+  return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]; }); }
+
+var SV = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"';
+var I = {
+  back:'<svg ' + SV + '><polyline points="15 18 9 12 15 6"/></svg>',
+  empty:'<svg ' + SV + ' stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 10h8M8 14h5"/></svg>'
+};
+
+var FILTER = 'queued';
+var ROWS = [];
+
+function when(iso){
+  try{
+    var d = new Date(String(iso || '').replace(' ', 'T') + (/[Zz]|[+-]\d\d:?\d\d$/.test(String(iso)) ? '' : 'Z'));
+    if(isNaN(d)) return String(iso || '');
+    return d.toLocaleString('ru', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+  }catch(e){ return String(iso || ''); }
+}
+function stRu(s){ return { queued:'Ждёт проверки', approved:'Подтверждена', rejected:'Отклонена' }[s] || s; }
+
+function wrap(){
+  var w = document.getElementById('bpAKyc');
+  if(w) return w;
+  w = document.createElement('div');
+  w.id = 'bpAKyc'; w.className = 'akyc-wrap';
+  w.innerHTML =
+    '<div class="akyc-hd">' +
+      '<div class="akyc-back" id="akycBack" role="button" tabindex="0">' + I.back + '</div>' +
+      '<div class="akyc-t"><b>Проверка документов</b><span id="akycSub">Загружаем…</span></div>' +
+    '</div>' +
+    '<div class="akyc-body" id="akycBody"></div>';
+  document.body.appendChild(w);
+  w.querySelector('#akycBack').onclick = function(){ w.remove(); };
+  return w;
+}
+
+/* ── ворота: если сервер не считает нас админом, даём ввести ключ один раз ── */
+function gate(body, msg){
+  body.innerHTML =
+    '<div class="akyc-gate">' +
+      '<b>Нужны права владельца</b>' +
+      '<p>' + esc(msg || 'Этот аккаунт ещё не отмечен владельцем платформы.') +
+      ' Введите ключ владельца — он лежит в настройках хостинга под именем ADMIN_KEY. ' +
+      'Достаточно одного раза: дальше аккаунт останется админом, и ключ больше не спросят.</p>' +
+      '<input id="akycKey" type="password" autocomplete="off" placeholder="Ключ владельца (ADMIN_KEY)">' +
+      '<div class="err" id="akycKeyErr"></div>' +
+      '<button type="button" id="akycKeyGo">Сделать этот аккаунт админом</button>' +
+    '</div>';
+  var inp = body.querySelector('#akycKey');
+  var err = body.querySelector('#akycKeyErr');
+  var go = body.querySelector('#akycKeyGo');
+  function submit(){
+    var k = String(inp.value || '').trim();
+    if(!k){ err.textContent = 'Введите ключ'; return; }
+    go.disabled = true; go.textContent = 'Проверяем…';
+    srv().raw('POST', '/api/admin/claim', { key: k })
+      .then(function(){ toast('Права владельца выданы', 'ok'); load(); })
+      .catch(function(e){
+        err.textContent = String((e && e.message) || 'Ключ не подошёл');
+        go.disabled = false; go.textContent = 'Сделать этот аккаунт админом';
+      });
+  }
+  go.onclick = submit;
+  inp.onkeydown = function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); submit(); } };
+}
+
+function card(k){
+  var initial = esc(String(k.user_name || k.name || '?').trim().charAt(0).toUpperCase());
+  var shots = '';
+  if(k.has_photo) shots += '<div class="akyc-shot load" data-shot="' + k.id + '" data-kind="photo">Паспорт</div>';
+  if(k.has_selfie) shots += '<div class="akyc-shot load" data-shot="' + k.id + '" data-kind="selfie">Селфи</div>';
+  if(!shots) shots = '<div class="akyc-shot load">Фото не приложены</div>';
+  var acts = k.status === 'queued'
+    ? '<div class="akyc-acts">' +
+        '<button type="button" class="akyc-b ok" data-ok="' + k.id + '" data-seen="' + esc(k.updated_at) + '">Подтвердить</button>' +
+        '<button type="button" class="akyc-b no" data-no="' + k.id + '" data-seen="' + esc(k.updated_at) + '">Отклонить</button>' +
+      '</div>'
+    : '';
+  return '<div class="akyc-card ' + esc(k.status) + '">' +
+    '<div class="akyc-top">' +
+      '<div class="akyc-av">' + initial + '</div>' +
+      '<div class="akyc-who"><b>' + esc(k.user_name || '—') + '</b><span>' + esc(k.email || '') + ' · id ' + Number(k.user_id) + '</span></div>' +
+      '<div class="akyc-st ' + esc(k.status) + '">' + stRu(k.status) + '</div>' +
+    '</div>' +
+    '<div class="akyc-rows">' +
+      '<div class="akyc-row"><span>В документах</span><b>' + esc(k.name) + '</b></div>' +
+      '<div class="akyc-row"><span>Дата рождения</span><b>' + esc(k.birth) + '</b></div>' +
+      '<div class="akyc-row"><span>Прислана</span><b>' + esc(when(k.created_at)) + '</b></div>' +
+      (k.note ? '<div class="akyc-row"><span>Причина отказа</span><b>' + esc(k.note) + '</b></div>' : '') +
+    '</div>' +
+    '<div class="akyc-shots">' + shots + '</div>' + acts +
+  '</div>';
+}
+
+function paint(){
+  var body = document.getElementById('akycBody');
+  if(!body) return;
+  var rows = ROWS.filter(function(k){ return FILTER ? k.status === FILTER : true; });
+  var n = ROWS.filter(function(k){ return k.status === 'queued'; }).length;
+  var sub = document.getElementById('akycSub');
+  if(sub) sub.textContent = n ? ('Ждут решения: ' + n) : 'Всё разобрано';
+
+  var tabs = [['queued', 'Ждут ' + (n ? '· ' + n : '')], ['approved', 'Подтверждённые'], ['rejected', 'Отклонённые'], ['', 'Все']];
+  var html = '<div class="akyc-tabs">' + tabs.map(function(t){
+    return '<button type="button" class="akyc-tab' + (FILTER === t[0] ? ' on' : '') + '" data-f="' + t[0] + '">' + esc(t[1]) + '</button>';
+  }).join('') + '</div>';
+
+  html += rows.length
+    ? rows.map(card).join('')
+    : '<div class="akyc-empty">' + I.empty + (FILTER === 'queued'
+        ? 'Заявок на проверку нет.<br>Здесь появятся паспорта тех, кто захочет вывести деньги.'
+        : 'В этом разделе пусто.') + '</div>';
+  body.innerHTML = html;
+  /* сторож зелёного (bp-v71) красит «средний зелёный» инлайном — наши
+     кнопки он трогать не должен */
+  setTimeout(function(){
+    try{
+      body.querySelectorAll('.akyc-b, .akyc-st, .akyc-card').forEach(function(el){
+        el.__bpGreenDone = 1;
+        if(el.style && el.style.backgroundColor) el.style.removeProperty('background-color');
+      });
+    }catch(e){}
+  }, 0);
+}
+
+function load(){
+  var body = document.getElementById('akycBody');
+  if(!body) return;
+  body.innerHTML = '<div class="akyc-empty">Загружаем заявки…</div>';
+  srv().raw('GET', '/api/admin/kyc')
+    .then(function(j){ ROWS = (j && j.rows) || []; paint(); })
+    .catch(function(e){
+      if(e && (e.status === 403 || e.status === 401)){ gate(body, e.status === 401 ? 'Сессия на сервере не подключена.' : ''); return; }
+      body.innerHTML = '<div class="akyc-empty">Не удалось загрузить: ' + esc((e && e.message) || 'сервер не ответил') + '</div>';
+    });
+}
+
+/* просмотр снимка на весь экран */
+function openShot(id, kind, box){
+  box.textContent = 'Открываем…';
+  srv().raw('GET', '/api/admin/kyc/photo?id=' + Number(id) + (kind === 'selfie' ? '&kind=selfie' : ''))
+    .then(function(j){
+      var src = (j && j.photo) || '';
+      if(!src){ box.textContent = 'Нет фото'; return; }
+      box.classList.remove('load');
+      box.innerHTML = '<img alt="' + (kind === 'selfie' ? 'Селфи' : 'Паспорт') + '"><i>' + (kind === 'selfie' ? 'Селфи' : 'Паспорт') + '</i>';
+      box.querySelector('img').src = src;
+      box.dataset.src = src;
+      try{ if(typeof window.bpImgOpen === 'function') window.bpImgOpen(src); }catch(e){}
+    })
+    .catch(function(e){ box.textContent = 'Ошибка'; E(e); });
+}
+
+/* отказ с причиной */
+function askReason(cb){
+  var ov = document.createElement('div');
+  ov.className = 'bpsa-ov on';
+  ov.style.zIndex = '860';
+  ov.innerHTML =
+    '<div class="bpsa">' +
+      '<div class="bpsa-grip"></div>' +
+      '<div class="bpsa-t">Причина отказа</div>' +
+      '<div class="bpsa-s">Её увидит человек в приложении и сможет прислать документы заново.</div>' +
+      '<input class="bpsa-inp" id="akycWhy" value="Фото не читается" maxlength="200">' +
+      '<button type="button" class="bpsa-go" id="akycWhyGo">Отклонить заявку</button>' +
+      '<button type="button" class="bpsa-x" id="akycWhyX">Отмена</button>' +
+    '</div>';
+  document.body.appendChild(ov);
+  var inp = ov.querySelector('#akycWhy');
+  setTimeout(function(){ try{ inp.focus(); inp.select(); }catch(e){} }, 200);
+  ov.querySelector('#akycWhyGo').onclick = function(){
+    var v = String(inp.value || '').trim() || 'Документы не приняты';
+    ov.remove(); cb(v);
+  };
+  ov.querySelector('#akycWhyX').onclick = function(){ ov.remove(); };
+  ov.addEventListener('click', function(e){ if(e.target === ov) ov.remove(); });
+}
+
+function decide(id, seen, ok, note, btn){
+  btn.disabled = true;
+  var was = btn.textContent;
+  btn.textContent = ok ? 'Подтверждаем…' : 'Отклоняем…';
+  srv().raw('POST', ok ? '/api/admin/kyc/approve' : '/api/admin/kyc/reject',
+      ok ? { requestId: Number(id), seenAt: seen } : { requestId: Number(id), note: note, seenAt: seen })
+    .then(function(){ toast(ok ? 'Личность подтверждена — вывод открыт' : 'Заявка отклонена', 'ok'); load(); })
+    .catch(function(e){
+      toast(String((e && e.message) || 'Не получилось'), 'err');
+      btn.disabled = false; btn.textContent = was;
+      load();
+    });
+}
+
+/* один обработчик на весь экран */
+document.addEventListener('click', function(e){
+  var w = document.getElementById('bpAKyc');
+  if(!w || !w.contains(e.target)) return;
+  var t = e.target.closest('[data-f],[data-shot],[data-ok],[data-no]');
+  if(!t) return;
+  if(t.hasAttribute('data-f')){ FILTER = t.getAttribute('data-f'); paint(); return; }
+  if(t.hasAttribute('data-shot')){
+    if(t.dataset.src){ try{ window.bpImgOpen(t.dataset.src); }catch(err){} return; }
+    openShot(t.getAttribute('data-shot'), t.getAttribute('data-kind'), t);
+    return;
+  }
+  if(t.hasAttribute('data-ok')){ decide(t.getAttribute('data-ok'), t.getAttribute('data-seen'), true, '', t); return; }
+  if(t.hasAttribute('data-no')){
+    var id = t.getAttribute('data-no'), seen = t.getAttribute('data-seen');
+    askReason(function(note){ decide(id, seen, false, note, t); });
+  }
+});
+
+/* ── вход в раздел ── */
+window.bpaKycOpen = function(){
+  var s = srv();
+  if(!s || !s.configured()){ toast('Заявки лежат на сервере-кассе — он не подключён', 'err'); return; }
+  var w = wrap();
+  var body = document.getElementById('akycBody');
+  body.innerHTML = '<div class="akyc-empty">Загружаем заявки…</div>';
+  if(!s.token()){
+    if(typeof window.bpEnsureSrv === 'function'){
+      window.bpEnsureSrv('Заявки на проверку хранятся на сервере').then(function(ok){
+        if(ok) load(); else gate(body, 'Сессия на сервере не подключена.');
+      });
+      return;
+    }
+    gate(body, 'Сессия на сервере не подключена.');
+    return;
+  }
+  load();
+};
+
+/* Счётчик ждущих заявок в админ-панели: подставляем после её отрисовки. */
+function badge(){
+  try{
+    var s = srv();
+    if(!s || !s.configured() || !s.token()) return;
+    s.raw('GET', '/api/admin/kyc?status=queued').then(function(j){
+      var n = ((j && j.rows) || []).length;
+      var b = document.querySelector('#bpAdWrap [onclick*="bpaKycOpen"] b');
+      if(b) b.textContent = n ? String(n) : '›';
+    }).catch(function(){});
+  }catch(e){}
+}
+var oap = window.bpAdminPanel;
+if(typeof oap === 'function'){
+  window.bpAdminPanel = function(){ var r = oap.apply(this, arguments); setTimeout(badge, 60); return r; };
+}
+})();
+</script>
+
+<style id="bp-fab-quiet">
+/* ══ Плавающая кнопка админки не мешает читать экран ═════════════════
+   #bpaFab (bp-admin4) висит слева внизу поверх содержимого и накрывает
+   текст карточек — на скриншотах владельца она перекрывала подписи.
+   Держим её на месте (это его вход в панель), но в покое приглушаем и
+   делаем меньше: при касании она снова полноценная.
+   Откат: удалить этот блок стилей.                                    */
+html #bpaFab{
+  width:34px!important; height:34px!important;
+  opacity:.28; transition:opacity .18s, transform .12s;
+  bottom:calc(104px + env(safe-area-inset-bottom,0px))!important;
+}
+html #bpaFab svg{ width:15px!important; height:15px!important }
+html #bpaFab:active{ opacity:1; transform:scale(.94) }
+@media (hover:hover){ html #bpaFab:hover{ opacity:1 } }
+</style>
 </body>
 </html>

@@ -121,5 +121,42 @@ if (wdYes.body && wdYes.body.needCode && wdYes.body.devCode) {
 }
 ok(wdYes.status === 200 && wdYes.body.status === 'queued', 'после подтверждения вывод проходит', wdYes.body);
 
+/* ── Права админа даёт вход, а не заголовок с ключом ──
+   Раньше заявки можно было смотреть только из отдельной консоли, вводя
+   ADMIN_KEY руками. Теперь владелец видит их в приложении своей сессией. */
+console.log('\nПрава владельца');
+
+const cand = await api('POST', '/api/register', { email: `adm${tag}@t.ru`, name: 'Кандидат', role: 'blogger', password: 'обычныйПароль12' });
+const TA = cand.body.token;
+
+const who0 = await api('GET', '/api/admin/whoami', null, TA);
+ok(who0.status === 200 && who0.body.isAdmin === false, 'обычный аккаунт — не админ', who0.body);
+
+const closed = await api('GET', '/api/admin/kyc', null, TA);
+ok(closed.status === 403, 'обычному аккаунту заявки не отдаются', closed.body);
+
+const wrongKey = await api('POST', '/api/admin/claim', { key: 'не-тот-ключ' }, TA);
+ok(wrongKey.status === 403, 'права по неверному ключу не выдаются', wrongKey.body);
+
+const noAuth = await api('POST', '/api/admin/claim', { key: ADMIN_KEY }, null);
+ok(noAuth.status === 401, 'права без входа не выдаются', noAuth.body);
+
+const claim = await api('POST', '/api/admin/claim', { key: ADMIN_KEY }, TA);
+ok(claim.status === 200 && claim.body.isAdmin === true, 'ключ владельца делает аккаунт админом', claim.body);
+
+const who1 = await api('GET', '/api/admin/whoami', null, TA);
+ok(who1.body.isAdmin === true, 'после выдачи прав whoami это подтверждает', who1.body);
+
+const opened = await api('GET', '/api/admin/kyc?status=queued', null, TA);
+ok(opened.status === 200 && Array.isArray(opened.body.rows), 'админ видит заявки обычной сессией, без X-Admin-Key', { rows: (opened.body.rows || []).length });
+
+const claimTwice = await api('POST', '/api/admin/claim', { key: 'мусор' }, TA);
+ok(claimTwice.status === 200 && claimTwice.body.already === true, 'повторный вызов у админа ничего не меняет', claimTwice.body);
+
+/* Чужой аккаунт по-прежнему за дверью */
+const stranger = await api('POST', '/api/register', { email: `str${tag}@t.ru`, name: 'Чужой', role: 'blogger', password: 'обычныйПароль12' });
+const outsider = await api('GET', '/api/admin/kyc', null, stranger.body.token);
+ok(outsider.status === 403, 'чужому аккаунту заявки закрыты', outsider.body);
+
 console.log(`\nИтого: ${passed} ok, ${failed} fail\n`);
 process.exit(failed ? 1 : 0);

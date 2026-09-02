@@ -351,6 +351,7 @@ const q = {
   delSession: db.prepare('DELETE FROM sessions WHERE token = ?'),
   delUserSessions: db.prepare('DELETE FROM sessions WHERE user_id = ?'),
   updPass: db.prepare('UPDATE users SET pass_salt = ?, pass_hash = ? WHERE id = ?'),
+  setAdmin: db.prepare('UPDATE users SET is_admin = ? WHERE id = ?'),
   opByKey: db.prepare('SELECT * FROM ops WHERE op_key = ?'),
   insOp: db.prepare('INSERT INTO ops (op_key, user_id, kind, result) VALUES (?,?,?,?)'),
   updOpResult: db.prepare('UPDATE ops SET result = ? WHERE op_key = ?'),
@@ -648,7 +649,26 @@ function auth(req) {
 }
 
 function isAdmin(req) {
-  return ADMIN_KEY !== '' && String(req.headers['x-admin-key'] || '') === ADMIN_KEY;
+  if (ADMIN_KEY !== '' && String(req.headers['x-admin-key'] || '') === ADMIN_KEY) return true;
+  const u = auth(req);
+  return !!(u && u.is_admin);
+}
+
+/* Почты владельцев из настроек: такие аккаунты получают права админа сами
+   при входе и регистрации — вводить ключ никому не нужно.
+   ADMIN_EMAIL=почта или почта1,почта2 */
+const ADMIN_EMAILS = String(ENV.ADMIN_EMAIL || '')
+  .split(/[,;\s]+/).map((x) => x.trim().toLowerCase()).filter(Boolean);
+function syncAdminFlag(user) {
+  try {
+    if (!user || !user.email) return user;
+    const should = ADMIN_EMAILS.includes(String(user.email).toLowerCase()) ? 1 : Number(user.is_admin || 0);
+    if (should !== Number(user.is_admin || 0)) {
+      q.setAdmin.run(should, user.id);
+      user.is_admin = should;
+    }
+    return user;
+  } catch (e) { return user; }
 }
 
 /* ── Ограничение частоты ───────────────────────────────────────────
@@ -1080,10 +1100,13 @@ const routes = {
     if (q.userByEmail.get(email)) return { status: 409, body: { error: 'Этот email уже зарегистрирован' } };
     const salt = crypto.randomBytes(16).toString('hex');
     const info = q.insUser.run(email, name, role, salt, scrypt(pass, salt));
+    const uid = Number(info.lastInsertRowid);
     const token = newToken();
     const exp = new Date(Date.now() + SESSION_DAYS * 864e5).toISOString();
-    q.insSession.run(token, Number(info.lastInsertRowid), exp);
-    return { status: 200, body: { token, user: { id: Number(info.lastInsertRowid), email, name, role } } };
+    q.insSession.run(token, uid, exp);
+    const admin = ADMIN_EMAILS.includes(email) ? 1 : 0;
+    if (admin) q.setAdmin.run(1, uid);
+    return { status: 200, body: { token, user: { id: uid, email, name, role, isAdmin: !!admin } } };
   },
 
   'POST /api/login': async (req, body) => {
@@ -1097,6 +1120,7 @@ const routes = {
     const hash = scrypt(String(body.password || ''), u.pass_salt);
     if (!crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(u.pass_hash))) return bad;
     if (u.is_blocked) return { status: 403, body: { error: 'Аккаунт заблокирован' } };
+    syncAdminFlag(u);
     const token = newToken();
     const exp = new Date(Date.now() + SESSION_DAYS * 864e5).toISOString();
     q.insSession.run(token, u.id, exp);
@@ -1699,6 +1723,11 @@ const routes = {
       return { status: 200, body: { ok: true, status: 'queued', requestId: last.id } };
     }
     const info = q.insKyc.run(u.id, name, birth, photo, selfie, 'queued');
+    /* Владельцу — сразу в Телеграм: заявка ждёт решения, иначе человек
+       сидит в «на проверке», пока кто-нибудь не заглянет в панель. */
+    tgAlert('kyc:new:' + info.lastInsertRowid,
+      '🪪 Новая заявка на проверку личности\n\n' + name + '\n' + u.email
+      + '\n\nОткройте админ-панель → Проверка документов.');
     return { status: 200, body: { ok: true, status: 'queued', requestId: Number(info.lastInsertRowid) } };
   },
 
@@ -2000,6 +2029,29 @@ const routes = {
   },
 
   /* Сводка и сверка: сумма журнала должна сходиться сама с собой. */
+  /* Приложение спрашивает, показывать ли админ-разделы, и может один раз
+     обменять ключ владельца на постоянные права для своего аккаунта —
+     чтобы дальше ключ уже нигде не вводить. */
+  'GET /api/admin/whoami': async (req) => {
+    const u = auth(req);
+    if (!u) return { status: 401, body: { error: 'Нужен вход' } };
+    syncAdminFlag(u);
+    return { status: 200, body: { isAdmin: !!u.is_admin, email: u.email, name: u.name } };
+  },
+
+  'POST /api/admin/claim': async (req, body) => {
+    if (!rateLimit(req, 'claim', 10, 60000)) return tooOften;
+    const u = auth(req);
+    if (!u) return { status: 401, body: { error: 'Нужен вход' } };
+    if (u.is_admin) return { status: 200, body: { ok: true, isAdmin: true, already: true } };
+    const key = String(body.key || '');
+    if (!ADMIN_KEY || key !== ADMIN_KEY) {
+      return { status: 403, body: { error: 'Ключ владельца не подошёл' } };
+    }
+    q.setAdmin.run(1, u.id);
+    return { status: 200, body: { ok: true, isAdmin: true } };
+  },
+
   'GET /api/admin/overview': async (req) => {
     if (!isAdmin(req)) return { status: 403, body: { error: 'Нужен X-Admin-Key' } };
     const t = q.totals.get();
