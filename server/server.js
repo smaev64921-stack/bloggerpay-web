@@ -315,6 +315,18 @@ CREATE TABLE IF NOT EXISTS kyc_requests (
   created_at  TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
+/* Споры по сделкам. payee_id пуст — спор по всей заморозке (обычная
+   сделка); указан — по выплате одному исполнителю из бюджета кампании. */
+CREATE TABLE IF NOT EXISTS disputes (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  deal_id    TEXT NOT NULL,
+  payee_id   INTEGER,
+  opened_by  INTEGER NOT NULL,
+  status     TEXT NOT NULL CHECK(status IN ('open','closed')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  closed_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS disputes_deal ON disputes(deal_id, status);
 CREATE INDEX IF NOT EXISTS kyc_user ON kyc_requests(user_id);
 CREATE INDEX IF NOT EXISTS kyc_status ON kyc_requests(status);
 CREATE INDEX IF NOT EXISTS sessions_exp ON sessions(expires_at);
@@ -429,6 +441,20 @@ const q = {
     ORDER BY CASE k.status WHEN 'queued' THEN 0 ELSE 1 END, k.id DESC LIMIT 60`),
   kycPhoto: db.prepare('SELECT id, photo, selfie, updated_at FROM kyc_requests WHERE id = ?'),
   kycQueuedCount: db.prepare(`SELECT COUNT(*) AS n FROM kyc_requests WHERE status = 'queued'`),
+  /* споры */
+  openDisputeFor: db.prepare(`SELECT id, opened_by FROM disputes
+    WHERE deal_id = ? AND status = 'open' AND (payee_id IS NULL OR payee_id = ?) LIMIT 1`),
+  openDisputeAny: db.prepare(`SELECT id, opened_by FROM disputes WHERE deal_id = ? AND status = 'open' LIMIT 1`),
+  openDisputeExact: db.prepare(`SELECT id FROM disputes
+    WHERE deal_id = ? AND status = 'open' AND ((payee_id IS NULL AND ? IS NULL) OR payee_id = ?) LIMIT 1`),
+  insDispute: db.prepare(`INSERT INTO disputes (deal_id, payee_id, opened_by, status) VALUES (?,?,?,'open')`),
+  closeDisputesAll: db.prepare(`UPDATE disputes SET status = 'closed', closed_at = datetime('now')
+    WHERE deal_id = ? AND status = 'open'`),
+  closeDisputesFor: db.prepare(`UPDATE disputes SET status = 'closed', closed_at = datetime('now')
+    WHERE deal_id = ? AND status = 'open' AND (payee_id IS NULL OR payee_id = ?)`),
+  /* выплаты по кампаниям, чтобы рекламодатель видел расход на любом устройстве */
+  myReleases: db.prepare(`SELECT op_key, result, created_at FROM ops
+    WHERE user_id = ? AND kind = 'release' ORDER BY created_at DESC LIMIT 500`),
 };
 
 /* ── ВХОД ПО ТЕЛЕГРАМУ ────────────────────────────────────────────────
@@ -1529,6 +1555,11 @@ const routes = {
     if (d.payee_id != null && d.payee_id !== payee.id) {
       return { status: 409, body: { error: 'Деньги заморожены для другого исполнителя' } };
     }
+    /* Спор держит деньги и на сервере: пока он открыт, выплату не провести
+       ни кнопкой, ни прямым запросом. Снимает замок решение арбитра. */
+    if (q.openDisputeFor.get(dealId, payee.id)) {
+      return { status: 409, body: { error: 'Идёт спор — выплата заморожена до решения арбитра', dispute: true } };
+    }
 
     /* Сумму можно не указывать — тогда уходит весь остаток. Так работает
        обычная сделка. Для бюджета кампании сумма указывается: из одной
@@ -1554,6 +1585,67 @@ const routes = {
 
   /* Возврат: hold плательщика → его же available. Никаких «начислить
      тому, кто нажал» — возврат идёт только плательщику. */
+  /* ── Спор по сделке: открыть / закрыть ──
+     Открыть может плательщик или исполнитель (по своей выплате), закрыть —
+     открывший, плательщик или оператор; решение арбитра (/api/deals/settle)
+     закрывает само. Пока спор открыт, release и refund отвечают 409. */
+  'POST /api/deals/dispute/open': async (req, body) => {
+    const u = auth(req);
+    if (!u) return { status: 401, body: { error: 'Нужен вход' } };
+    if (!rateLimit(req, 'dispute', 20, 60000)) return tooOften;
+    const dealId = String(body.dealId || '').slice(0, 120);
+    const d = q.deal.get(dealId);
+    if (!d) return { status: 404, body: { error: 'Сделка не найдена' } };
+    if (d.status !== 'held') return { status: 409, body: { error: 'Сделка уже закрыта: ' + d.status } };
+    const payeeId = body.payeeId == null || body.payeeId === '' ? null : Number(body.payeeId);
+    if (payeeId != null && !Number.isInteger(payeeId)) return { status: 400, body: { error: 'Неверный исполнитель' } };
+    /* Кто вправе: плательщик — по всей сделке; исполнитель — только по
+       своей выплате (иначе любой мог бы заморозить чужие деньги). */
+    const isPayer = d.payer_id === u.id;
+    const isPayee = (d.payee_id != null && d.payee_id === u.id) || (payeeId != null && payeeId === u.id);
+    if (!isPayer && !isPayee) return { status: 403, body: { error: 'Спор открывают стороны сделки' } };
+    const scope = isPayer ? payeeId : u.id;          /* исполнитель всегда «по себе» */
+    const already = q.openDisputeExact.get(dealId, scope, scope);
+    if (already) return { status: 200, body: { ok: true, id: already.id, already: true } };
+    const info = q.insDispute.run(dealId, scope, u.id);
+    tgAlert('dispute:' + dealId + ':' + info.lastInsertRowid,
+      '⚖️ Открыт спор по сделке ' + dealId + '\n\nОткрыл: ' + u.email
+      + (scope != null ? '\nИсполнитель id ' + scope : '') + '\n\nДеньги заморожены до решения.', 'server');
+    return { status: 200, body: { ok: true, id: Number(info.lastInsertRowid) } };
+  },
+
+  'POST /api/deals/dispute/close': async (req, body) => {
+    const u = auth(req);
+    if (!u) return { status: 401, body: { error: 'Нужен вход' } };
+    const dealId = String(body.dealId || '').slice(0, 120);
+    const d = q.deal.get(dealId);
+    if (!d) return { status: 404, body: { error: 'Сделка не найдена' } };
+    const payeeId = body.payeeId == null || body.payeeId === '' ? null : Number(body.payeeId);
+    const open = payeeId == null ? q.openDisputeAny.get(dealId) : q.openDisputeFor.get(dealId, payeeId);
+    if (!open) return { status: 200, body: { ok: true, closed: 0 } };
+    const may = isAdmin(req) || d.payer_id === u.id || (open.opened_by != null && open.opened_by === u.id)
+      || (d.payee_id != null && d.payee_id === u.id)
+      || (payeeId != null && payeeId === u.id);
+    if (!may) return { status: 403, body: { error: 'Закрыть спор может открывший, плательщик или оператор' } };
+    const info = payeeId == null ? q.closeDisputesAll.run(dealId) : q.closeDisputesFor.run(dealId, payeeId);
+    return { status: 200, body: { ok: true, closed: Number(info.changes || 0) } };
+  },
+
+  /* ── Мои выплаты по кампаниям ──
+     Расход кампании считается в приложении из местного журнала. На новом
+     устройстве журнал пуст, и расход показывался нулём. Отдаём ключи
+     операций выплат — приложение восстановит записи. */
+  'GET /api/ops/mine': async (req) => {
+    const u = auth(req);
+    if (!u) return { status: 401, body: { error: 'Нужен вход' } };
+    const rows = q.myReleases.all(u.id).map((r) => {
+      let res = {};
+      try { res = JSON.parse(r.result || '{}'); } catch (e) { /* пусто */ }
+      return { opKey: r.op_key, dealId: res.dealId || null, paid: Number(res.paid) || 0, to: res.to || null, at: r.created_at };
+    });
+    return { status: 200, body: { rows } };
+  },
+
   'POST /api/deals/refund': async (req, body) => {
     const u = auth(req);
     if (!u) return { status: 401, body: { error: 'Нужен вход' } };
@@ -1568,6 +1660,9 @@ const routes = {
       return { status: 403, body: { error: 'Возврат делает плательщик, исполнитель или оператор' } };
     }
     if (d.status !== 'held') return { status: 409, body: { error: 'Сделка уже закрыта: ' + d.status } };
+    if (!isAdmin(req) && q.openDisputeAny.get(dealId)) {
+      return { status: 409, body: { error: 'Идёт спор — возврат заморожен до решения арбитра', dispute: true } };
+    }
     /* Возвращаем ОСТАТОК: часть могла уже уйти исполнителям. */
     const rest = d.amount - d.paid;
     if (rest <= 0) return { status: 409, body: { error: 'Из этой заморозки уже всё выплачено' } };
@@ -1625,6 +1720,7 @@ const routes = {
       if (toPayer > 0) add(d.payer_id, 'available', toPayer, 'settle-refund', dealId);
       q.payDeal.run(toBlogger, 'released', dealId);
       if (payee) q.updDeal.run('released', payee.id, dealId);
+      q.closeDisputesAll.run(dealId);          /* решение вынесено — замок снят */
       return {
         ok: true, dealId,
         доля_исполнителя: share,

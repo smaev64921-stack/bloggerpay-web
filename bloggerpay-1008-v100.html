@@ -18494,7 +18494,7 @@ function renderMyCard(cardData) {
         </div>
         <div class="blc-row2"></div>
         ${ownerBadge}
-        <div class="blc-cats">${cardData.catsText}</div>
+        <div class="blc-cats">${cardData.catsText || cardData.cats || 'Тематики не указаны'}</div>
         ${audienceBlock}
       </div>
     </div>
@@ -77465,6 +77465,14 @@ function abs(days, from){
   return p(d.getDate()) + '.' + p(d.getMonth() + 1) + '.' + d.getFullYear();
 }
 function anchor(dl, from){
+  /* Слова-сроки приводим к «N дн»: сегодня → 0, завтра → 1, послезавтра → 2,
+     «2 недели» → 14. Раньше они оставались текстом и никогда не
+     превращались в дату — напоминания и просрочка по ним не работали. */
+  dl = String(dl || '')
+    .replace(/^\s*сегодня\s*$/i, '0 дн')
+    .replace(/^\s*завтра\s*$/i, '1 дн')
+    .replace(/^\s*послезавтра\s*$/i, '2 дн')
+    .replace(/^\s*(\d{1,2})\s*(недел[ияь]|нед\.?|week)/i, function(_, n){ return (Number(n) * 7) + ' дн'; });
   var m = /^\s*(\d{1,3})\s*(дн|дня|дней|day)/i.exec(String(dl || ''));
   return m ? abs(Number(m[1]), from) : null;
 }
@@ -77664,6 +77672,190 @@ window.submitRepeatDeal = function(){
   return r;
 };
 window.submitRepeatDeal.__bpFix = true;
+})();
+</script>
+
+<script id="bp-dispute-sync">
+/* ══ Спор уходит на сервер ═══════════════════════════════════════════
+   Спор жил только в браузере (bp_disputes_v2): интерфейс держал замок,
+   а касса о споре не знала — прямой запрос на выплату или возврат
+   проходил. Теперь каждый открытый спор, где я сторона, регистрируется
+   на сервере (POST /api/deals/dispute/open), и касса отклоняет выплату
+   и возврат, пока он открыт. Решённый или отозванный спор снимается
+   (dispute/close); решение арбитра через кассу снимает его само.
+
+   Внутренних функций слоя арбитража не трогаем: читаем хранилище и
+   сверяем с отметками bpDisputeSync (свой ключ, не общее хранилище).
+   Откат: удалить этот блок.                                          */
+(function(){
+'use strict';
+if(window.__bpDisputeSync) return; window.__bpDisputeSync = 1;
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e); }catch(_){} }
+function srv(){ return window.bpSrv; }
+function live(){ var s = srv(); return !!(s && s.configured() && s.token()); }
+function me(){ try{ return (typeof currentUser !== 'undefined' && currentUser) || null; }catch(e){ return null; } }
+var MK = 'bpDisputeSync';
+function marks(){ try{ return JSON.parse(localStorage.getItem(MK) || '{}') || {}; }catch(e){ return {}; } }
+function mark(id, v){ try{ var m = marks(); m[id] = v; localStorage.setItem(MK, JSON.stringify(m)); }catch(e){} }
+function all(){ try{ var a = JSON.parse(localStorage.getItem('bp_disputes_v2') || '[]'); return Array.isArray(a) ? a : []; }catch(e){ return []; } }
+
+/* серверный id блогера по местному id — как это делает bp-money */
+function srvIdOf(localId){
+  try{
+    var u = me();
+    if(u && String(u.id) === String(localId) && window.bpMoney && typeof bpMoney.mySrvId === 'function'){
+      var mine = bpMoney.mySrvId(); if(mine) return Number(mine);
+    }
+    var joins = JSON.parse(localStorage.getItem('bp_task_joins') || '[]');
+    var j = (Array.isArray(joins) ? joins : []).find(function(x){ return x && String(x.userId) === String(localId) && x.srvId; });
+    if(j) return Number(j.srvId);
+    var cards = JSON.parse(localStorage.getItem('bp_my_cards') || '[]');
+    var c = (Array.isArray(cards) ? cards : []).find(function(x){ return x && String(x.userId) === String(localId) && x.srvId; });
+    if(c) return Number(c.srvId);
+  }catch(e){}
+  return null;
+}
+
+/* адрес спора на сервере: сделка + (для задания) исполнитель */
+function target(d){
+  var k = String(d.dealKey || '');
+  var m = /^task:([^:]+):(.+)$/.exec(k);
+  if(m){
+    var pid = srvIdOf(m[2]);
+    if(!pid) return null;                        /* ещё не знаем id — повторим позже */
+    return { dealId: 'camp:' + m[1], payeeId: pid };
+  }
+  if(d.dealId) return { dealId: String(d.dealId), payeeId: null };
+  return null;                                   /* сделка без серверного id — кассе неизвестна */
+}
+function mineParty(d){
+  var u = me(); if(!u) return false;
+  return String(d.advertiserId) === String(u.id) || String(d.bloggerId) === String(u.id) || String(d.openerId) === String(u.id);
+}
+function dead(d){ return d.status === 'resolved' || d.status === 'withdrawn'; }
+
+var busy = false, last = 0;
+function sync(force){
+  if(busy || !live()) return;
+  var now = Date.now();
+  if(!force && now - last < 20000) return;
+  last = now; busy = true;
+  var m = marks(), jobs = [];
+  all().forEach(function(d){
+    if(!d || !d.id || d.reputationOnly || !mineParty(d)) return;
+    var t = target(d); if(!t) return;
+    var st = m[d.id] || '';
+    if(!dead(d) && st !== 'open'){
+      jobs.push(srv().raw('POST', '/api/deals/dispute/open', { dealId: t.dealId, payeeId: t.payeeId })
+        .then(function(){ mark(d.id, 'open'); })
+        .catch(function(e){
+          /* сделка кассе неизвестна или уже закрыта — регистрировать нечего */
+          if(e && (e.status === 404 || e.status === 409 || e.status === 403)) mark(d.id, 'skip');
+        }));
+    } else if(dead(d) && st === 'open'){
+      jobs.push(srv().raw('POST', '/api/deals/dispute/close', { dealId: t.dealId, payeeId: t.payeeId })
+        .then(function(){ mark(d.id, 'closed'); })
+        .catch(function(e){ if(e && (e.status === 404 || e.status === 403)) mark(d.id, 'closed'); }));
+    }
+  });
+  Promise.all(jobs.map(function(p){ return p.catch(function(){}); })).then(function(){ busy = false; }, function(){ busy = false; });
+}
+window.bpDisputeSync = function(){ sync(true); };
+
+/* сразу после действий со спором и по расписанию */
+['bpDisputeOpen', 'bpDisputeSettle', 'bpArbVerdict', 'bpDisputeWithdraw'].forEach(function(n){
+  var o = window[n];
+  if(typeof o !== 'function' || o.__bpDsync) return;
+  window[n] = function(){ var r = o.apply(this, arguments); setTimeout(function(){ sync(true); }, 1500); setTimeout(function(){ sync(true); }, 6000); return r; };
+  window[n].__bpDsync = true;
+});
+window.addEventListener('storage', function(e){ if(e && e.key === 'bp_disputes_v2') setTimeout(function(){ sync(true); }, 800); });
+document.addEventListener('visibilitychange', function(){ if(!document.hidden) sync(false); });
+setInterval(function(){ if(!document.hidden) sync(false); }, 30000);
+setTimeout(function(){ sync(true); }, 4000);
+})();
+</script>
+
+<script id="bp-camp-ledger">
+/* ══ Расход кампании приезжает с сервера ═════════════════════════════
+   Расход и остаток бюджета кампании считаются из местного журнала
+   bp_ledger. На новом телефоне журнал пуст — рекламодатель видел
+   «потрачено 0», хотя касса уже выплатила. Подтягиваем ключи операций
+   выплат (GET /api/ops/mine) и восстанавливаем недостающие записи с
+   тем же ключом, что пишет приёмка: camp_payout:<кампания>:<блогер>[:rN].
+   Откат: удалить этот блок.                                          */
+(function(){
+'use strict';
+if(window.__bpCampLedger) return; window.__bpCampLedger = 1;
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e); }catch(_){} }
+function srv(){ return window.bpSrv; }
+function live(){ var s = srv(); return !!(s && s.configured() && s.token()); }
+var last = 0, busy = false;
+function pull(force){
+  if(busy || !live()) return;
+  var now = Date.now();
+  if(!force && now - last < 60000) return;
+  last = now; busy = true;
+  srv().raw('GET', '/api/ops/mine').then(function(j){
+    busy = false;
+    var rows = (j && j.rows) || [];
+    var added = 0;
+    var a;
+    try{ a = JSON.parse(localStorage.getItem('bp_ledger') || '[]'); if(!Array.isArray(a)) a = []; }catch(e){ a = []; }
+    var have = {};
+    a.forEach(function(r){ if(r && r.key) have[r.key] = 1; });
+    rows.forEach(function(r){
+      var m = /^cp:([^:]+):([^:]+):r(\d+)$/.exec(String(r.opKey || ''));
+      if(!m || !(Number(r.paid) > 0)) return;
+      var key = 'camp_payout:' + m[1] + ':' + m[2] + (Number(m[3]) > 0 ? ':r' + m[3] : '');
+      if(have[key]) return;
+      a.push({ key: key, kind: 'camp_payout', campId: m[1], userId: m[2], round: Number(m[3]) || 0,
+               amount: Number(r.paid), at: Date.parse(String(r.at || '').replace(' ', 'T') + 'Z') || Date.now(),
+               server: 1, reason: 'Выплата через кассу (восстановлено с сервера)' });
+      have[key] = 1; added++;
+    });
+    if(added){
+      try{ localStorage.setItem('bp_ledger', JSON.stringify(a)); }catch(e){ E(e); }
+      try{ if(typeof window.renderCampaignsPage === 'function') window.renderCampaignsPage(); }catch(e){}
+    }
+  }).catch(function(){ busy = false; });
+}
+var og = window.goTo;
+if(typeof og === 'function' && !og.__bpCampLedger){
+  window.goTo = function(page){
+    var r = og.apply(this, arguments);
+    var p = String(page || '');
+    if(p === 'campaigns' || p === 'balance' || p === 'home') setTimeout(function(){ pull(false); }, 60);
+    return r;
+  };
+  window.goTo.__bpCampLedger = true;
+}
+document.addEventListener('visibilitychange', function(){ if(!document.hidden) pull(false); });
+setTimeout(function(){ pull(true); }, 3500);
+})();
+</script>
+
+<style id="bp-auth-socials-css">
+/* ══ Кнопки «Google — скоро» и «Telegram — скоро» ═══════════════════
+   Две кнопки на экране входа ничего не делали и показывали тост
+   «скоро». Заглушки с главного экрана убраны: разделитель «или» и ряд
+   кнопок скрыты. Внутри Телеграма (есть initData) вход через Телеграм
+   работает по-настоящему — тогда его кнопка возвращается одна.
+   Откат: удалить этот блок и скрипт bp-auth-socials.                 */
+html #formLogin .auth-or, html #formLogin .auth-socials{ display:none }
+html #formLogin.bp-tg-in .auth-or, html #formLogin.bp-tg-in .auth-socials{ display:flex }
+html #formLogin.bp-tg-in .auth-soc-btn[onclick*="loginGoogle"]{ display:none }
+html #formLogin.bp-tg-in .auth-socials{ justify-content:center }
+</style>
+<script id="bp-auth-socials">
+(function(){
+'use strict';
+try{
+  var tg = window.Telegram && window.Telegram.WebApp;
+  var inTg = !!(tg && tg.initData);
+  var f = document.getElementById('formLogin');
+  if(f && inTg) f.classList.add('bp-tg-in');
+}catch(e){}
 })();
 </script>
 </body>

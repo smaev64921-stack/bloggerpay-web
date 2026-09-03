@@ -59,6 +59,53 @@ const w3 = await api('POST', '/api/withdraw', { amount: 1000, requisites: 'ка�
 const other = await api('POST', '/api/withdraw', { amount: 2000, requisites: 'карта 3333', code: w3.body.devCode, opKey: randomUUID() }, T);
 ok(other.status === 400 && other.body.dead === true, 'код не подходит к другой сумме', other.body);
 
+/* ── спор держит деньги и на сервере ── */
+{
+  const adv = await api('POST', '/api/register', { email: `da${tag}@t.ru`, name: 'Заказчик', role: 'advertiser', password: 'обычныйПароль12' });
+  const blg = await api('POST', '/api/register', { email: `db${tag}@t.ru`, name: 'Исполнитель', role: 'blogger', password: 'обычныйПароль12' });
+  const TA = adv.body.token, TB = blg.body.token, BID = blg.body.user.id;
+  await api('POST', '/api/topup', { amount: 20000, opKey: randomUUID() }, TA);
+  const dealId = 'deal_dsp_' + tag;
+  const hold = await api('POST', '/api/deals/hold', { dealId, amount: 5000, payeeId: BID, opKey: randomUUID() }, TA);
+  ok(hold.status === 200, 'заморозка под сделку прошла', hold.body);
+
+  const stranger = await api('POST', '/api/register', { email: `dc${tag}@t.ru`, name: 'Посторонний', role: 'blogger', password: 'обычныйПароль12' });
+  const noRight = await api('POST', '/api/deals/dispute/open', { dealId }, stranger.body.token);
+  ok(noRight.status === 403, 'посторонний не может открыть спор по чужой сделке', noRight.body);
+
+  const opened = await api('POST', '/api/deals/dispute/open', { dealId }, TB);
+  ok(opened.status === 200 && opened.body.ok, 'исполнитель открыл спор по своей сделке', opened.body);
+
+  const rel = await api('POST', '/api/deals/release', { dealId, toUserId: BID, opKey: randomUUID() }, TA);
+  ok(rel.status === 409 && rel.body.dispute === true, 'выплата во время спора отклонена сервером', rel.body);
+  const ref = await api('POST', '/api/deals/refund', { dealId, opKey: randomUUID() }, TA);
+  ok(ref.status === 409 && ref.body.dispute === true, 'возврат во время спора отклонён сервером', ref.body);
+
+  const closeNo = await api('POST', '/api/deals/dispute/close', { dealId }, stranger.body.token);
+  ok(closeNo.status === 403, 'посторонний не может закрыть спор', closeNo.body);
+  const closed = await api('POST', '/api/deals/dispute/close', { dealId }, TB);
+  ok(closed.status === 200 && closed.body.closed === 1, 'открывший закрыл спор', closed.body);
+
+  const rel2 = await api('POST', '/api/deals/release', { dealId, toUserId: BID, opKey: 'cp:test:' + tag }, TA);
+  ok(rel2.status === 200 && rel2.body.ok, 'после закрытия спора выплата проходит', rel2.body);
+
+  const mine = await api('GET', '/api/ops/mine', null, TA);
+  ok(mine.status === 200 && (mine.body.rows || []).some((r) => r.opKey === 'cp:test:' + tag && r.paid === 5000),
+     'журнал выплат отдаёт ключ операции и сумму', mine.body);
+
+  /* спор по выплате одному исполнителю из бюджета кампании закрывает решение арбитра */
+  const camp = 'camp:dsp' + tag;
+  await api('POST', '/api/deals/hold', { dealId: camp, amount: 3000, opKey: randomUUID() }, TA);
+  const o2 = await api('POST', '/api/deals/dispute/open', { dealId: camp, payeeId: BID }, TB);
+  ok(o2.status === 200, 'спор по своей выплате из бюджета кампании открыт', o2.body);
+  const rel3 = await api('POST', '/api/deals/release', { dealId: camp, toUserId: BID, amount: 1000, opKey: randomUUID() }, TA);
+  ok(rel3.status === 409, 'выплата этому исполнителю заморожена', rel3.body);
+  const settled = await api('POST', '/api/deals/settle', { dealId: camp, bloggerShare: 50, toUserId: BID, opKey: randomUUID() }, null, ADMIN_KEY);
+  ok(settled.status === 200, 'арбитр вынес решение', settled.body);
+  const after = await api('POST', '/api/deals/dispute/close', { dealId: camp, payeeId: BID }, TB);
+  ok(after.status === 200 && after.body.closed === 0, 'после решения арбитра открытых споров не осталось', after.body);
+}
+
 /* ── перебор ключа владельца упирается в стену ── */
 let blocked = 0;
 for (let i = 0; i < 12; i++) {
