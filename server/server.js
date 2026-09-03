@@ -1229,6 +1229,97 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000).unref();
 
+/* Проверка площадки: заданы ли ключи, дотягивается ли сервер до её
+   адресов и не ругается ли она на ключ. Одним кодом пользуются и пульт
+   оператора (кнопка «Проверить»), и журнал при запуске — иначе они
+   расходятся во мнениях. Запросы делаются те же, что и в работе: HEAD
+   проходит там, где настоящий запрос уже висит. */
+async function platformProbe(p) {
+  const cfg = OAUTH[p];
+  if (!cfg) return null;
+    const out = {
+      platform: p, label: cfg.label,
+      keys: !!(cfg.id && cfg.secret),
+      redirect: PUBLIC_URL + '/api/verify/callback/' + p,
+      scope: cfg.scope,
+      authHost: (() => { try { return new URL(cfg.auth).host; } catch (e) { return ''; } })(),
+      apiHost: (() => { try { return new URL(cfg.token).host; } catch (e) { return ''; } })(),
+    };
+    if (!out.keys) {
+      out.verdict = 'Ключи площадки не заданы: заполните ключ и секрет в настройках сервера.';
+      return out;
+    }
+
+    /* Ходить будем с ограничением по времени: заблокированный адрес
+       иначе держит запрос до самого таймаута системы. */
+    const once = async (address, opts) => {
+      const stop = AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined;
+      try {
+        const r = await fetch(address, Object.assign({ redirect: 'follow', signal: stop }, opts || {}));
+        const text = await r.text().catch(() => '');
+        return { ok: true, status: r.status, url: r.url, text: text.slice(0, 4000) };
+      } catch (e) {
+        return { ok: false, why: String((e && e.message) || e) };
+      }
+    };
+    const grab = async (address, opts) => {
+      const a = await once(address, opts);
+      if (a.ok) return a;
+      return once(address, opts);              /* вторая попытка: обрыв ещё не блокировка */
+    };
+
+    /* 1. Виден ли сервер площадки вообще. Обмен кода на данные делает
+          именно сервер: если отсюда не открывается — вход не заработает,
+          сколько ни правь ключи. */
+    const api = await grab(cfg.token, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'grant_type=authorization_code' });
+    /* Данные аккаунта запрашиваются отдельным адресом — его тоже
+       проверяем: бывает, что обмен токена проходит, а этот висит. */
+    const info = cfg.userInfo ? await grab(cfg.userInfo + '?fields=open_id', { headers: { Authorization: 'Bearer probe' } }) : { ok: true };
+    out.tokenReachable = api.ok;
+    out.infoReachable = info.ok;
+    out.apiReachable = api.ok && info.ok;
+    if (!api.ok) out.apiWhy = api.why;
+    else if (!info.ok) out.apiWhy = info.why;
+
+    /* 2. Узнаёт ли площадка ключ. Открываем ту же страницу входа, что
+          увидит человек, и смотрим, не ругается ли она на client_key. */
+    const q1 = new URLSearchParams({
+      response_type: 'code', state: 'probe', redirect_uri: out.redirect, scope: cfg.scope,
+    });
+    if (p === 'youtube') { q1.set('client_id', cfg.id); q1.set('access_type', 'online'); }
+    else q1.set('client_key', cfg.id);
+    const auth = await grab(cfg.auth + '?' + q1.toString(), {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36', Accept: 'text/html' },
+    });
+    out.authReachable = auth.ok;
+    if (!auth.ok) out.authWhy = auth.why;
+    if (auth.ok) {
+      const t = auth.text || '';
+      out.authStatus = auth.status;
+      /* Страница входа собирается скриптами: ошибка про ключ до тела ответа
+         обычно не доходит, поэтому признак берём только явный. */
+      out.keyRejected = /client_key/i.test(t) && /(invalid_client|unknown client|client key is)/i.test(t);
+      out.scopeRejected = /invalid[_ ]?scope|scope.*not.*(approved|authorized)/i.test(t);
+    }
+
+    out.verdict = !out.apiReachable
+      ? 'С этого сервера ' + out.apiHost + (out.tokenReachable && !out.infoReachable
+          ? ' открывается наполовину: обмен кода проходит, а запрос данных аккаунта нет.'
+          : ' не открывается.')
+        + ' Обмен кода на данные делает сервер, поэтому вход не заработает, пока не пропишете рабочий адрес в TT_API_BASE.'
+      : out.authReachable === false
+        ? 'Страница входа ' + out.authHost + ' с сервера не открывается. Человеку она может быть доступна, проверьте вход руками.'
+        : out.keyRejected
+          ? 'Площадка не узнала ключ: нужен именно Client key из раздела Credentials — не App ID и не секрет.'
+          : out.scopeRejected
+            ? 'Ключ принят, но запрошенные права не одобрены. Оставьте в TT_SCOPE только user.info.basic и подайте приложение на проверку.'
+            : 'Ключи заданы, адреса площадки с сервера открываются. Верен ли сам ключ,'
+              + ' отсюда не проверить: TikTok сверяет его уже в браузере. Откройте вход'
+              + ' в приложении — ошибка «client_key» там значит, что ключ не тот либо'
+              + ' приложение ещё не одобрено (тогда входят только тестовые аккаунты).';
+    return out;
+}
+
 const routes = {
 
   'GET /api/health': async () => ({ status: 200, body: { ok: true, version: 'bp-server-1' } }),
@@ -2107,89 +2198,8 @@ const routes = {
 
   'GET /api/admin/verify/probe': async (req, body, url) => {
     if (!isAdmin(req)) return { status: 403, body: { error: 'Нужен X-Admin-Key' } };
-    const p = String(url.searchParams.get('platform') || '');
-    const cfg = OAUTH[p];
-    if (!cfg) return { status: 400, body: { error: 'Неизвестная площадка' } };
-    const out = {
-      platform: p, label: cfg.label,
-      keys: !!(cfg.id && cfg.secret),
-      redirect: PUBLIC_URL + '/api/verify/callback/' + p,
-      scope: cfg.scope,
-      authHost: (() => { try { return new URL(cfg.auth).host; } catch (e) { return ''; } })(),
-      apiHost: (() => { try { return new URL(cfg.token).host; } catch (e) { return ''; } })(),
-    };
-    if (!out.keys) {
-      out.verdict = 'Ключи площадки не заданы: заполните ключ и секрет в настройках сервера.';
-      return { status: 200, body: out };
-    }
-
-    /* Ходить будем с ограничением по времени: заблокированный адрес
-       иначе держит запрос до самого таймаута системы. */
-    const once = async (address, opts) => {
-      const stop = AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined;
-      try {
-        const r = await fetch(address, Object.assign({ redirect: 'follow', signal: stop }, opts || {}));
-        const text = await r.text().catch(() => '');
-        return { ok: true, status: r.status, url: r.url, text: text.slice(0, 4000) };
-      } catch (e) {
-        return { ok: false, why: String((e && e.message) || e) };
-      }
-    };
-    const grab = async (address, opts) => {
-      const a = await once(address, opts);
-      if (a.ok) return a;
-      return once(address, opts);              /* вторая попытка: обрыв ещё не блокировка */
-    };
-
-    /* 1. Виден ли сервер площадки вообще. Обмен кода на данные делает
-          именно сервер: если отсюда не открывается — вход не заработает,
-          сколько ни правь ключи. */
-    const api = await grab(cfg.token, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'grant_type=authorization_code' });
-    /* Данные аккаунта запрашиваются отдельным адресом — его тоже
-       проверяем: бывает, что обмен токена проходит, а этот висит. */
-    const info = cfg.userInfo ? await grab(cfg.userInfo + '?fields=open_id', { headers: { Authorization: 'Bearer probe' } }) : { ok: true };
-    out.tokenReachable = api.ok;
-    out.infoReachable = info.ok;
-    out.apiReachable = api.ok && info.ok;
-    if (!api.ok) out.apiWhy = api.why;
-    else if (!info.ok) out.apiWhy = info.why;
-
-    /* 2. Узнаёт ли площадка ключ. Открываем ту же страницу входа, что
-          увидит человек, и смотрим, не ругается ли она на client_key. */
-    const q1 = new URLSearchParams({
-      response_type: 'code', state: 'probe', redirect_uri: out.redirect, scope: cfg.scope,
-    });
-    if (p === 'youtube') { q1.set('client_id', cfg.id); q1.set('access_type', 'online'); }
-    else q1.set('client_key', cfg.id);
-    const auth = await grab(cfg.auth + '?' + q1.toString(), {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36', Accept: 'text/html' },
-    });
-    out.authReachable = auth.ok;
-    if (!auth.ok) out.authWhy = auth.why;
-    if (auth.ok) {
-      const t = auth.text || '';
-      out.authStatus = auth.status;
-      /* Страница входа собирается скриптами: ошибка про ключ до тела ответа
-         обычно не доходит, поэтому признак берём только явный. */
-      out.keyRejected = /client_key/i.test(t) && /(invalid_client|unknown client|client key is)/i.test(t);
-      out.scopeRejected = /invalid[_ ]?scope|scope.*not.*(approved|authorized)/i.test(t);
-    }
-
-    out.verdict = !out.apiReachable
-      ? 'С этого сервера ' + out.apiHost + (out.tokenReachable && !out.infoReachable
-          ? ' открывается наполовину: обмен кода проходит, а запрос данных аккаунта нет.'
-          : ' не открывается.')
-        + ' Обмен кода на данные делает сервер, поэтому вход не заработает, пока не пропишете рабочий адрес в TT_API_BASE.'
-      : out.authReachable === false
-        ? 'Страница входа ' + out.authHost + ' с сервера не открывается. Человеку она может быть доступна, проверьте вход руками.'
-        : out.keyRejected
-          ? 'Площадка не узнала ключ: нужен именно Client key из раздела Credentials — не App ID и не секрет.'
-          : out.scopeRejected
-            ? 'Ключ принят, но запрошенные права не одобрены. Оставьте в TT_SCOPE только user.info.basic и подайте приложение на проверку.'
-            : 'Ключи заданы, адреса площадки с сервера открываются. Верен ли сам ключ,'
-              + ' отсюда не проверить: TikTok сверяет его уже в браузере. Откройте вход'
-              + ' в приложении — ошибка «client_key» там значит, что ключ не тот либо'
-              + ' приложение ещё не одобрено (тогда входят только тестовые аккаунты).';
+    const out = await platformProbe(String(url.searchParams.get('platform') || ''));
+    if (!out) return { status: 400, body: { error: 'Неизвестная площадка' } };
     return { status: 200, body: out };
   },
 
@@ -2761,6 +2771,29 @@ function boot() {
      Без ключа, но с MAIL_DEBUG=1 сервер раздаёт код прямо в ответе
      любому, кто знает чей-нибудь адрес: этого достаточно, чтобы сменить
      чужой пароль одним запросом. */
+  /* Площадки: ключи и связь. Обмен кода на данные аккаунта делает сам
+     сервер, поэтому его доступ к площадке важнее, чем доступ телефона.
+     Проверяем тем же кодом, что и кнопка в пульте, и пишем в журнал —
+     чтобы причина «вход не работает» была видна без всяких ключей. */
+  setTimeout(() => {
+    for (const name of Object.keys(OAUTH)) {
+      platformProbe(name).then((r) => {
+        if (!r) return;
+        if (!r.keys) { console.log('[BloggerPay] ' + r.label + ': ключи не заданы, вход через площадку выключен'); return; }
+        const bad = !r.apiReachable;
+        const rows = [
+          '[BloggerPay] ' + r.label + ': ключи заданы, права ' + r.scope,
+          '           ' + r.apiHost + ' с сервера: ' + (r.apiReachable ? 'открывается' : 'НЕ ОТКРЫВАЕТСЯ')
+            + (r.apiWhy ? ' (' + r.apiWhy + ')' : ''),
+          '           ' + r.authHost + ' с сервера: ' + (r.authReachable ? 'открывается' : 'не открывается'),
+          '           адрес возврата: ' + r.redirect,
+          '           ' + r.verdict,
+        ];
+        console[bad ? 'error' : 'log'](rows.join('\n'));
+      }).catch(() => {});
+    }
+  }, 1500).unref();
+
   if (MAIL_DEBUG) {
     console.error('[BloggerPay] ВНИМАНИЕ: MAIL_DEBUG=1 — код восстановления'
       + ' возвращается прямо в ответе сервера. Любой, кто знает адрес'
