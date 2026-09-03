@@ -89,7 +89,7 @@ const BOT_TOKEN = ENV.BOT_TOKEN || '';
 for (const k of ['RESEND_API_KEY', 'MAIL_FROM', 'MAIL_REPLY_TO', 'MAIL_LOGO_URL', 'APP_URL', 'PUBLIC_URL']) {
   if (ENV[k] != null) process.env[k] = ENV[k];
 }
-const MAIL_DEBUG = String(ENV.MAIL_DEBUG || '') === '1';
+let MAIL_DEBUG = String(ENV.MAIL_DEBUG || '') === '1';   /* ниже гасится, если сервер виден снаружи */
 
 /* Письмо без кода: вместо цифр — кнопка «Открыть», код показывается на
    странице /r/<метка> по нажатию. Выключается MAIL_LINK=0, если почему-то
@@ -145,6 +145,15 @@ const PUBLIC_URL = externalBase(ENV)
    .local и частные подсети. В этих случаях письмо честно печатает код
    внутри себя, как раньше. */
 if (!/^https?:\/\//i.test(PUBLIC_URL) || !reachableOutside(PUBLIC_URL)) PW_LINK_ON = false;
+/* Отладка почты живёт только на своей машине: публичный адрес значит,
+   что сервер виден снаружи, и код прямо в ответе отдаёт чужие аккаунты
+   любому, кто знает чей-то email. Гасим сами, молча не оставляем. */
+if (MAIL_DEBUG && /^https?:\/\//i.test(PUBLIC_URL) && reachableOutside(PUBLIC_URL)) {
+  MAIL_DEBUG = false;
+  console.error('[BloggerPay] MAIL_DEBUG=1 отключён принудительно: сервер виден'
+    + ' снаружи (' + PUBLIC_URL + '). В этом режиме код восстановления и код'
+    + ' вывода возвращаются прямо в ответе. Для тестов запускайте локально.');
+}
 /* Кавычки и пробелы вокруг значения — самая частая причина «неизвестный
    client_key»: площадка получает ключ вместе с ними и не узнаёт его. */
 const cleanKey = (v) => String(v == null ? '' : v).trim().replace(/^["']+|["']+$/g, '').trim();
