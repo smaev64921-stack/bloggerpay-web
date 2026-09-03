@@ -66,7 +66,18 @@
     font-size:var(--fs-sm);margin-top:6px}
   .tile.good b{color:var(--ok)} .tile.warn b{color:var(--warn)} .tile.bad b{color:var(--bad)}
 
-  .recon{border-radius:12px;padding:13px 15px;margin-bottom:18px;font-size:var(--fs-md);
+  .plats{ display:flex; flex-wrap:wrap; gap:10px; margin:0 0 14px }
+.plat{
+  flex:1 1 240px; border-radius:12px; padding:11px 13px;
+  border:1px solid var(--line); background:var(--card);
+}
+.plat b{ display:block; font-size:var(--fs-md); }
+.plat span{ display:block; font-size:var(--fs-sm); margin-top:2px }
+.plat.on span{ color:var(--ok) }
+.plat.off span{ color:var(--warn) }
+.plat i{ display:block; font-style:normal; font-size:var(--fs-sm); color:var(--t3);
+  margin:6px 0 8px; word-break:break-all }
+.recon{border-radius:12px;padding:13px 15px;margin-bottom:18px;font-size:var(--fs-md);
     border:1px solid var(--line);background:var(--card)}
   .recon.ok{border-color:rgba(61,220,132,.35);background:rgba(61,220,132,.08)}
   .recon.bad{border-color:rgba(255,107,107,.4);background:rgba(255,107,107,.09)}
@@ -127,6 +138,7 @@
 
   <div class="tiles" id="tiles"></div>
   <div id="recon"></div>
+  <div id="plats" class="plats"></div>
 
   <div class="tabs" id="sections">
     <button class="tab on" data-sec="wd">Выплаты</button>
@@ -459,6 +471,29 @@ function settleDialog(dealId, left, payeeId){
   }).catch(function(e){ say(e.message, true); });
 }
 
+/* ── Подключение площадок ────────────────────────────────────────────
+   Блогер подтверждает канал входом в TikTok или YouTube. Если ключи
+   площадки не заданы, кнопка в приложении честно говорит «не подключено»,
+   а здесь видно, чего не хватает и какой адрес возврата нужно прописать
+   в кабинете разработчика: неверный адрес и лишние кавычки в ключе —
+   две главные причины ошибки «client_key» на стороне площадки. */
+function paintPlats(){
+  fetch('/api/verify/config').then(function(r){ return r.json(); }).then(function(j){
+    var p = (j && j.platforms) || {};
+    var names = Object.keys(p);
+    if(!names.length){ $('plats').innerHTML = ''; return; }
+    $('plats').innerHTML = names.map(function(k){
+      var it = p[k] || {};
+      return '<div class="plat ' + (it.configured ? 'on' : 'off') + '">'
+        + '<b>' + esc(it.label || k) + '</b>'
+        + '<span>' + (it.configured ? 'подключено' : 'ключи не заданы') + '</span>'
+        + '<i>адрес возврата: ' + esc(it.redirect || '') + '</i>'
+        + '<button class="btn sm" data-copy="' + esc(it.redirect || '') + '">Скопировать адрес</button>'
+        + '</div>';
+    }).join('');
+  }).catch(function(){ $('plats').innerHTML = ''; });
+}
+
 function paintTiles(o){
   var s = o.сверка || {};
   $('tiles').innerHTML =
@@ -472,6 +507,7 @@ function paintTiles(o){
     + tile((o.ошибок_за_сутки && o.ошибок_за_сутки.n) || 0, 'Поломок за сутки',
            (o.ошибок_за_сутки && o.ошибок_за_сутки.n) ? 'bad' : 'good');
 
+  paintPlats();
   $('recon').className = 'recon ' + (s.сходится ? 'ok' : 'bad');
   $('recon').innerHTML = s.сходится
     ? '✓ Сверка сходится: внесено <b>' + money(o.внесено_всего) + '</b> − выплачено наружу <b>'
@@ -573,8 +609,8 @@ document.addEventListener('click', function(e){
   if(t.dataset.copy){
     var text = t.dataset.copy;
     (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject())
-      .then(function(){ say('Реквизиты скопированы'); })
-      .catch(function(){ window.prompt('Скопируйте реквизиты', text); });
+      .then(function(){ say('Скопировано'); })
+      .catch(function(){ window.prompt('Скопируйте', text); });
     return;
   }
 

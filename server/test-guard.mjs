@@ -3,6 +3,7 @@
 
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import net from 'node:net';
 
 const BASE = 'http://127.0.0.1:8090';
 const ADMIN_KEY = /ADMIN_KEY=(\S+)/.exec(readFileSync(new URL('./.env', import.meta.url), 'utf8'))[1];
@@ -70,8 +71,16 @@ ok(other.status === 400 && other.body.dead === true, 'код не подходи
   ok(hold.status === 200, 'заморозка под сделку прошла', hold.body);
 
   const stranger = await api('POST', '/api/register', { email: `dc${tag}@t.ru`, name: 'Посторонний', role: 'blogger', password: 'обычныйПароль12' });
-  const noRight = await api('POST', '/api/deals/dispute/open', { dealId }, stranger.body.token);
-  ok(noRight.status === 403, 'посторонний не может открыть спор по чужой сделке', noRight.body);
+  const TC = stranger.body.token;
+  const noWhole = await api('POST', '/api/deals/dispute/open', { dealId, payeeId: null }, TC);
+  ok(noWhole.status === 200 && noWhole.body.ok, 'посторонний открывает спор только «по себе»', noWhole.body);
+
+  /* Главное: такой спор не запирает чужие деньги — возврат плательщику проходит. */
+  const dealFree = 'deal_free_' + tag;
+  await api('POST', '/api/deals/hold', { dealId: dealFree, amount: 1000, opKey: randomUUID() }, TA);
+  await api('POST', '/api/deals/dispute/open', { dealId: dealFree }, TC);
+  const backOk = await api('POST', '/api/deals/refund', { dealId: dealFree, opKey: randomUUID() }, TA);
+  ok(backOk.status === 200 && backOk.body.ok, 'спор постороннего не мешает возврату плательщику', backOk.body);
 
   const opened = await api('POST', '/api/deals/dispute/open', { dealId }, TB);
   ok(opened.status === 200 && opened.body.ok, 'исполнитель открыл спор по своей сделке', opened.body);
@@ -81,10 +90,10 @@ ok(other.status === 400 && other.body.dead === true, 'код не подходи
   const ref = await api('POST', '/api/deals/refund', { dealId, opKey: randomUUID() }, TA);
   ok(ref.status === 409 && ref.body.dispute === true, 'возврат во время спора отклонён сервером', ref.body);
 
-  const closeNo = await api('POST', '/api/deals/dispute/close', { dealId }, stranger.body.token);
-  ok(closeNo.status === 403, 'посторонний не может закрыть спор', closeNo.body);
-  const closed = await api('POST', '/api/deals/dispute/close', { dealId }, TB);
-  ok(closed.status === 200 && closed.body.closed === 1, 'открывший закрыл спор', closed.body);
+  const closeNo = await api('POST', '/api/deals/dispute/close', { dealId, payeeId: BID }, TC);
+  ok(closeNo.status === 403, 'посторонний не может закрыть чужой спор', closeNo.body);
+  const closed = await api('POST', '/api/deals/dispute/close', { dealId, payeeId: BID }, TB);
+  ok(closed.status === 200 && closed.body.closed === 1, 'открывший закрыл свой спор', closed.body);
 
   const rel2 = await api('POST', '/api/deals/release', { dealId, toUserId: BID, opKey: 'cp:test:' + tag }, TA);
   ok(rel2.status === 200 && rel2.body.ok, 'после закрытия спора выплата проходит', rel2.body);
@@ -104,6 +113,52 @@ ok(other.status === 400 && other.body.dead === true, 'код не подходи
   ok(settled.status === 200, 'арбитр вынес решение', settled.body);
   const after = await api('POST', '/api/deals/dispute/close', { dealId: camp, payeeId: BID }, TB);
   ok(after.status === 200 && after.body.closed === 0, 'после решения арбитра открытых споров не осталось', after.body);
+}
+
+/* ── служебные ключи операций пользователю недоступны ── */
+{
+  const u = await api('POST', '/api/register', { email: `ok${tag}@t.ru`, name: 'Ключник', role: 'advertiser', password: 'обычныйПароль12' });
+  const T = u.body.token;
+  await api('POST', '/api/topup', { amount: 5000, opKey: randomUUID() }, T);
+  const sys = await api('POST', '/api/deals/hold', { dealId: 'k1_' + tag, amount: 100, opKey: 'sys:wd-paid:1' }, T);
+  ok(sys.status === 400, 'ключ из пространства sys: отклонён', sys.body);
+  const old = await api('POST', '/api/deals/hold', { dealId: 'k2_' + tag, amount: 100, opKey: 'bp-op-paid-1' }, T);
+  ok(old.status === 400, 'ключ пульта оператора занять нельзя', old.body);
+}
+
+/* ── адрес без хоста не роняет сервер ── */
+{
+  const r = await fetch(BASE + '/api/health');
+  ok(r.status === 200, 'сервер жив перед проверкой адреса');
+  const bad = await new Promise((resolve) => {
+    const u = new URL(BASE);
+    const c = net.connect(Number(u.port) || 80, u.hostname, () => {
+      c.write('GET // HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n');
+    });
+    let out = '';
+    c.on('data', (d) => { out += d.toString(); });
+    c.on('end', () => resolve(out));
+    c.on('error', () => resolve(''));
+    setTimeout(() => { try { c.destroy(); } catch (e) {} resolve(out); }, 3000);
+  });
+  ok(/HTTP\/1\.1 400/.test(bad), 'на «GET //» приходит 400, а не тишина', bad.slice(0, 60));
+  const alive = await api('GET', '/api/health');
+  ok(alive.status === 200, 'после кривого адреса сервер жив');
+}
+
+/* ── регистрация на служебный домен закрыта ── */
+{
+  const r = await api('POST', '/api/register', { email: 'tg777000@telegram.local', name: 'Захват', role: 'blogger', password: 'обычныйПароль12' });
+  ok(r.status === 400, 'на @telegram.local зарегистрироваться нельзя', r.body);
+}
+
+/* ── ключ оператора из кириллицы не роняет запрос ── */
+{
+  /* Заголовок допускает только байты 0–255, поэтому берём латиницу с
+     диакритикой: в utf-8 такой символ занимает два байта, и длина в
+     символах расходится с длиной в байтах — на этом сравнение падало. */
+  const r = await api('GET', '/api/admin/overview', null, null, 'é'.repeat(ADMIN_KEY.length));
+  ok(r.status === 403, 'ключ из двухбайтовых символов отвергается без ошибки сервера', r.status);
 }
 
 /* ── перебор ключа владельца упирается в стену ── */

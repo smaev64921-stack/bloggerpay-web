@@ -14040,7 +14040,7 @@ function showVerifyPicker() {
   <!-- ═══════ ШАГ 1: ПЛАТФОРМЫ ═══════ -->
   <div class="abc-body" id="abc-step1">
     <div class="abc-section-title">Выберите платформы</div>
-    <div class="abc-section-sub">Добавьте ссылки на каналы — мы подтвердим их автоматически</div>
+    <div class="abc-section-sub">TikTok подключается входом в аккаунт — ссылку и подписчиков сообщит сама площадка. Для остальных площадок укажите ссылку на канал.</div>
 
     <!-- Highlight banner: your card will be shown at the top -->
     <div class="abc-top-banner">
@@ -14262,7 +14262,7 @@ function showVerifyPicker() {
 
     <!-- Сообщение рекламодателю (СНИЗУ) -->
     <div class="abc-section-title">Оставьте комментарий рекламодателю</div>
-    <div class="abc-section-sub">Это сообщение получит рекламодатель сразу после покупки рекламы у вас</div>
+    <div class="abc-section-sub">Рекламодатель увидит его в вашей карточке, когда откроет её</div>
     <div class="abc-msg-wrap">
       <textarea id="abc-msg-textarea" class="abc-msg-textarea" maxlength="500" placeholder="Напишите приветственное сообщение рекламодателю..." oninput="abcMsgUpdate(this)"></textarea>
       <div class="abc-msg-counter"><span id="abc-msg-len">0</span>/500</div>
@@ -17600,7 +17600,13 @@ function _getSelectedFormatLabels() {
       const parts = String(key).split(':');
       const pid = parts[0];
       const idx = parseInt(parts[1]);
-      const integs = (typeof abcGetIntegrations === 'function') ? abcGetIntegrations(pid) : [];
+      /* Сначала интеграции ОТКРЫТОЙ карточки — ключи набраны по ней.
+         Свои (abcGetIntegrations) годятся только когда карточка своя:
+         у рекламодателя их нет, и формат подменялся значением по
+         умолчанию — «Рекламный пост» вместо выбранного. */
+      const integs = (_currentCardIntegrations && _currentCardIntegrations[pid])
+        ? _currentCardIntegrations[pid]
+        : ((typeof abcGetIntegrations === 'function') ? abcGetIntegrations(pid) : []);
       const item = integs[idx];
       if(!item) return;
       const allFmts = (typeof ABC_FORMATS !== 'undefined' && ABC_FORMATS[pid]) || [];
@@ -18122,9 +18128,15 @@ function addToCamp(btn, name, img, price) {
     try {
       const cards = JSON.parse(localStorage.getItem('bp_my_cards') || '[]');
       // Ищем карту: сначала по cardId (точно), потом по userId
-      const savedCard = (cardId && cards.find(c => c.id === cardId))
-        || cards.find(c => currentUser && c.userId === currentUser.id)
-        || cards[0];
+      /* Только точное совпадение по id. Раньше при промахе подставлялась
+         своя карточка или первая в списке — и заявка вместе с деньгами
+         адресовалась постороннему блогеру. */
+      const savedCard = cardId ? cards.find(c => c.id === cardId) : null;
+      if(cardId && !savedCard){
+        try{ showAuthToast('Карточка блогера не найдена — обновите каталог', 'err'); }catch(e){}
+        try{ if(typeof loadMyCards === 'function') loadMyCards(); }catch(e){}
+        return;
+      }
       if(savedCard) {
         if(savedCard.platforms && savedCard.platforms.length > 0) platforms = savedCard.platforms;
         if(savedCard.integrations && Object.keys(savedCard.integrations).length > 0) {
@@ -22409,7 +22421,11 @@ const abcPlatformColors = {
 
 function abcFmtNum(n) {
   if (n >= 1000000) return (n/1e6).toFixed(1).replace('.0','') + 'M';
-  if (n >= 1000)    return (n/1000).toFixed(0) + 'K';
+  /* До десяти тысяч показываем десятую долю: раньше 1 500 превращалось
+     в «2K», и обратный разбор давал 2 000 — цифра расходилась с той,
+     которую ввёл блогер. */
+  if (n >= 10000)   return (n/1000).toFixed(0) + 'K';
+  if (n >= 1000)    return (n/1000).toFixed(1).replace('.0','') + 'K';
   return String(n);
 }
 
@@ -22469,7 +22485,7 @@ function abcRenderUrlArea(pid) {
             <div class="abc-channel-ava">${initials}</div>
             <div class="abc-channel-card-info">
               <div class="abc-channel-card-name">
-                ${handle}
+                ${bpEsc(handle)}
                 <div class="abc-channel-selfsaid" title="Владение каналом сервис не проверял">со слов блогера</div>
               </div>
             </div>
@@ -22631,9 +22647,30 @@ function abcToggle(pid) {
 // Здесь стоял генератор: любая ссылка через полторы секунды давала
 // «Канал подтверждён» и 200–400 тысяч подписчиков из Math.random().
 // По этим цифрам рекламодатель считал цену за тысячу показов.
+/* Ссылка должна вести на саму площадку: значок YouTube над чужим
+   доменом — прямая дорога к обману рекламодателя. */
+const ABC_HOSTS = {
+  youtube: /(^|\.)(youtube\.com|youtu\.be)$/i,
+  telegram: /(^|\.)(t\.me|telegram\.me|telegram\.dog)$/i,
+  tiktok: /(^|\.)tiktok\.com$/i
+};
+function abcHostOk(pid, raw){
+  const re = ABC_HOSTS[pid];
+  if(!re) return true;
+  let u = String(raw || '').trim();
+  if(!/^https?:\/\//i.test(u)) u = 'https://' + u;
+  try { return re.test(new URL(u).hostname); } catch(e){ return false; }
+}
 function abcVerifyUrl(pid) {
   const p = abcPlatforms[pid];
   if(!p.url || p.url.length < 5) return;
+  if(!abcHostOk(pid, p.url)){
+    const где = pid === 'youtube' ? 'youtube.com' : pid === 'telegram' ? 't.me' : 'tiktok.com';
+    showAuthToast('Ссылка должна вести на ' + где + ' — проверьте адрес', 'err');
+    const inp = document.getElementById('abc-inp-' + pid);
+    if(inp){ inp.classList.add('bad'); try{ inp.focus(); }catch(e){} }
+    return;
+  }
   p.loading = false;
   p.open = false;
   p.verified = true;        // ссылка сохранена, не «канал проверен»
@@ -22660,14 +22697,18 @@ function abcEditUrl(pid) {
   p.verified = false;
   p.enabled = false;
   p.panelOpen = false;
-  p.subs = 0; p.er = 0; p.reach = 0;
-  p.url = '';
+  /* Ссылку и цифры оставляем: человек правит опечатку, а не начинает
+     сначала. Раньше здесь всё обнулялось, и охваты приходилось вводить
+     заново; вдобавок не было abcPersist — в хранилище оставалась старая
+     ссылка с отметкой «подтверждена». */
   p.open = true;
   const tog = document.getElementById('abc-toggle-' + pid);
-  tog.classList.remove('enabled', 'on');
-  document.getElementById('abc-row-' + pid).classList.remove('active');
+  if(tog) tog.classList.remove('enabled', 'on');
+  const row = document.getElementById('abc-row-' + pid);
+  if(row) row.classList.remove('active');
   abcRenderUrlArea(pid);
   abcSyncContinue();
+  abcPersist();
 }
 
 function abcSyncContinue() {
@@ -23267,10 +23308,20 @@ function abcContinue() {
 
       // Данные платформ для статистики
       const firstPid = enabledPids[0];
-      const pData = firstPid ? abcPlatforms[firstPid] : null;
-      const subsVal = pData && pData.subs ? abcFmtNum(pData.subs) : '—';
-      const reachVal = pData && pData.reach ? abcFmtNum(pData.reach) : '—';
-      const erVal = pData && pData.er ? parseFloat(pData.er).toFixed(1)+'%' : '—';
+      /* Складываем по всем включённым площадкам — ровно так же, как
+         считает превью на шаге 3 (abcFillPreviewIdentity). Раньше сюда
+         попадали цифры одной, первой площадки, и каталог показывал
+         меньше, чем человек видел перед публикацией. */
+      let _sumSubs = 0, _sumReach = 0, _erSum = 0, _erCnt = 0;
+      enabledPids.forEach(pid => {
+        const _pp = abcPlatforms[pid]; if(!_pp) return;
+        _sumSubs += Number(_pp.subs) || 0;
+        _sumReach += Number(_pp.reach) || 0;
+        if(_pp.er){ _erSum += parseFloat(_pp.er) || 0; _erCnt++; }
+      });
+      const subsVal = _sumSubs ? abcFmtNum(_sumSubs) : '—';
+      const reachVal = _sumReach ? abcFmtNum(_sumReach) : '—';
+      const erVal = _erCnt ? (_erSum / _erCnt).toFixed(1) + '%' : '—';
 
       // Уникальный ID карты
       const cardId = 'mycard_' + Date.now();
@@ -23325,7 +23376,14 @@ function abcContinue() {
         kids: !!abcKidsAudience,         // контент для детей
         showGender: !!abcShowGender,     // показывать пол в карточке
         showKids: !!abcShowKids,         // показывать детскую аудиторию
-        topics: abcSelectedTopics.slice()// ← нужно, чтобы правка карточки не начиналась с нуля
+        topics: abcSelectedTopics.slice(),// ← нужно, чтобы правка карточки не начиналась с нуля
+        /* Приветственное сообщение рекламодателю. Раньше поле читалось
+           только для счётчика символов, а в карточку не попадало —
+           написанный текст пропадал при публикации. */
+        msg: (function(){
+          var t = document.getElementById('abc-msg-textarea');
+          return t ? String(t.value || '').trim().slice(0, 500) : '';
+        })()
       };
       let _wasEditing = false;
       try {
@@ -23337,7 +23395,10 @@ function abcContinue() {
           const idx = existing.findIndex(c => c.id === editingId);
           if(idx >= 0) {
             cardData.id = editingId; // keep same id
-            existing[idx] = cardData;
+            /* Дописываем поверх старой записи, а не заменяем её: иначе
+               исчезают поля, которых мастер не знает — скрытие админом,
+               рейтинг, отзывы, серверный id получателя выплат. */
+            existing[idx] = Object.assign({}, existing[idx], cardData);
           } else {
             existing.unshift(cardData);
           }
@@ -23375,6 +23436,8 @@ function abcContinue() {
         p.subs=0; p.er=0; p.reach=0;
         abcIntegrations[pid] = [];
       });
+      var _msgTa = document.getElementById('abc-msg-textarea');
+      if(_msgTa){ _msgTa.value = ''; try{ abcMsgUpdate(_msgTa); }catch(e){} }
       try { localStorage.removeItem(_abcStateKey()); } catch(e){BPERR(e,17669)}
     }, 1200);
   }
@@ -23476,7 +23539,11 @@ function abcInit() {
     abcSelectedTopics.length = 0;
     abcGenderF = 50; abcKidsAudience = false;
     abcShowGender = false; abcShowKids = false;
-    try { localStorage.removeItem(_abcStateKey()); } catch(e){BPERR(e,17763)}
+    /* Незаконченный черновик поднимаем обратно. Раньше он здесь
+       стирался — и всё введённое пропадало при выходе со страницы.
+       После публикации черновик очищается сам, так что «наследства»
+       от прошлой карты не будет. */
+    abcRestore();
   }
 
   Object.keys(abcPlatforms).forEach(pid => {
@@ -23590,6 +23657,8 @@ function abcRestoreFromCard(cardId){
     tp.map(function(x){ return String(x).trim(); }).filter(Boolean)
       .forEach(function(t){ abcSelectedTopics.push(t); });
 
+    var _msgEl = document.getElementById('abc-msg-textarea');
+    if(_msgEl){ _msgEl.value = card.msg || ''; try{ abcMsgUpdate(_msgEl); }catch(e){} }
     if(typeof card.genderF === 'number') abcGenderF = card.genderF;
     abcKidsAudience = !!card.kids;
     abcShowGender = (card.showGender != null) ? !!card.showGender : (typeof card.genderF === 'number');
@@ -38223,7 +38292,10 @@ function gate(){
     if(lock && lock.parentNode) lock.parentNode.removeChild(lock);
     return;
   }
-  btn.style.opacity = '.4'; btn.style.cursor = 'not-allowed'; btn.style.pointerEvents = 'none';
+  /* pointer-events не выключаем: нажатие должно доходить до wdGo — он
+     скажет, чего не хватает, и откроет нужный шаг. Раньше большая синяя
+     кнопка просто молчала. */
+  btn.style.opacity = '.4'; btn.style.cursor = 'not-allowed'; btn.style.pointerEvents = '';
   if(!lock){
     lock = document.createElement('div');
     lock.id = 'kycLock';
@@ -41213,6 +41285,7 @@ else setTimeout(boot, 0);
   }
 
   document.addEventListener('click', function(e){
+    if(!e.target || typeof e.target.closest !== 'function') return;
     const a = e.target.closest('[data-cdo="ask-cancel"],[data-cdo="ask-ok"]');
     if(!a) return;
     const act = a.getAttribute('data-cdo');
@@ -61072,8 +61145,19 @@ window.bpwReceipt = function(ts){
       row('Списано с баланса', money(amt));
       row('Комиссия сервиса, 4%', '−' + NB + money(t.fee || 0), 'minus');
       if(t.card) row('Карта получателя', esc(tail(t.card)) + ' · ' + esc(brand(t.card).name));
-      var st = t.status === 'cancelled' ? 'Отменена' : t.status === 'ok' ? 'Выплачена' : 'В очереди на выплату';
-      row('Статус', esc(st));
+      /* Состояния приходят с сервера (bpWdRefresh): queued, processing,
+         paid, rejected, cancelled. Раньше разбирались только два, и
+         выплаченная заявка навсегда оставалась «в очереди». */
+      var WD_ST = {
+        cancelled: 'Отменена, деньги вернулись на баланс',
+        rejected:  'Отклонена, деньги вернулись на баланс',
+        paid:      'Выплачена',
+        ok:        'Выплачена',
+        processing:'Оператор оформляет выплату',
+        pending:   'В очереди на выплату',
+        queued:    'В очереди на выплату'
+      };
+      row('Статус', esc(WD_ST[t.status] || 'В очереди на выплату'));
     } else {
       row('Комиссия за пополнение', money(0), 'minus');
       row('Статус', 'Зачислено');
@@ -61143,7 +61227,9 @@ window.bpwReceipt = function(ts){
         else if(amt < 0){ kind = NEUT; glyph = OUT; name = 'Списание'; }
         else { kind = GREEN; glyph = IN; name = 'Пополнение'; }
         if(t.label) name = String(t.label);
-        var neg = amt < 0 || (o.wd && t.status !== 'cancelled');
+        /* Отменённая и отклонённая заявки денег не забрали — рисовать их
+           расходом значит показывать списание, которого не было. */
+        var neg = amt < 0 || (o.wd && t.status !== 'cancelled' && t.status !== 'rejected');
         var p = kind.split('|');
         html += '<button type="button" class="bpw-op" onclick="bpwReceipt(\'' + esc(String(t.ts)) + '\')">' +
           '<span class="bpw-op-i" style="background:' + p[0] + ';color:' + p[1] + '">' + glyph + '</span>' +
@@ -64787,7 +64873,11 @@ function buildWithdraw(){
 function paintAvail(){
   var box = $('bw2Avail'); if(!box) return;
   var lk = wdLock();
-  var a = Math.max(0, avail() - lk.sum), h = held(), q = queued(), blg = isBlogger();
+  var a = Math.max(0, avail() - lk.sum), q = queued(), blg = isBlogger();
+  /* Заморозка с сервера уже включает сумму заявок на вывод. Показывать
+     их ещё и отдельной плашкой «В обработке» значило посчитать одни и
+     те же деньги дважды. */
+  var h = Math.max(0, held() - q);
   var pills = '';
   if(h > 0) pills += '<span class="bw2-pill hold">' + I.lock + (blg ? 'Ждёт приёмки' : 'В сделках') + ' <b>' + money(h) + '</b></span>';
   if(lk.sum > 0) pills += '<span class="bw2-pill hold">' + I.lock + 'Под задания <b>' + money(lk.sum) + '</b></span>';
@@ -64876,7 +64966,15 @@ function wdGo(){
       try{
         var u = me(), lk2 = wdLock();
         var cap = Math.max(0, (u ? (Number(u.balance) || 0) : 0) - lk2.sum);
-        if(!u || v > cap){
+        /* Заявку уже приняла касса — местная сверка остатка здесь только
+           навредит: она бы отказалась записать то, что на сервере есть. */
+        var srvOk = false;
+        try{
+          var mark = window.__bpWdServerOk;
+          srvOk = !!(mark && mark.amount === v && Date.now() - mark.at < 60000);
+          if(srvOk) window.__bpWdServerOk = null;
+        }catch(e){}
+        if(!srvOk && (!u || v > cap)){
           toast(lk2.sum > 0 && u && v <= (Number(u.balance) || 0)
             ? 'Деньги зарезервированы под задание «' + lk2.name + '» — вывод не создан'
             : 'Баланс изменился — заявка не создана', 'err');
@@ -71773,8 +71871,24 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
        правильным кодом попала бы под защиту от двойного нажатия и
        вернула бы старый отказ вместо проведения заявки. */
     withdraw: function(amount, requisites, code){
-      return money('wd:' + amount + (code ? ':' + code : ''), 'POST', '/api/withdraw',
-        { amount: amount, requisites: requisites, code: code || '' });
+      /* Слот — сумма и реквизиты: он переживает и запрос кода, и ввод
+         кода. Первый запрос (ответ needCode) денег не двигает, поэтому
+         ключ после него НЕ снимаем: иначе повтор после потерянного
+         ответа создал бы вторую заявку. */
+      var slot = 'wd:' + amount + '|' + String(requisites || '');
+      var key = pending[slot] || (pending[slot] = uuid());
+      return req('POST', '/api/withdraw',
+        { amount: amount, requisites: requisites, code: code || '', opKey: key })
+        .then(function(j){
+          if(!(j && j.needCode)) delete pending[slot];
+          return j;
+        })
+        .catch(function(e){
+          /* Явный отказ или выключенная касса — операции не было, ключ
+             свободен. 409 и 5xx держим: там сервер мог успеть. */
+          if(e && e.status && ((e.status >= 400 && e.status < 500 && e.status !== 409) || e.status === 503)) delete pending[slot];
+          throw e;
+        });
     },
     withdrawCancel: function(id){ return money('wdc:' + id, 'POST', '/api/withdraw/cancel', { withdrawalId: id }); },
     withdrawals: function(){ return req('GET', '/api/withdrawals'); },
@@ -72300,11 +72414,16 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
       e.stopImmediatePropagation();
       btn.__bpBusy = 1;                  /* второй тап не уйдёт вторым запросом */
       /* fetch без таймаута может зависнуть навсегда — страховка, чтобы
-         кнопка не осталась мёртвой */
+         кнопка не осталась мёртвой. Три минуты, а не двадцать секунд:
+         столько идёт письмо с кодом, и всё это время повторное нажатие
+         означало бы новый код взамен того, что человек уже переписывает. */
       clearTimeout(btn.__bpBusyT);
-      btn.__bpBusyT = setTimeout(function(){ btn.__bpBusy = 0; }, 20000);
+      btn.__bpBusyT = setTimeout(function(){ btn.__bpBusy = 0; }, 180000);
 
       srv().withdraw(amount, requisitesNow()).then(function(w){
+        /* Касса уже провела заявку — местным проверкам её отменять
+           нечем: запись обязана появиться, иначе деньги «пропадут». */
+        window.__bpWdServerOk = { amount: amount, at: Date.now() };
         /* Записываем связь заранее: местная часть вот-вот создаст
            запись истории со своим ts, и следующий кадр её найдёт. */
         var before = [];
@@ -72609,16 +72728,52 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
       var rows = (j && j.rows) || [], m = wdMap(), back = {};
       Object.keys(m).forEach(function(ts){ back[m[ts]] = ts; });
       var u = (typeof currentUser !== 'undefined') ? currentUser : null;
-      if(!u || !u.withdrawHistory) return rows;
+      if(!u) return rows;
+      if(!Array.isArray(u.withdrawHistory)) u.withdrawHistory = [];
       var RU = { queued:'pending', processing:'processing', paid:'paid',
                  rejected:'rejected', cancelled:'cancelled' };
+      var added = 0;
       rows.forEach(function(w){
-        var ts = back[w.id]; if(!ts) return;
+        var ts = back[w.id];
+        if(!ts){
+          /* Заявка есть в кассе, но не в этом браузере. Заводим запись и
+             связываем её с серверным номером — тогда работают и статус,
+             и отмена. */
+          var when = String(w.created_at || '').replace(' ', 'T') + 'Z';
+          var stamp = Date.parse(when);
+          var nts = (isFinite(stamp) ? stamp : Date.now()) + w.id;   /* свой ts, не совпадёт с чужим */
+          u.withdrawHistory.push({
+            amount: Number(w.amount) || 0,
+            net: Number(w.net) || 0,
+            fee: Number(w.fee) || 0,
+            date: (function(){
+              try{
+                var M = ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
+                var d = new Date(isFinite(stamp) ? stamp : Date.now());
+                return d.getDate() + ' ' + M[d.getMonth()] + ', ' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+              }catch(e){ return ''; }
+            })(),
+            ts: nts,
+            card: String(w.requisites || ''),
+            status: RU[w.status] || 'pending',
+            srvStatus: w.status,
+            fromServer: 1
+          });
+          wdMapSet(nts, w.id);
+          m = wdMap(); back[w.id] = String(nts);
+          added++;
+          return;
+        }
         u.withdrawHistory.forEach(function(h){
           if(String(h.ts) === String(ts)){ h.status = RU[w.status] || h.status; h.srvStatus = w.status; }
         });
       });
+      if(added){
+        /* Свежие сверху — история отсортирована по времени создания. */
+        u.withdrawHistory.sort(function(a, b){ return (Number(b.ts) || 0) - (Number(a.ts) || 0); });
+      }
       try{ if(typeof saveUsers === 'function') saveUsers(); }catch(e){ E(e); }
+      try{ if(added && typeof window.wdSync === 'function') window.wdSync(); }catch(e){}
       return rows;
     }).catch(function(e){ E(e); return null; });
   };
@@ -72631,7 +72786,13 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
     window.renderMyCard = function(card){
       try{
         var id = mySrvId();
-        if(id && card && !card.srvId){
+        /* Только своей карточке. Хранилище общее на устройство: если на
+           телефоне заходили двумя аккаунтами, чужой карточке доставался
+           наш серверный id — и деньги за неё уходили нам. */
+        var mine = false;
+        try{ mine = !!(card && typeof currentUser !== 'undefined' && currentUser
+              && String(card.userId) === String(currentUser.id)); }catch(_){ mine = false; }
+        if(id && card && mine && !card.srvId){
           card.srvId = id;
           var all = JSON.parse(localStorage.getItem('bp_my_cards') || '[]');
           var i = (Array.isArray(all) ? all : []).findIndex(function(x){ return x && x.id === card.id; });
@@ -75760,11 +75921,18 @@ function askCode(info, errText){
     /* «Выслать заново» — тот же путь, что и у мёртвого кода: пустой код
        заставляет сервер прислать свежий. Ответ придёт в тот же цикл. */
     var again = w.querySelector('#wd2New');
-    if(again) again.onclick = function(){
-      again.disabled = true; again.textContent = 'Высылаем…';
-      var p = pending; pending = null;
-      if(p) p('');                      /* пустая строка — «нужен новый код» */
-    };
+    if(again){
+      /* Шторка одна на все попытки — состояние кнопки сбрасываем сами,
+         иначе после первой пересылки она навсегда «Высылаем…». */
+      again.disabled = false; again.textContent = 'Выслать код заново';
+      again.onclick = function(){
+        again.disabled = true; again.textContent = 'Высылаем…';
+        var p = pending; pending = null;
+        /* pending — пара {resolve, reject}. Раньше её звали как функцию:
+           TypeError, и шторка застывала насмерть. */
+        if(p) p.resolve('');            /* пустая строка — «нужен новый код» */
+      };
+    }
     inp.oninput = function(){
       inp.value = inp.value.replace(/\D/g, '').slice(0, 6);
       inp.classList.remove('bad'); msg.textContent = '';
@@ -76053,8 +76221,19 @@ function paint(box){
     note = '<div class="bpkf-note rejected">' + I.alert + '<div><b>Проверка не пройдена</b>' + (idNote() ? esc(idNote()) + '. ' : '') + 'Снимите документы ещё раз — чётко, без бликов, все углы в кадре.</div></div>';
   }
 
+  /* Есть ли касса. Открытая с диска копия или статический хостинг
+     сервером не подкреплены — там вывода нет вовсе. */
+  var kassa = true;
+  try{ kassa = !!(window.bpSrv && window.bpSrv.configured()); }catch(e){ kassa = true; }
+  if(!kassa){
+    note = '<div class="bpkf-note rejected">' + I.alert + '<div><b>Вывод здесь недоступен</b>'
+      + 'Эта копия приложения работает без кассы: документы отправлять некуда, и деньги она не переводит. '
+      + 'Откройте BloggerPay по адресу сервиса или через бота в Телеграме — там вывод работает.</div></div>';
+  }
+
   var cta;
-  if(!p) cta = '<button type="button" class="bpkf-go" data-go="1">Подтвердить телефон' + I.ar + '</button>';
+  if(!kassa) cta = '<div class="bpkf-hint">Проверка личности и вывод работают только на боевом адресе сервиса.</div>';
+  else if(!p) cta = '<button type="button" class="bpkf-go" data-go="1">Подтвердить телефон' + I.ar + '</button>';
   else if(st === 'pending' && sent){
     cta = '<button type="button" class="bpkf-go" data-refresh="1">' + I.clock + 'Проверить статус</button>'
         + (ce ? '<button type="button" class="bpkf-link" data-edit="1">' + I.pen + ' Изменить данные · ещё ' + left + ' ' + minWord(left) + '</button>'
@@ -77858,5 +78037,889 @@ try{
 }catch(e){}
 })();
 </script>
+<style id="bp-payout2-css">
+/* ══ Реквизиты для выплат: экран переделан ═══════════════════════════
+   Было: два поля и подпись «не вводите настоящие документы, пока
+   проверка в тестовом режиме» — при том, что паспорт уже проверяет
+   живой оператор, а карта нужна настоящая. Ничего не подсказывало,
+   верно ли набран номер: кнопка просто оставалась серой.
+
+   Стало: карта, которая заполняется на глазах, платёжная система по
+   первым цифрам, проверка контрольной цифры с внятной ошибкой, имя
+   получателя из проверенного паспорта и честная подпись о том, где
+   номер хранится и кто его увидит.
+   Откат: удалить блоки style#bp-payout2-css и script#bp-payout2.     */
+html .pay2-plastic{
+  position:relative; border-radius:18px; padding:16px 17px 15px; margin-bottom:18px;
+  background:linear-gradient(135deg,#1e2a4d,#111421 70%);
+  border:1px solid rgba(255,255,255,.09);
+  box-shadow:0 14px 34px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.07);
+  overflow:hidden;
+}
+html .pay2-plastic::after{
+  content:''; position:absolute; right:-40px; top:-70px; width:180px; height:180px;
+  border-radius:50%; background:radial-gradient(circle,rgba(255,255,255,.09),transparent 68%); pointer-events:none;
+}
+html .pay2-plastic.sbp{ background:linear-gradient(135deg,#2a1e4d,#14111f 70%) }
+html .pay2-plastic.mir{ background:linear-gradient(135deg,#123a2c,#0f1a17 70%) }
+html .pay2-plastic.mc{  background:linear-gradient(135deg,#3d2118,#16110f 70%) }
+html .pay2-p-top{ display:flex; align-items:center; justify-content:space-between; gap:10px; position:relative }
+html .pay2-p-logo{ font-size:11px; font-weight:800; letter-spacing:.4px; color:rgba(255,255,255,.72) }
+html .pay2-p-mark{ display:flex; align-items:center; height:20px }
+html .pay2-p-mark svg{ height:20px; width:auto }
+html .pay2-p-chip{
+  width:34px; height:25px; border-radius:6px; margin:15px 0 12px; position:relative;
+  background:linear-gradient(135deg,#e6c874,#b28c3c);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.22);
+}
+html .pay2-p-chip::before{
+  content:''; position:absolute; inset:5px 7px; border-radius:2px;
+  border:1px solid rgba(0,0,0,.22); border-left:none; border-right:none;
+}
+html .pay2-p-num{
+  font-size:18px; font-weight:700; letter-spacing:2.4px; color:#fff;
+  font-variant-numeric:tabular-nums lining-nums; font-feature-settings:'tnum' 1,'lnum' 1;
+  white-space:nowrap; overflow:hidden; text-overflow:clip; position:relative;
+}
+html .pay2-p-num .dim{ color:rgba(255,255,255,.3) }
+html .pay2-p-foot{ display:flex; align-items:flex-end; justify-content:space-between; gap:12px; margin-top:14px; position:relative }
+html .pay2-p-cap{ display:block; font-size:8.5px; font-weight:800; letter-spacing:.8px; text-transform:uppercase; color:rgba(255,255,255,.44) }
+html .pay2-p-val{ display:block; font-size:12.5px; font-weight:700; color:#fff; margin-top:3px; max-width:190px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+html .pay2-p-foot .r{ text-align:right; flex-shrink:0 }
+
+html .pay2-err{ font-size:11.5px; color:#ff8d9c; line-height:1.45; margin:-8px 0 12px; min-height:0 }
+html .pay2-warn{ font-size:11.5px; color:#f6a823; line-height:1.45; margin:-8px 0 12px }
+html .pay2-hint{ font-size:11.5px; color:var(--t3,#7d818c); line-height:1.45; margin:-8px 0 12px }
+html .pay2-inp-mark{ position:absolute; right:14px; top:50%; transform:translateY(-50%); display:flex; align-items:center; height:18px; pointer-events:none }
+html .pay2-inp-mark svg{ height:18px; width:auto }
+html .kyc-inpwrap .kyc-inp.pay2-num-inp{ padding-right:60px; letter-spacing:1.2px;
+  font-variant-numeric:tabular-nums lining-nums; font-feature-settings:'tnum' 1,'lnum' 1 }
+html .pay2-inp-bad{ border-color:rgba(244,63,94,.5)!important }
+html .pay2-ok{ text-align:center; padding:18px 0 6px }
+html .pay2-ok-i{
+  width:66px; height:66px; border-radius:50%; margin:0 auto 16px; display:flex; align-items:center; justify-content:center;
+  background:rgba(61,220,132,.16); border:1px solid rgba(61,220,132,.34);
+}
+html .pay2-ok-t{ font-size:18px; font-weight:800; color:var(--t1,#fff); letter-spacing:-.4px; margin-bottom:7px }
+html .pay2-ok-s{ font-size:12.5px; color:var(--t3,#7d818c); line-height:1.55; max-width:290px; margin:0 auto }
+</style>
+<script id="bp-payout2">
+(function(){
+'use strict';
+if(window.__bpPayout2) return; window.__bpPayout2 = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e); }catch(_){} }
+function esc(s){
+  try{ return bpEsc(String(s == null ? '' : s)); }
+  catch(e){ return String(s == null ? '' : s).replace(/[<>&"]/g, function(c){
+    return { '<':'&lt;', '>':'&gt;', '&':'&amp;', '"':'&quot;' }[c]; }); }
+}
+function toast(m, k){ try{ showAuthToast(m, k || 'info'); }catch(e){} }
+function U(){ try{ return (typeof currentUser !== 'undefined' && currentUser) || null; }catch(e){ return null; } }
+function K(){
+  var u = U(); if(!u) return null;
+  if(!u.kyc) u.kyc = { phone:null, identity:{ status:'none' }, payout:null };
+  if(!u.kyc.identity) u.kyc.identity = { status:'none' };
+  return u.kyc;
+}
+function digits(s){ return String(s == null ? '' : s).replace(/\D/g, ''); }
+
+/* Контрольная цифра Луна: одна опечатка в номере карты ловится здесь,
+   а не через неделю в банке. */
+function luhn(num){
+  var d = digits(num); if(d.length < 12) return false;
+  var sum = 0, alt = false;
+  for(var i = d.length - 1; i >= 0; i--){
+    var n = +d.charAt(i);
+    if(alt){ n *= 2; if(n > 9) n -= 9; }
+    sum += n; alt = !alt;
+  }
+  return sum % 10 === 0;
+}
+
+function brandOf(num){
+  var d = digits(num);
+  if(!d) return { id:'none', name:'Карта', cls:'' };
+  var n2 = +d.slice(0,2), n4 = +d.slice(0,4);
+  if(n4 >= 2200 && n4 <= 2204) return { id:'mir', name:'МИР', cls:'mir' };
+  if(d.charAt(0) === '4') return { id:'visa', name:'Visa', cls:'' };
+  if((n2 >= 51 && n2 <= 55) || (n4 >= 2221 && n4 <= 2720)) return { id:'mc', name:'Mastercard', cls:'mc' };
+  if(n2 === 34 || n2 === 37) return { id:'amex', name:'American Express', cls:'' };
+  if(n2 === 62) return { id:'union', name:'UnionPay', cls:'' };
+  if(n2 === 50 || (n2 >= 56 && n2 <= 58) || d.charAt(0) === '6') return { id:'maestro', name:'Maestro', cls:'' };
+  return { id:'unknown', name:'Карта', cls:'' };
+}
+function markSvg(id){
+  function T(t, c, sz, it){
+    return '<svg viewBox="0 0 40 22" aria-hidden="true"><text x="20" y="16" text-anchor="middle" font-family="Manrope,sans-serif" font-size="'
+      + sz + '" font-weight="800"' + (it ? ' font-style="italic"' : '') + ' fill="' + c + '">' + t + '</text></svg>';
+  }
+  if(id === 'visa')  return T('VISA', '#dbe6ff', 12, 1);
+  if(id === 'mir')   return T('МИР', '#9be8c4', 11, 0);
+  if(id === 'amex')  return T('AMEX', '#bfe0ff', 9.5, 0);
+  if(id === 'union') return T('UPI', '#ffc6cf', 11, 0);
+  if(id === 'mc')    return '<svg viewBox="0 0 40 22" aria-hidden="true"><circle cx="16" cy="11" r="8" fill="#EB001B"/><circle cx="24" cy="11" r="8" fill="#F79E1B" opacity=".85"/></svg>';
+  if(id === 'maestro') return '<svg viewBox="0 0 40 22" aria-hidden="true"><circle cx="16" cy="11" r="8" fill="#0099DF"/><circle cx="24" cy="11" r="8" fill="#ED0006" opacity=".85"/></svg>';
+  if(id === 'sbp')   return '<svg viewBox="0 0 40 22" aria-hidden="true"><path d="M12 4l4.6 3v7.9L12 18z" fill="#7d78c8"/><path d="M16.6 7l4.6 2.9v7.6l-4.6-2.9z" fill="#e0567a"/><path d="M21.2 9.9l4.6-2.9v7.5l-4.6 3z" fill="#f7cb52"/><path d="M25.8 7l4.6 2.9-4.6 3z" fill="#f08a4b"/></svg>';
+  return '<svg viewBox="0 0 40 22" aria-hidden="true"><rect x="8" y="4" width="24" height="15" rx="3" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1.6"/><path d="M8 9.5h24" stroke="rgba(255,255,255,.5)" stroke-width="1.6"/></svg>';
+}
+
+function fmtPhone(raw){
+  var d = digits(raw);
+  if(d.charAt(0) === '8') d = '7' + d.slice(1);
+  if(d && d.charAt(0) !== '7') d = '7' + d;
+  d = d.slice(0, 11);
+  var o = '+7';
+  if(d.length > 1) o += ' (' + d.slice(1, 4);
+  if(d.length >= 4) o += ')';
+  if(d.length > 4) o += ' ' + d.slice(4, 7);
+  if(d.length > 7) o += '-' + d.slice(7, 9);
+  if(d.length > 9) o += '-' + d.slice(9, 11);
+  return o;
+}
+function maskPhone(p){
+  var d = digits(p);
+  if(d.length < 11) return p || '';
+  return '+7 (' + d.slice(1,4) + ') ***-**-' + d.slice(9,11);
+}
+/* «Иванов  иван» и «ИВАНОВ ИВАН» — одно и то же имя */
+function normName(s){ return String(s || '').toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я]+/g, ' ').trim(); }
+
+var IC = {
+  person:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+  card:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>',
+  phone:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
+  hero:'<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>',
+  lock:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
+  ar:'<svg class="kyc-go-ar" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>',
+  ok:'<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#3ddc84" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>'
+};
+
+/* Зелёный сторож deGreen() перекрашивает плотный зелёный фон в серый —
+   у карточки «МИР» и галочки успеха он свой, помечаем узлы как готовые. */
+function keepColors(root){
+  try{
+    Array.prototype.forEach.call((root || document).querySelectorAll('.pay2-plastic, .pay2-ok-i, .pay2-p-chip'), function(el){
+      el.__bpGreenDone = 1;
+    });
+  }catch(e){}
+}
+
+function render(card){
+  var k = K(); if(!k) return;
+  var pv = k.payout || {};
+  var idName = (k.identity && k.identity.name) || '';
+  var cur = pv.method === 'sbp' ? 'sbp' : 'card';
+  var had = !!pv.done;
+
+  card.innerHTML =
+    '<div class="kyc-hero"><div class="kyc-hero-ic">' + IC.hero + '</div>' +
+      '<div class="kyc-h1">' + (had ? 'Реквизиты для выплат' : 'Куда отправлять деньги') + '</div>' +
+      '<div class="kyc-h2">' + (had
+        ? 'Сейчас деньги уходят сюда. Поменяйте реквизиты, если счёт изменился.'
+        : 'Последний шаг. Выплаты приходят на эту карту или по номеру телефона через СБП.') + '</div></div>' +
+
+    '<div class="pay2-plastic" id="pay2Plastic">' +
+      '<div class="pay2-p-top"><span class="pay2-p-logo">BloggerPay</span><span class="pay2-p-mark" id="pay2Mark"></span></div>' +
+      '<div class="pay2-p-chip"></div>' +
+      '<div class="pay2-p-num" id="pay2Num"></div>' +
+      '<div class="pay2-p-foot">' +
+        '<div><span class="pay2-p-cap">Получатель</span><span class="pay2-p-val" id="pay2Who">—</span></div>' +
+        '<div class="r"><span class="pay2-p-cap">Комиссия</span><span class="pay2-p-val">4 %</span></div>' +
+      '</div>' +
+    '</div>' +
+
+    '<div class="kyc-seg" id="pay2Seg">' +
+      '<div class="kyc-seg-b' + (cur === 'card' ? ' on' : '') + '" data-m="card" role="button" tabindex="0">На карту</div>' +
+      '<div class="kyc-seg-b' + (cur === 'sbp' ? ' on' : '') + '" data-m="sbp" role="button" tabindex="0">По номеру, СБП</div>' +
+    '</div>' +
+
+    '<div id="pay2Fields"></div>' +
+
+    '<div class="kyc-lbl">Получатель</div>' +
+    '<div class="kyc-inpwrap"><span class="kyc-inp-ic">' + IC.person + '</span>' +
+      '<input class="kyc-inp has-ic" id="pay2Holder" data-bp-kind="none" autocomplete="name" placeholder="Иванов Иван Иванович" value="'
+      + esc(pv.holder || idName) + '"></div>' +
+    '<div class="pay2-hint" id="pay2HolderHint"></div>' +
+
+    '<button class="kyc-go" id="pay2Go" disabled>' + (had ? 'Сохранить изменения' : 'Сохранить реквизиты') + IC.ar + '</button>' +
+    '<div class="kyc-note">' + IC.lock +
+      '<span>Номер хранится в этом браузере и уходит вместе с заявкой на вывод — его видит только оператор выплат. В карточке и в переписке он не показывается.</span></div>';
+
+  keepColors(card);
+
+  var seg = card.querySelector('#pay2Seg');
+  var fields = card.querySelector('#pay2Fields');
+  var holder = card.querySelector('#pay2Holder');
+  var hHint = card.querySelector('#pay2HolderHint');
+  var go = card.querySelector('#pay2Go');
+  var plastic = card.querySelector('#pay2Plastic');
+  var numOut = card.querySelector('#pay2Num');
+  var markOut = card.querySelector('#pay2Mark');
+  var whoOut = card.querySelector('#pay2Who');
+
+  function paintCard(){
+    if(cur === 'card'){
+      var inp = card.querySelector('#pay2Card');
+      var d = digits(inp && inp.value);
+      var b = brandOf(d);
+      plastic.className = 'pay2-plastic' + (b.cls ? ' ' + b.cls : '');
+      markOut.innerHTML = markSvg(d.length >= 2 ? b.id : 'none');
+      var groups = ['', '', '', ''];
+      for(var i = 0; i < 16; i++){
+        var g = Math.floor(i / 4);
+        groups[g] += i < d.length ? d.charAt(i) : '•';
+      }
+      numOut.innerHTML = groups.map(function(s, i){
+        return '<span class="' + (d.length > i * 4 ? '' : 'dim') + '">' + s + '</span>';
+      }).join(' ');
+    } else {
+      var sp = card.querySelector('#pay2Sbp');
+      var pd = digits(sp && sp.value);
+      plastic.className = 'pay2-plastic sbp';
+      markOut.innerHTML = markSvg('sbp');
+      numOut.innerHTML = pd.length > 1
+        ? '<span>' + esc(fmtPhone(pd)) + '</span>'
+        : '<span class="dim">+7 (•••) •••-••-••</span>';
+    }
+    var who = holder.value.trim();
+    whoOut.textContent = who || '—';
+    keepColors(card);
+  }
+
+  function holderWords(){ return holder.value.trim().split(/\s+/).filter(Boolean); }
+
+  function check(){
+    var okHolder = holderWords().length >= 2;
+    var okDetail = false, err = '';
+    var eb = card.querySelector('#pay2Err');
+    if(cur === 'card'){
+      var inp = card.querySelector('#pay2Card');
+      var d = digits(inp && inp.value);
+      okDetail = d.length >= 16 && luhn(d);
+      if(d.length >= 16 && !luhn(d)) err = 'Проверьте номер: одна из цифр не сходится.';
+      if(inp) inp.classList.toggle('pay2-inp-bad', !!err);
+    } else {
+      var sp = card.querySelector('#pay2Sbp');
+      var pd = digits(sp && sp.value);
+      okDetail = pd.length === 11 && pd.charAt(0) === '7';
+      if(pd.length === 11 && pd.charAt(0) !== '7') err = 'Номер должен начинаться с +7.';
+      if(sp) sp.classList.toggle('pay2-inp-bad', !!err);
+    }
+    if(eb) eb.textContent = err;
+
+    /* Имя на карте должно совпадать с проверенным паспортом — иначе банк
+       вернёт перевод. Не запрещаем, но предупреждаем заранее. */
+    if(!okHolder && holder.value.trim()){
+      hHint.className = 'pay2-warn'; hHint.textContent = 'Нужны фамилия и имя полностью.';
+    } else if(okHolder && idName && normName(holder.value) !== normName(idName)){
+      hHint.className = 'pay2-warn';
+      hHint.textContent = 'В паспорте указано «' + idName + '». Счёт должен быть оформлен на вас, иначе банк вернёт перевод.';
+    } else {
+      hHint.className = 'pay2-hint';
+      hHint.textContent = cur === 'card' ? 'Как на карте — обычно это ваше имя из паспорта.' : 'Имя владельца счёта.';
+    }
+    go.disabled = !(okHolder && okDetail);
+    paintCard();
+  }
+
+  function paintFields(){
+    if(cur === 'card'){
+      fields.innerHTML =
+        '<div class="kyc-lbl">Номер карты</div>' +
+        '<div class="kyc-inpwrap"><span class="kyc-inp-ic">' + IC.card + '</span>' +
+          '<input class="kyc-inp has-ic pay2-num-inp" id="pay2Card" data-bp-kind="none" inputmode="numeric" autocomplete="cc-number" '
+          + 'placeholder="0000 0000 0000 0000" maxlength="19" value="' + esc(pv.card ? (digits(pv.card).match(/.{1,4}/g) || []).join(' ') : '') + '">' +
+          '<span class="pay2-inp-mark" id="pay2InpMark"></span></div>' +
+        '<div class="pay2-err" id="pay2Err"></div>';
+      var inp = card.querySelector('#pay2Card');
+      inp.addEventListener('input', function(){
+        var d = digits(inp.value).slice(0, 16);
+        var pos = inp.selectionStart, before = inp.value;
+        inp.value = (d.match(/.{1,4}/g) || []).join(' ');
+        /* курсор не должен прыгать в конец при правке середины */
+        if(pos != null && pos < before.length){
+          var moved = inp.value.length - before.length;
+          try{ inp.setSelectionRange(pos + (moved > 0 ? moved : 0), pos + (moved > 0 ? moved : 0)); }catch(e){}
+        }
+        var b = brandOf(d);
+        var m = card.querySelector('#pay2InpMark');
+        if(m) m.innerHTML = d.length >= 2 ? markSvg(b.id) : '';
+        check();
+        /* 16 цифр набраны — сразу к имени, а не искать поле пальцем */
+        if(d.length === 16 && luhn(d) && !holder.value.trim()){ try{ holder.focus(); }catch(e){} }
+        else if(d.length === 16 && luhn(d) && holder.value.trim()){ try{ inp.blur(); }catch(e){} }
+      });
+      inp.addEventListener('paste', function(){ setTimeout(function(){
+        var ev = new Event('input', { bubbles:true }); inp.dispatchEvent(ev); }, 0); });
+      var b0 = brandOf(inp.value);
+      var m0 = card.querySelector('#pay2InpMark');
+      if(m0 && digits(inp.value).length >= 2) m0.innerHTML = markSvg(b0.id);
+    } else {
+      var known = (k.phone && k.phone.verified && k.phone.value) || '';
+      fields.innerHTML =
+        '<div class="kyc-lbl">Номер телефона</div>' +
+        '<div class="kyc-inpwrap"><span class="kyc-inp-ic">' + IC.phone + '</span>' +
+          '<input class="kyc-inp has-ic" id="pay2Sbp" data-bp-kind="none" inputmode="tel" autocomplete="tel" placeholder="+7 (___) ___-__-__" value="'
+          + esc(pv.phone ? fmtPhone(pv.phone) : (known ? fmtPhone(known) : '')) + '"></div>' +
+        '<div class="pay2-err" id="pay2Err"></div>' +
+        '<div class="pay2-hint">Деньги придут на карту, привязанную к этому номеру в вашем банке.</div>';
+      var sp = card.querySelector('#pay2Sbp');
+      sp.addEventListener('input', function(){
+        sp.value = fmtPhone(sp.value);
+        check();
+        if(digits(sp.value).length === 11){
+          if(!holder.value.trim()){ try{ holder.focus(); }catch(e){} } else { try{ sp.blur(); }catch(e){} }
+        }
+      });
+    }
+    check();
+  }
+
+  Array.prototype.forEach.call(seg.querySelectorAll('.kyc-seg-b'), function(b){
+    b.addEventListener('click', function(){
+      var m = b.getAttribute('data-m');
+      if(m === cur) return;
+      cur = m;
+      Array.prototype.forEach.call(seg.querySelectorAll('.kyc-seg-b'), function(x){ x.classList.remove('on'); });
+      b.classList.add('on');
+      paintFields();
+    });
+  });
+  holder.addEventListener('input', check);
+  paintFields();
+  setTimeout(function(){
+    try{
+      var first = card.querySelector(cur === 'card' ? '#pay2Card' : '#pay2Sbp');
+      if(first && !digits(first.value)) first.focus();
+      else if(!holder.value.trim()) holder.focus();
+    }catch(e){}
+  }, 320);
+
+  go.addEventListener('click', function(){
+    if(go.disabled) return;
+    var u = U(), k2 = K(); if(!u || !k2) return;
+    var rec = { done:true, method:cur, holder:holder.value.trim().replace(/\s+/g, ' '), at:Date.now() };
+    if(cur === 'card') rec.card = digits(card.querySelector('#pay2Card').value);
+    else rec.phone = digits(card.querySelector('#pay2Sbp').value);
+    k2.payout = rec;
+    /* Один реквизит на аккаунт: и payout(), и payoutLabel() читают
+       withdrawCard, префикс sbp: разбирают обе. */
+    u.withdrawCard = cur === 'card' ? rec.card : ('sbp:' + rec.phone);
+    try{ if(typeof saveUsers === 'function') saveUsers(); }catch(e){ E(e); }
+    try{ if(typeof wdUpdate === 'function') wdUpdate(); }catch(e){ E(e); }
+    try{ if(typeof wdSync === 'function') wdSync(); }catch(e){}
+    var where = cur === 'card'
+      ? brandOf(rec.card).name + ' •••• ' + rec.card.slice(-4)
+      : 'СБП · ' + maskPhone(rec.phone);
+    success(where);
+    try{ (window.bpNotifRecord || window.bpNotify)('success', 'Реквизиты сохранены', where + ' — можно выводить деньги', { duration:4000 }); }catch(e){}
+    try{ if(typeof haptic === 'function') haptic('success'); }catch(e){}
+  });
+}
+
+function success(where){
+  var sheet = document.getElementById('kycSheet');
+  var card = sheet && sheet.querySelector('.kyc-card');
+  if(!card) return;
+  card.innerHTML =
+    '<div class="pay2-ok">' +
+      '<div class="pay2-ok-i">' + IC.ok + '</div>' +
+      '<div class="pay2-ok-t">Реквизиты сохранены</div>' +
+      '<div class="pay2-ok-s">' + esc(where) + '. Вывод открыт: укажите сумму — заявка встанет в очередь на выплату.</div>' +
+    '</div>' +
+    '<button class="kyc-go" id="pay2Done" style="margin-top:20px">Продолжить</button>';
+  keepColors(card);
+  var b = card.querySelector('#pay2Done');
+  if(b) b.addEventListener('click', function(){ try{ bpKycClose(); }catch(e){} });
+}
+
+/* Прежний экран остаётся точкой входа: он умеет отправить на
+   незакрытый шаг (телефон, паспорт). Перерисовываем только тогда,
+   когда он действительно показал форму реквизитов. */
+var orig = window.bpKycPayout;
+if(typeof orig === 'function'){
+  window.bpKycPayout = function(){
+    var r;
+    try{ r = orig.apply(this, arguments); }catch(e){ E(e); }
+    try{
+      var sheet = document.getElementById('kycSheet');
+      var card = sheet && sheet.querySelector('.kyc-card');
+      if(card && card.querySelector('#kycPayGo')) render(card);
+    }catch(e){ E(e); }
+    return r;
+  };
+  window.bpKycPayout.__bpPayout2 = 1;
+}
+})();
+</script>
+
+<style id="bp-abc-tt-css">
+/* ══ TikTok в карточке блогера — только через вход в аккаунт ══════════
+   Ссылку на канал можно было вписать любую: под значком TikTok
+   оказывался чужой профиль или вовсе посторонний сайт, а число
+   подписчиков блогер печатал сам. Теперь TikTok подключается входом в
+   аккаунт: ссылку и подписчиков сообщает сама площадка, руками их не
+   ввести. YouTube получил ту же кнопку как дополнение к ссылке,
+   Telegram остался как был.
+   Откат: удалить style#bp-abc-tt-css и script#bp-abc-tt.              */
+html .attv{
+  border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:13px 14px;
+  background:rgba(255,255,255,.026); margin-top:2px;
+}
+html .attv-t{ font-size:13px; font-weight:800; color:var(--t1,#fff); letter-spacing:-.2px }
+html .attv-s{ font-size:11.5px; color:var(--t3,#7d818c); line-height:1.5; margin-top:5px }
+html .attv-s b{ color:var(--t2,#b9bcc4); font-weight:700 }
+html .attv-go{
+  display:flex; align-items:center; justify-content:center; gap:9px; width:100%; margin-top:12px;
+  border:none; border-radius:12px; padding:13px; cursor:pointer;
+  background:#111114; color:#fff; font-family:inherit; font-size:13px; font-weight:800;
+  box-shadow:0 4px 14px rgba(0,0,0,.34), inset 0 0 0 1px rgba(255,255,255,.12);
+}
+html .attv-go:active{ transform:scale(.985) }
+html .attv-go[disabled]{ opacity:.55; cursor:default }
+html .attv-go svg{ width:17px; height:17px; flex-shrink:0 }
+html .attv-go.yt{ background:#c00; box-shadow:0 4px 14px rgba(0,0,0,.34), inset 0 0 0 1px rgba(255,255,255,.14) }
+html .attv-wait{ display:flex; align-items:center; gap:9px; margin-top:12px; font-size:11.5px; color:var(--t2,#b9bcc4) }
+html .attv-spin{
+  width:14px; height:14px; border-radius:50%; flex-shrink:0;
+  border:2px solid rgba(255,255,255,.16); border-top-color:#fff; animation:attvSpin .8s linear infinite;
+}
+@keyframes attvSpin{ to{ transform:rotate(360deg) } }
+html .attv-cancel{
+  border:none; background:none; color:var(--t3,#7d818c); font-family:inherit; font-size:11.5px;
+  font-weight:700; cursor:pointer; padding:6px 0 0; text-decoration:underline; text-underline-offset:2px;
+}
+html .attv-off{ margin-top:10px; font-size:11.5px; color:#f6a823; line-height:1.5 }
+html .attv-badge{
+  display:inline-flex; align-items:center; gap:4px; font-size:9px; font-weight:800; letter-spacing:.2px;
+  padding:2px 7px; border-radius:6px; background:rgba(61,220,132,.16); color:#7ce8a8; margin-top:3px;
+}
+html .attv-badge svg{ width:9px; height:9px }
+html .abc-stat-inp[readonly]{ opacity:.85; cursor:default }
+html .attv-yt-or{ font-size:10.5px; color:var(--t3,#7d818c); text-align:center; margin:9px 0 0 }
+</style>
+<script id="bp-abc-tt">
+(function(){
+'use strict';
+if(window.__bpAbcTt) return; window.__bpAbcTt = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e); }catch(_){} }
+function esc(s){
+  try{ return bpEsc(String(s == null ? '' : s)); }
+  catch(e){ return String(s == null ? '' : s).replace(/[<>&"]/g, function(c){
+    return { '<':'&lt;', '>':'&gt;', '&':'&amp;', '"':'&quot;' }[c]; }); }
+}
+function toast(m, k){ try{ showAuthToast(m, k || 'info'); }catch(e){} }
+function srv(){ return window.bpSrv; }
+function online(){ var s = srv(); return !!(s && s.configured() && typeof s.raw === 'function'); }
+function signedIn(){ var s = srv(); return !!(s && s.token()); }
+function P(pid){ try{ return abcPlatforms && abcPlatforms[pid]; }catch(e){ return null; } }
+
+var TT = {
+  icon:'<svg viewBox="0 0 24 24" fill="#fff"><path d="M16.6 2h-3v13.1a2.6 2.6 0 1 1-2.6-2.6c.3 0 .5 0 .8.1V9.5a5.9 5.9 0 1 0 4.9 5.8V8.7c1 .8 2.3 1.3 3.7 1.4V6.9a4 4 0 0 1-3.8-4.9z"/></svg>',
+  yt:'<svg viewBox="0 0 24 24" fill="#fff"><path d="M23 12s0-3.9-.5-5.7a3 3 0 0 0-2.1-2.1C18.6 3.6 12 3.6 12 3.6s-6.6 0-8.4.6A3 3 0 0 0 1.5 6.3C1 8.1 1 12 1 12s0 3.9.5 5.7a3 3 0 0 0 2.1 2.1c1.8.6 8.4.6 8.4.6s6.6 0 8.4-.6a3 3 0 0 0 2.1-2.1C23 15.9 23 12 23 12zM9.8 15.5v-7l6.2 3.5z"/></svg>',
+  ok:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>'
+};
+var LABEL = { tiktok:'TikTok', youtube:'YouTube' };
+
+/* подтверждённые каналы этого аккаунта: { tiktok:{url,subs,title}, … } */
+var CH = null, chAt = 0, chBusy = false;
+function pullChannels(force){
+  if(!online() || !signedIn()) return Promise.resolve(null);
+  if(chBusy) return Promise.resolve(CH);
+  if(!force && CH && Date.now() - chAt < 15000) return Promise.resolve(CH);
+  chBusy = true;
+  return srv().raw('GET', '/api/verify/list').then(function(j){
+    chBusy = false; chAt = Date.now(); CH = {};
+    ((j && j.rows) || []).forEach(function(r){ if(r && r.platform) CH[r.platform] = r; });
+    return CH;
+  }).catch(function(){ chBusy = false; return CH; });
+}
+
+/* какие площадки владелец сервиса вообще подключил */
+var CFG = null, cfgAt = 0;
+function pullCfg(){
+  /* Ответ держим пять минут, а не вечно: владелец может подключить
+     площадку прямо сейчас, и открытая вкладка должна это увидеть без
+     перезагрузки. */
+  if(CFG && Date.now() - cfgAt < 300000) return Promise.resolve(CFG);
+  if(!online()) return Promise.resolve(CFG);
+  return srv().raw('GET', '/api/verify/config').then(function(j){
+    CFG = (j && j.platforms) || {};
+    cfgAt = Date.now();
+    return CFG;
+  }).catch(function(){ return CFG; });
+}
+
+function chanOf(pid){ return CH && CH[pid] ? CH[pid] : null; }
+/* канал в карточке пришёл от самой площадки, а не набран руками */
+function byLogin(pid){
+  var p = P(pid), c = chanOf(pid);
+  if(!p || !c || !p.url) return false;
+  var a = String(p.url).replace(/\/+$/, '').toLowerCase();
+  var b = String(c.url || '').replace(/\/+$/, '').toLowerCase();
+  return !!b && a === b;
+}
+
+/* ── Подставить в карточку канал, который подтвердила площадка ── */
+function apply(pid, ch){
+  var p = P(pid); if(!p || !ch || !ch.url) return false;
+  p.url = String(ch.url);
+  p.subs = Number(ch.subs) || p.subs || 0;
+  p.verified = true;
+  p.selfReported = false;
+  p.open = false;
+  p.loading = false;
+  p.panelOpen = true;
+  p.enabled = true;
+  var tog = document.getElementById('abc-toggle-' + pid);
+  if(tog) tog.classList.add('enabled', 'on');
+  var row = document.getElementById('abc-row-' + pid);
+  if(row) row.classList.add('active');
+  try{ abcRenderUrlArea(pid); }catch(e){ E(e); }
+  try{ abcSyncContinue(); }catch(e){}
+  try{ abcPersist(); }catch(e){}
+  return true;
+}
+
+/* ── Ожидание: человек ушёл на площадку, ждём подтверждённый канал ── */
+var waiting = {};
+function watch(pid, tries){
+  if(!waiting[pid]) return;
+  if(tries > 100){ waiting[pid] = 0; paint(pid); return; }        /* ~5 минут */
+  setTimeout(function(){
+    if(!waiting[pid]) return;
+    pullChannels(true).then(function(map){
+      if(!waiting[pid]) return;
+      var ch = map && map[pid];
+      if(ch && ch.url){
+        waiting[pid] = 0;
+        apply(pid, ch);
+        toast(LABEL[pid] + ' подключён: ' + (ch.title || 'канал') + (ch.subs ? ' · ' + Number(ch.subs).toLocaleString('ru') + ' подписчиков' : ''), 'ok');
+        return;
+      }
+      watch(pid, tries + 1);
+    }).catch(function(){ watch(pid, tries + 1); });
+  }, 3000);
+}
+
+window.bpAbcVerify = function(pid){
+  if(!online()){ toast('Подключение канала работает, когда есть связь с сервером', 'err'); return; }
+  if(!signedIn()){
+    if(typeof window.bpEnsureSrv === 'function'){
+      window.bpEnsureSrv('Канал привязывается к вашему аккаунту').then(function(ok){ if(ok) window.bpAbcVerify(pid); });
+      return;
+    }
+    toast('Сначала войдите в аккаунт — канал привязывается к нему', 'err'); return;
+  }
+  if(typeof window.bpVerifyOwn !== 'function'){ toast('Подключение канала недоступно', 'err'); return; }
+  waiting[pid] = 1;
+  paint(pid);
+  /* Ту же дорогу проходит кнопка в профиле: открыть окно площадки в
+     этом же нажатии, дождаться кода, привязать канал к аккаунту. */
+  try{ window.bpVerifyOwn(pid); }catch(e){ E(e); waiting[pid] = 0; paint(pid); return; }
+  watch(pid, 0);
+};
+window.bpAbcVerifyCancel = function(pid){ waiting[pid] = 0; paint(pid); };
+
+function paint(pid){ try{ abcRenderUrlArea(pid); }catch(e){ E(e); } }
+
+/* ── Своя отрисовка области ссылки ── */
+function blockTikTok(){
+  var off = CFG && CFG.tiktok && CFG.tiktok.configured === false;
+  if(waiting.tiktok){
+    return '<div class="attv">' +
+      '<div class="attv-t">Ждём вход в TikTok</div>' +
+      '<div class="attv-s">Войдите в свой аккаунт в открывшемся окне и введите код, который там покажут. Как только TikTok подтвердит аккаунт, ссылка и подписчики появятся здесь сами.</div>' +
+      '<div class="attv-wait"><span class="attv-spin"></span><span>Проверяем каждые несколько секунд…</span></div>' +
+      '<button type="button" class="attv-cancel" onclick="bpAbcVerifyCancel(\'tiktok\')">Отменить</button>' +
+    '</div>';
+  }
+  return '<div class="attv">' +
+    '<div class="attv-t">Подключите аккаунт TikTok</div>' +
+    '<div class="attv-s">Ссылку и число подписчиков возьмём из самого TikTok — вписывать руками не нужно. Рекламодатель увидит <b>подтверждён входом</b>, а не «со слов блогера».</div>' +
+    (off
+      ? '<div class="attv-off">Вход через TikTok сейчас не подключён на стороне сервиса. Добавьте пока YouTube или Telegram — TikTok появится, как только площадка выдаст доступ.</div>'
+      : '<button type="button" class="attv-go" onclick="bpAbcVerify(\'tiktok\')">' + TT.icon + 'Войти через TikTok</button>') +
+  '</div>';
+}
+function blockYouTubeExtra(){
+  if(CFG && CFG.youtube && CFG.youtube.configured === false) return '';
+  if(waiting.youtube){
+    return '<div class="attv" style="margin-top:9px">' +
+      '<div class="attv-wait"><span class="attv-spin"></span><span>Ждём вход в YouTube…</span></div>' +
+      '<button type="button" class="attv-cancel" onclick="bpAbcVerifyCancel(\'youtube\')">Отменить</button></div>';
+  }
+  return '<div class="attv-yt-or">или</div>' +
+    '<button type="button" class="attv-go yt" style="margin-top:7px" onclick="bpAbcVerify(\'youtube\')">' + TT.yt + 'Войти через YouTube</button>';
+}
+
+/* Отметка «подтверждён входом» и подписчики с площадки — вместо
+   «со слов блогера» и поля, куда число вписывают сами. */
+function markVerified(pid){
+  var area = document.getElementById('abc-url-area-' + pid);
+  var ch = chanOf(pid);
+  if(!area || !ch) return;
+  try{
+    var self = area.querySelector('.abc-channel-selfsaid');
+    if(self){
+      self.className = 'attv-badge';
+      self.setAttribute('title', 'Вход в аккаунт подтверждён площадкой');
+      self.innerHTML = TT.ok + 'подтверждён входом';
+      self.__bpGreenDone = 1;
+    }
+    var subs = document.getElementById('abc-inp-subs-' + pid);
+    if(subs){
+      subs.value = Number(ch.subs) || 0;
+      subs.readOnly = true;
+      subs.title = 'Число пришло из ' + LABEL[pid] + ' — изменить нельзя';
+    }
+    var note = area.querySelector('.abc-selfsaid-note');
+    if(note){
+      note.textContent = 'Подписчики пришли из ' + LABEL[pid] + ' и меняться руками не могут. Просмотры и ER — с ваших слов: рекламодатель видит их с пометкой.';
+    }
+    var edit = area.querySelector('.abc-url-edit-btn');
+    if(edit){
+      edit.textContent = 'Другой аккаунт';
+      edit.setAttribute('onclick', 'bpAbcRelink(\'' + pid + '\')');
+    }
+  }catch(e){ E(e); }
+}
+
+window.bpAbcRelink = function(pid){
+  var p = P(pid); if(!p) return;
+  p.verified = false; p.open = false; p.panelOpen = false;
+  p.url = ''; p.subs = 0;
+  p.enabled = false;
+  var tog = document.getElementById('abc-toggle-' + pid);
+  if(tog) tog.classList.remove('enabled', 'on');
+  var row = document.getElementById('abc-row-' + pid);
+  if(row) row.classList.remove('active');
+  try{ abcPersist(); }catch(e){}
+  window.bpAbcVerify(pid);
+};
+
+var origRender = window.abcRenderUrlArea;
+if(typeof origRender === 'function'){
+  window.abcRenderUrlArea = function(pid){
+    var p = P(pid);
+    if(pid !== 'tiktok' && pid !== 'youtube') return origRender.apply(this, arguments);
+    if(!p) return origRender.apply(this, arguments);
+
+    /* Подтверждённый канал рисует прежний код — мы только добавляем
+       отметку площадки поверх готовой разметки. */
+    if(p.verified && p.url && !p.loading){
+      var r = origRender.apply(this, arguments);
+      if(byLogin(pid)) setTimeout(function(){ markVerified(pid); }, 0);
+      return r;
+    }
+    if(pid === 'youtube'){
+      var r2 = origRender.apply(this, arguments);
+      /* Кнопка входа — рядом с полем ссылки, ссылка у YouTube остаётся */
+      try{
+        var area = document.getElementById('abc-url-area-youtube');
+        if(area && p.open && !p.loading) area.insertAdjacentHTML('beforeend', blockYouTubeExtra());
+      }catch(e){ E(e); }
+      return r2;
+    }
+    /* TikTok без подтверждения: поля для ссылки нет вовсе */
+    var area2 = document.getElementById('abc-url-area-tiktok');
+    if(!area2) return;
+    var row2 = document.getElementById('abc-row-tiktok');
+    if(p.loading){ return origRender.apply(this, arguments); }
+    /* Пока строку не раскрыли — она свёрнута, как и у соседей */
+    if(!p.open && !waiting.tiktok){
+      area2.innerHTML = '';
+      if(row2) row2.classList.remove('abc-open');
+      return;
+    }
+    if(row2) row2.classList.add('abc-open');
+    area2.innerHTML = blockTikTok();
+  };
+}
+
+/* «Добавить ссылку на канал» у TikTok ведёт на вход, а не на поле */
+var origOpen = window.abcOpenInput;
+if(typeof origOpen === 'function'){
+  window.abcOpenInput = function(pid){
+    if(pid === 'tiktok'){
+      var p = P(pid);
+      if(p && p.verified && p.url) return;
+      p.open = true;                       /* область раскрыта — покажем свой блок */
+      try{ abcRenderUrlArea('tiktok'); }catch(e){ E(e); }
+      return;
+    }
+    return origOpen.apply(this, arguments);
+  };
+}
+
+/* Подпись под названием площадки: у TikTok ссылку не вставляют */
+function fixHints(){
+  try{
+    var t = document.querySelector('#abc-row-tiktok .abc-hint-tx');
+    if(t && t.textContent !== 'Подключить аккаунт TikTok') t.textContent = 'Подключить аккаунт TikTok';
+  }catch(e){}
+}
+
+/* При заходе в мастер сверяемся с сервером: канал мог быть подтверждён
+   в профиле или на другом устройстве — тогда он появится здесь сам. */
+function sync(){
+  fixHints();
+  pullCfg();
+  pullChannels(true).then(function(map){
+    if(!map) return;
+    ['tiktok', 'youtube'].forEach(function(pid){
+      var p = P(pid), ch = map[pid];
+      if(!p || !ch || !ch.url) return;
+      if(p.verified && byLogin(pid)) return;
+      if(pid === 'youtube' && p.verified && p.url) return;   /* свою ссылку у YouTube не перетираем */
+      apply(pid, ch);
+    });
+    try{ if(P('tiktok') && !P('tiktok').verified) abcRenderUrlArea('tiktok'); }catch(e){}
+  });
+}
+
+var origInit = window.abcInit;
+if(typeof origInit === 'function'){
+  window.abcInit = function(){
+    var r = origInit.apply(this, arguments);
+    setTimeout(sync, 60);
+    return r;
+  };
+}
+var origGoTo = window.goTo;
+if(typeof origGoTo === 'function' && !origGoTo.__bpAbcTt){
+  window.goTo = function(page){
+    var r = origGoTo.apply(this, arguments);
+    if(String(page) === 'add-blogger-card') setTimeout(sync, 120);
+    return r;
+  };
+  window.goTo.__bpAbcTt = true;
+}
+})();
+</script>
+
+<style id="bp-card2-css">
+/* ══ Карточка блогера: три недоделки ═════════════════════════════════
+   1. Мастер не проверял, есть ли у человека карточка: кнопку «Изменить»
+      находили не все, и в каталоге появлялись две одинаковых карточки
+      одного блогера.
+   2. Приветственное сообщение рекламодателю сохранялось, но его никто
+      не показывал.
+   3. В каталоге под подписчиками, просмотрами и ER стоял прочерк —
+      ничто не говорило, что это слова блогера, а не данные площадки.
+   Откат: удалить style#bp-card2-css и script#bp-card2.                */
+html .blc-strip .bls-sub.bp-said{ color:var(--t3,#7d818c); font-size:8.5px; font-weight:700 }
+html .blp-msg{
+  margin:8px 16px 4px; padding:11px 13px; border-radius:13px;
+  background:rgba(47,108,224,.08); border:1px solid rgba(47,108,224,.18);
+  font-size:12.5px; color:var(--t2,#b9bcc4); line-height:1.55;
+}
+html .blp-msg b{ display:block; font-size:10px; font-weight:800; letter-spacing:.5px;
+  text-transform:uppercase; color:#7ea6ee; margin-bottom:5px }
+</style>
+<script id="bp-card2">
+(function(){
+'use strict';
+if(window.__bpCard2) return; window.__bpCard2 = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e); }catch(_){} }
+function esc(s){
+  try{ return bpEsc(String(s == null ? '' : s)); }
+  catch(e){ return String(s == null ? '' : s).replace(/[<>&"]/g, function(c){
+    return { '<':'&lt;', '>':'&gt;', '&':'&amp;', '"':'&quot;' }[c]; }); }
+}
+function cards(){
+  try{ var a = JSON.parse(localStorage.getItem('bp_my_cards') || '[]'); return Array.isArray(a) ? a : []; }
+  catch(e){ return []; }
+}
+function me(){ try{ return (typeof currentUser !== 'undefined' && currentUser) || null; }catch(e){ return null; } }
+
+/* ── 1. Одна карточка на человека ────────────────────────────────────
+   Входов в мастер несколько (профиль, меню, баннер), и ни один не
+   смотрел, есть ли карточка. Вторая публикация давала дубль в каталоге:
+   площадки склеивались из обеих, а заявка уходила по первой попавшейся.
+   Если карточка есть — открываем её на правку и говорим об этом. */
+function routeToEdit(){
+  try{
+    var u = me(); if(!u) return;
+    if(localStorage.getItem('bp_editing_card_id')) return;      /* уже правим */
+    var mine = cards().filter(function(c){ return c && String(c.userId) === String(u.id); });
+    if(!mine.length) return;
+    localStorage.setItem('bp_editing_card_id', String(mine[0].id));
+    try{ showAuthToast('У вас уже есть карточка — открыли её для правки', 'info'); }catch(e){}
+  }catch(e){ E(e); }
+}
+
+var origGoTo = window.goTo;
+if(typeof origGoTo === 'function' && !origGoTo.__bpCard2){
+  window.goTo = function(page){
+    if(String(page) === 'add-blogger-card') routeToEdit();
+    return origGoTo.apply(this, arguments);
+  };
+  window.goTo.__bpCard2 = true;
+}
+
+/* ── 2. Сообщение блогера видно на его странице ──────────────────── */
+function paintMsg(){
+  try{
+    var page = document.querySelector('.blp-hero');
+    if(!page) return;
+    var host = page.parentNode;
+    if(!host || host.querySelector('.blp-msg')) return;
+    var uid = window._bpModalUserId;
+    if(uid == null) return;
+    var c = cards().find(function(x){ return x && String(x.userId) === String(uid) && x.msg; });
+    if(!c) return;
+    var box = document.createElement('div');
+    box.className = 'blp-msg';
+    box.innerHTML = '<b>Сообщение блогера</b>' + esc(String(c.msg).slice(0, 500));
+    var about = host.querySelector('.blp-about');
+    if(about && about.nextSibling) host.insertBefore(box, about.nextSibling);
+    else if(about) host.appendChild(box);
+    else if(page.nextSibling) host.insertBefore(box, page.nextSibling);
+    else host.appendChild(box);
+  }catch(e){ E(e); }
+}
+
+/* ── 3. В каталоге видно, откуда цифры ───────────────────────────── */
+function paintSaid(){
+  try{
+    var strips = document.querySelectorAll('.blc-strip');
+    for(var i = 0; i < strips.length; i++){
+      var st = strips[i];
+      if(st.__bpSaid) continue;
+      st.__bpSaid = 1;
+      var cells = st.querySelectorAll('.bls');
+      for(var k = 0; k < cells.length; k++){
+        var lbl = cells[k].querySelector('.bls-lbl');
+        var sub = cells[k].querySelector('.bls-sub');
+        if(!lbl || !sub) continue;
+        var name = (lbl.textContent || '').trim();
+        if(name === 'Подписчики' || name === 'Просмотры' || name === 'ER'){
+          if((sub.textContent || '').trim() === '—'){
+            sub.textContent = 'со слов';
+            sub.classList.add('bp-said');
+            sub.title = 'Цифры указал сам блогер — сервис их не проверял';
+          }
+        }
+      }
+    }
+  }catch(e){ E(e); }
+}
+
+var tick = null;
+function soon(){
+  clearTimeout(tick);
+  tick = setTimeout(function(){ paintSaid(); paintMsg(); }, 120);
+}
+document.addEventListener('click', soon, true);
+setInterval(function(){ if(!document.hidden) soon(); }, 2000);
+setTimeout(soon, 1500);
+})();
+</script>
+
 </body>
 </html>

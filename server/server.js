@@ -145,16 +145,19 @@ const PUBLIC_URL = externalBase(ENV)
    .local и частные подсети. В этих случаях письмо честно печатает код
    внутри себя, как раньше. */
 if (!/^https?:\/\//i.test(PUBLIC_URL) || !reachableOutside(PUBLIC_URL)) PW_LINK_ON = false;
+/* Кавычки и пробелы вокруг значения — самая частая причина «неизвестный
+   client_key»: площадка получает ключ вместе с ними и не узнаёт его. */
+const cleanKey = (v) => String(v == null ? '' : v).trim().replace(/^["']+|["']+$/g, '').trim();
 const OAUTH = {
   youtube: {
-    id: ENV.YT_CLIENT_ID || '', secret: ENV.YT_CLIENT_SECRET || '',
+    id: cleanKey(ENV.YT_CLIENT_ID), secret: cleanKey(ENV.YT_CLIENT_SECRET),
     auth: 'https://accounts.google.com/o/oauth2/v2/auth',
     token: 'https://oauth2.googleapis.com/token',
     scope: 'https://www.googleapis.com/auth/youtube.readonly',
     label: 'YouTube',
   },
   tiktok: {
-    id: ENV.TT_CLIENT_KEY || '', secret: ENV.TT_CLIENT_SECRET || '',
+    id: cleanKey(ENV.TT_CLIENT_KEY), secret: cleanKey(ENV.TT_CLIENT_SECRET),
     auth: 'https://www.tiktok.com/v2/auth/authorize/',
     token: 'https://open.tiktokapis.com/v2/oauth/token/',
     scope: 'user.info.basic,user.info.profile,user.info.stats',
@@ -327,6 +330,11 @@ CREATE TABLE IF NOT EXISTS disputes (
   closed_at  TEXT
 );
 CREATE INDEX IF NOT EXISTS disputes_deal ON disputes(deal_id, status);
+CREATE INDEX IF NOT EXISTS ops_user_kind ON ops(user_id, kind);
+CREATE INDEX IF NOT EXISTS deals_status ON deals(status);
+CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS ledger_kind ON ledger(kind);
+CREATE INDEX IF NOT EXISTS ledger_ref ON ledger(ref, user_id);
 CREATE INDEX IF NOT EXISTS kyc_user ON kyc_requests(user_id);
 CREATE INDEX IF NOT EXISTS kyc_status ON kyc_requests(status);
 CREATE INDEX IF NOT EXISTS sessions_exp ON sessions(expires_at);
@@ -442,16 +450,28 @@ const q = {
   kycPhoto: db.prepare('SELECT id, photo, selfie, updated_at FROM kyc_requests WHERE id = ?'),
   kycQueuedCount: db.prepare(`SELECT COUNT(*) AS n FROM kyc_requests WHERE status = 'queued'`),
   /* споры */
+  paidTo: db.prepare(`SELECT 1 AS x FROM ledger
+    WHERE ref = ? AND user_id = ? AND kind IN ('payout','settle-payout') LIMIT 1`),
+  /* Споры, которые держат возврат: спор плательщика (payee_id пуст),
+     спор назначенного исполнителя и спор того, кому по сделке уже
+     платили. Спор постороннего «по себе» возврату не помеха. */
+  refundBlocked: db.prepare(`SELECT 1 AS x FROM disputes d
+    WHERE d.deal_id = ? AND d.status = 'open' AND (
+      d.payee_id IS NULL
+      OR d.payee_id = ?
+      OR EXISTS (SELECT 1 FROM ledger l WHERE l.ref = ? AND l.user_id = d.payee_id
+                 AND l.kind IN ('payout','settle-payout'))
+    ) LIMIT 1`),
   openDisputeFor: db.prepare(`SELECT id, opened_by FROM disputes
     WHERE deal_id = ? AND status = 'open' AND (payee_id IS NULL OR payee_id = ?) LIMIT 1`),
   openDisputeAny: db.prepare(`SELECT id, opened_by FROM disputes WHERE deal_id = ? AND status = 'open' LIMIT 1`),
-  openDisputeExact: db.prepare(`SELECT id FROM disputes
+  openDisputeExact: db.prepare(`SELECT id, opened_by FROM disputes
     WHERE deal_id = ? AND status = 'open' AND ((payee_id IS NULL AND ? IS NULL) OR payee_id = ?) LIMIT 1`),
   insDispute: db.prepare(`INSERT INTO disputes (deal_id, payee_id, opened_by, status) VALUES (?,?,?,'open')`),
   closeDisputesAll: db.prepare(`UPDATE disputes SET status = 'closed', closed_at = datetime('now')
     WHERE deal_id = ? AND status = 'open'`),
   closeDisputesFor: db.prepare(`UPDATE disputes SET status = 'closed', closed_at = datetime('now')
-    WHERE deal_id = ? AND status = 'open' AND (payee_id IS NULL OR payee_id = ?)`),
+    WHERE deal_id = ? AND status = 'open' AND payee_id = ?`),
   /* выплаты по кампаниям, чтобы рекламодатель видел расход на любом устройстве */
   myReleases: db.prepare(`SELECT op_key, result, created_at FROM ops
     WHERE user_id = ? AND kind = 'release' ORDER BY created_at DESC LIMIT 500`),
@@ -565,6 +585,19 @@ function newToken() { return crypto.randomBytes(32).toString('hex'); }
 function amountOk(x) {
   return Number.isInteger(x) && x > 0 && x <= MAX_AMOUNT;
 }
+
+/* Пространство ключей операций, куда пользователю ходу нет: его занимает
+   пульт оператора. Раньше пульт брал ключи вида bp-op-paid-<id>, и их
+   можно было занять заранее — тогда настоящая выплата не проводилась.
+   Ключи пульта теперь строит сервер (sysKey), а эти приставки в теле
+   запроса отклоняются. */
+const RESERVED_OP = /^\s*(sys:|bp-op-)/i;
+function userKey(raw) {
+  const k = String(raw || '');
+  return RESERVED_OP.test(k) ? '' : k;
+}
+const badKey = { status: 400, body: { error: 'Такой ключ операции занят служебным пространством' } };
+function sysKey(kind, id) { return 'sys:' + kind + ':' + id; }
 
 /* Денежная операция целиком в одной транзакции.
    build(add) — тело: зовёт add(userId, bucket, amount, kind, ref) и
@@ -715,8 +748,8 @@ function isAdmin(req) {
   const given = String(req.headers['x-admin-key'] || '');
   if (!given) return false;
   if (adminBlocked(req)) return false;
-  if (ADMIN_KEY !== '' && given.length === ADMIN_KEY.length
-      && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(ADMIN_KEY))) return true;
+  const a = Buffer.from(given, 'utf8'), b = Buffer.from(ADMIN_KEY, 'utf8');
+  if (b.length && a.length === b.length && crypto.timingSafeEqual(a, b)) return true;
   adminMissed(req);
   return false;
 }
@@ -1089,16 +1122,40 @@ function wdSig(amount, requisites) {
   return crypto.createHmac('sha256', PW_SECRET)
     .update(String(amount) + '|' + String(requisites)).digest('hex');
 }
+/* Сколько раз человек просил код за последний час: перевыпуск не должен
+   стирать память о попытках, иначе перебор бесконечен. */
+const wdIssues = new Map();          /* userId → [время, …] */
+const WD_ISSUE_MAX = 5;
+function wdIssueAllowed(userId) {
+  const now = Date.now();
+  const arr = (wdIssues.get(userId) || []).filter((t) => now - t < 3600000);
+  wdIssues.set(userId, arr);
+  return arr.length < WD_ISSUE_MAX;
+}
 function wdIssue(userId, amount, requisites) {
   const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+  const now = Date.now();
+  const arr = (wdIssues.get(userId) || []).filter((t) => now - t < 3600000);
+  arr.push(now); wdIssues.set(userId, arr);
+  const was = wdCodes.get(userId);
   wdCodes.set(userId, {
     hash: crypto.createHmac('sha256', PW_SECRET).update(userId + '|' + code).digest('hex'),
-    expires: Date.now() + WD_TTL_MS,
-    attempts: 0,
+    expires: now + WD_TTL_MS,
+    /* Счётчик попыток переезжает на новый код: иначе перевыпуск обнулял
+       защиту и код подбирался пятёрками сколько угодно раз. */
+    attempts: (was && Date.now() - (was.at || 0) < 3600000) ? (Number(was.attempts) || 0) : 0,
+    at: now,
     sig: wdSig(amount, requisites),
   });
   return code;
 }
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, arr] of wdIssues) {
+    const live = arr.filter((t) => now - t < 3600000);
+    if (live.length) wdIssues.set(id, live); else wdIssues.delete(id);
+  }
+}, 10 * 60 * 1000).unref();
 /* ПРОВЕРЯЕТ, НО НЕ ГАСИТ. Гасить код здесь нельзя: после проверки заявка
    может не пройти дальше (например, кривой ключ операции), деньги не
    сдвинутся — а код уже сгорит, и человеку придётся запрашивать новый
@@ -1164,6 +1221,12 @@ const routes = {
     const role = body.role === 'advertiser' ? 'advertiser' : 'blogger';
     const pass = String(body.password || '');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { status: 400, body: { error: 'Некорректный email' } };
+    /* Служебный домен входа по Телеграму. Живых ящиков там нет, а занятый
+       заранее адрес позволял перехватить чужой аккаунт при первом входе
+       из мини-аппа. Регистрация на него закрыта. */
+    if (/@telegram\.local$/i.test(email)) {
+      return { status: 400, body: { error: 'Этот адрес занят служебным входом по Телеграму' } };
+    }
     if (!name) return { status: 400, body: { error: 'Введите имя' } };
     if (pass.length < 8) return { status: 400, body: { error: 'Пароль — минимум 8 символов' } };
     if (q.userByEmail.get(email)) return { status: 409, body: { error: 'Этот email уже зарегистрирован' } };
@@ -1338,7 +1401,9 @@ const routes = {
      привязываем телеграм к тому же аккаунту, а не заводим второй. */
   'POST /api/auth/telegram': async (req, body) => {
     if (!rateLimit(req, 'tg', 30, 60000)) return tooOften;
-    const check = checkInitData(String(body.initData || ''), Number(body.maxAgeSec) || 86400);
+    /* Порог давности — наш, не клиентский: иначе перехваченная строка
+       initData работает вечно (достаточно прислать maxAgeSec побольше). */
+    const check = checkInitData(String(body.initData || ''), 86400);
     if (!check.ok) {
       const noToken = /BOT_TOKEN/.test(check.why);
       return { status: noToken ? 503 : 401, body: { error: check.why } };
@@ -1348,19 +1413,21 @@ const routes = {
 
     let u = q.userByTg.get(tgId);
 
-    /* Привязка к существующему аккаунту: если пришли с тем же email,
-       что уже зарегистрирован, это тот же человек. */
-    if (!u && tg.username) {
-      const byMail = q.userByEmail.get(('tg' + tgId + '@telegram.local'));
-      if (byMail) { q.linkTg.run(tgId, byMail.id); u = q.userByTg.get(tgId); }
-    }
+    /* Раньше здесь стояла привязка «по совпадению служебного адреса»:
+       если нашёлся аккаунт с почтой tg<id>@telegram.local, телеграм
+       привязывался к нему. Такой адрес мог занять кто угодно обычной
+       регистрацией — и получал чужой аккаунт вместе с балансом. Связь
+       ведём только по telegram-id, который проставляет сам сервер. */
 
     if (!u) {
       /* Заводим аккаунт. Пароля у него нет: вход только через Телеграм,
          поэтому в поля хеша кладём случайный мусор, которым нельзя войти. */
       const name = [tg.first_name, tg.last_name].filter(Boolean).join(' ').trim()
         || tg.username || ('Пользователь ' + tgId);
-      const email = 'tg' + tgId + '@telegram.local';
+      /* Адрес мог быть занят до того, как регистрацию на служебный домен
+         закрыли. Тогда берём соседний свободный, а не отказываем входу. */
+      let email = 'tg' + tgId + '@telegram.local';
+      if (q.userByEmail.get(email)) email = 'tg' + tgId + '.' + crypto.randomBytes(3).toString('hex') + '@telegram.local';
       const salt = crypto.randomBytes(16).toString('hex');
       const dead = crypto.randomBytes(32).toString('hex');
       const role = body.role === 'advertiser' ? 'advertiser' : 'blogger';
@@ -1419,6 +1486,7 @@ const routes = {
     }
     const amount = body.amount;
     if (!amountOk(amount)) return { status: 400, body: { error: 'Сумма — целое число от 1 до 100 000 000' } };
+    if (!userKey(body.opKey)) return badKey;
     return moneyOp(String(body.opKey || ''), u.id, 'topup', (add) => {
       add(u.id, 'available', amount, 'topup', 'тестовое пополнение');
       return { ok: true, balance: q.balance.get(u.id) };
@@ -1495,9 +1563,14 @@ const routes = {
     try {
       /* Аноним не должен превращать вебхук в усилитель наших запросов к
          кассе: больше 30 обращений в минуту молча игнорируем. */
+      /* Сначала ограничитель по адресу: шум одного источника не должен
+         съедать общий счётчик и вытеснять настоящие уведомления. */
+      if (!rateLimit(req, 'wh', 20, 60000)) return { status: 503, body: { error: 'Позже' } };
       const now = Date.now();
       whLog = whLog.filter((t) => now - t < 60000);
-      if (whLog.length >= 30) return { status: 200, body: { ok: true } };
+      /* 503, а не 200: для кассы 200 означает «доставлено», и повтора не
+         будет — платёж потеряется молча. */
+      if (whLog.length >= 60) return { status: 503, body: { error: 'Перегрузка, повторите' } };
       whLog.push(now);
       const id = String(body && body.object && body.object.id || '').slice(0, 80);
       if (YK_ON && id) {
@@ -1527,6 +1600,7 @@ const routes = {
       if (!q.userById.get(payeeId)) return { status: 404, body: { error: 'Получатель не найден' } };
       if (payeeId === u.id) return { status: 400, body: { error: 'Нельзя назначить получателем себя' } };
     }
+    if (!userKey(body.opKey)) return badKey;
     return moneyOp(String(body.opKey || ''), u.id, 'hold', (add) => {
       add(u.id, 'available', -amount, 'hold', dealId);
       add(u.id, 'hold', amount, 'hold', dealId);
@@ -1573,6 +1647,7 @@ const routes = {
       return { status: 409, body: { error: 'В заморозке осталось ' + left + ' — больше выплатить нельзя' } };
     }
 
+    if (!userKey(body.opKey)) return badKey;
     return moneyOp(String(body.opKey || ''), u.id, 'release', (add) => {
       add(u.id, 'hold', -sum, 'release', dealId);
       add(payee.id, 'available', sum, 'payout', dealId);
@@ -1602,15 +1677,25 @@ const routes = {
     /* Кто вправе: плательщик — по всей сделке; исполнитель — только по
        своей выплате (иначе любой мог бы заморозить чужие деньги). */
     const isPayer = d.payer_id === u.id;
-    const isPayee = (d.payee_id != null && d.payee_id === u.id) || (payeeId != null && payeeId === u.id);
-    if (!isPayer && !isPayee) return { status: 403, body: { error: 'Спор открывают стороны сделки' } };
-    const scope = isPayer ? payeeId : u.id;          /* исполнитель всегда «по себе» */
+    /* Спор «по себе» доступен любому вошедшему: он замораживает выплату
+       только этому человеку, чужих денег не касается. Спор по всей
+       сделке — привилегия плательщика. */
+    const scope = isPayer ? payeeId : u.id;
+    if (!isPayer && scope == null) {
+      return { status: 403, body: { error: 'Спор по всей сделке открывает плательщик' } };
+    }
     const already = q.openDisputeExact.get(dealId, scope, scope);
     if (already) return { status: 200, body: { ok: true, id: already.id, already: true } };
     const info = q.insDispute.run(dealId, scope, u.id);
-    tgAlert('dispute:' + dealId + ':' + info.lastInsertRowid,
-      '⚖️ Открыт спор по сделке ' + dealId + '\n\nОткрыл: ' + u.email
-      + (scope != null ? '\nИсполнитель id ' + scope : '') + '\n\nДеньги заморожены до решения.', 'server');
+    /* Тревогу шлём только по спорам, которые действительно держат деньги:
+       иначе посторонний десятком «споров по себе» выжигает часовой лимит
+       тревог, и настоящие сообщения до владельца не доходят. */
+    const holds = isPayer || (d.payee_id != null && d.payee_id === u.id) || !!q.paidTo.get(dealId, u.id);
+    if (holds) {
+      tgAlert('dispute:' + dealId + ':' + info.lastInsertRowid,
+        '⚖️ Открыт спор по сделке ' + dealId + '\n\nОткрыл: ' + u.email
+        + (scope != null ? '\nИсполнитель id ' + scope : '') + '\n\nДеньги заморожены до решения.', 'server');
+    }
     return { status: 200, body: { ok: true, id: Number(info.lastInsertRowid) } };
   },
 
@@ -1621,11 +1706,10 @@ const routes = {
     const d = q.deal.get(dealId);
     if (!d) return { status: 404, body: { error: 'Сделка не найдена' } };
     const payeeId = body.payeeId == null || body.payeeId === '' ? null : Number(body.payeeId);
-    const open = payeeId == null ? q.openDisputeAny.get(dealId) : q.openDisputeFor.get(dealId, payeeId);
+    const open = payeeId == null ? q.openDisputeAny.get(dealId) : q.openDisputeExact.get(dealId, payeeId, payeeId);
     if (!open) return { status: 200, body: { ok: true, closed: 0 } };
     const may = isAdmin(req) || d.payer_id === u.id || (open.opened_by != null && open.opened_by === u.id)
-      || (d.payee_id != null && d.payee_id === u.id)
-      || (payeeId != null && payeeId === u.id);
+      || (d.payee_id != null && d.payee_id === u.id);
     if (!may) return { status: 403, body: { error: 'Закрыть спор может открывший, плательщик или оператор' } };
     const info = payeeId == null ? q.closeDisputesAll.run(dealId) : q.closeDisputesFor.run(dealId, payeeId);
     return { status: 200, body: { ok: true, closed: Number(info.changes || 0) } };
@@ -1660,12 +1744,13 @@ const routes = {
       return { status: 403, body: { error: 'Возврат делает плательщик, исполнитель или оператор' } };
     }
     if (d.status !== 'held') return { status: 409, body: { error: 'Сделка уже закрыта: ' + d.status } };
-    if (!isAdmin(req) && q.openDisputeAny.get(dealId)) {
+    if (!isAdmin(req) && q.refundBlocked.get(dealId, d.payee_id, dealId)) {
       return { status: 409, body: { error: 'Идёт спор — возврат заморожен до решения арбитра', dispute: true } };
     }
     /* Возвращаем ОСТАТОК: часть могла уже уйти исполнителям. */
     const rest = d.amount - d.paid;
     if (rest <= 0) return { status: 409, body: { error: 'Из этой заморозки уже всё выплачено' } };
+    if (!userKey(body.opKey)) return badKey;
     return moneyOp(String(body.opKey || ''), u.id, 'refund', (add) => {
       add(d.payer_id, 'hold', -rest, 'refund', dealId);
       add(d.payer_id, 'available', rest, 'refund', dealId);
@@ -1714,6 +1799,7 @@ const routes = {
     const toBlogger = Math.round(rest * share / 100);
     const toPayer = rest - toBlogger;
 
+    if (!isAdmin(req) && !userKey(body.opKey)) return badKey;
     return moneyOp(String(body.opKey || ''), d.payer_id, 'settle', (add) => {
       add(d.payer_id, 'hold', -rest, 'settle', dealId);
       if (toBlogger > 0) add(payee.id, 'available', toBlogger, 'settle-payout', dealId);
@@ -1734,6 +1820,7 @@ const routes = {
   /* Заявка на вывод. Деньги уходят в hold и ЖДУТ ОПЕРАТОРА — статус
      меняет только он. Комиссия считается сразу и видна до подтверждения. */
   'POST /api/withdraw': async (req, body) => {
+    if (!rateLimit(req, 'wd', 10, 60000)) return tooOften;
     const u = auth(req);
     if (!u) return { status: 401, body: { error: 'Нужен вход' } };
     /* Гейт верификации живёт и на сервере: клиентскую проверку в мини-аппе
@@ -1764,6 +1851,9 @@ const routes = {
     let burned = null;                 /* снятый код: вернём, если заявка не пройдёт */
     if (mailConfigured()) {
       if (!code) {
+        if (!wdIssueAllowed(u.id)) {
+          return { status: 429, body: { error: 'Код запрашивали слишком часто — попробуйте через час' } };
+        }
         const fresh = wdIssue(u.id, amount, requisites);
         const r = await sendCodeEmail({ to: u.email, code: fresh, kind: 'withdraw', minutes: 10 });
         /* Письмо не ушло — код гасим и денег не трогаем. Оставить заявку
@@ -1796,6 +1886,7 @@ const routes = {
         + ' без единой преграды.', 'server');
     }
 
+    if (!userKey(body.opKey)) { if (burned) wdCodes.set(u.id, burned); return badKey; }
     const done = await moneyOp(String(body.opKey || ''), u.id, 'withdraw', (add) => {
       add(u.id, 'available', -amount, 'withdraw', 'заявка на вывод');
       add(u.id, 'hold', amount, 'withdraw', 'заявка на вывод');
@@ -1821,6 +1912,7 @@ const routes = {
     if (w.status !== 'queued') {
       return { status: 409, body: { error: 'Заявка уже в работе — отменить её может только оператор' } };
     }
+    if (!userKey(body.opKey)) return badKey;
     return moneyOp(String(body.opKey || ''), u.id, 'wd-cancel', (add) => {
       add(u.id, 'hold', -w.amount, 'wd-cancel', 'заявка ' + w.id);
       add(u.id, 'available', w.amount, 'wd-cancel', 'заявка ' + w.id);
@@ -1897,6 +1989,7 @@ const routes = {
   'GET /api/verify/start': async (req, body, url) => {
     const u = auth(req);
     if (!u) return { status: 401, body: { error: 'Нужен вход' } };
+    if (!rateLimit(req, 'vfystart', 10, 60000)) return tooOften;
     const p = String(url.searchParams.get('platform') || '');
     const cfg = OAUTH[p];
     if (!cfg) return { status: 400, body: { error: 'Неизвестная площадка' } };
@@ -1980,6 +2073,19 @@ const routes = {
     };
   },
 
+  'GET /api/verify/config': async (req) => {
+    if (!rateLimit(req, 'vfycfg', 60, 60000)) return tooOften;
+    const platforms = {};
+    for (const p of Object.keys(OAUTH)) {
+      platforms[p] = {
+        label: OAUTH[p].label,
+        configured: !!(OAUTH[p].id && OAUTH[p].secret),
+        redirect: PUBLIC_URL + '/api/verify/callback/' + p,
+      };
+    }
+    return { status: 200, body: { platforms } };
+  },
+
   'GET /api/verify/list': async (req) => {
     const u = auth(req);
     if (!u) return { status: 401, body: { error: 'Нужен вход' } };
@@ -2053,7 +2159,8 @@ const routes = {
     }
     /* Журнал ошибок — не деньги, его можно и нужно подрезать, иначе
        одна зациклившаяся вкладка забьёт базу. */
-    if (taken) { try { q.trimErrors.run(); } catch (e) { /* не критично */ } }
+    /* Подрезку перенесли в почасовую уборку ниже: раньше она шла на
+       каждом обращении и синхронно держала весь сервер. */
     return { status: 200, body: { taken } };
   },
 
@@ -2089,7 +2196,7 @@ const routes = {
     if (w.status !== 'processing' && w.status !== 'queued') {
       return { status: 409, body: { error: 'Заявка уже закрыта: ' + w.status } };
     }
-    return moneyOp(String(body.opKey || ''), w.user_id, 'wd-paid', (add) => {
+    return moneyOp(sysKey('wd-paid', w.id), w.user_id, 'wd-paid', (add) => {
       add(w.user_id, 'hold', -w.amount, 'wd-paid', 'заявка ' + w.id);
       add(0, 'available', w.fee, 'fee', 'комиссия по заявке ' + w.id);
       q.updWd.run('paid', String(body.note || '').slice(0, 200) || null, w.id);
@@ -2104,7 +2211,7 @@ const routes = {
     if (w.status === 'paid' || w.status === 'rejected' || w.status === 'cancelled') {
       return { status: 409, body: { error: 'Заявка уже закрыта: ' + w.status } };
     }
-    return moneyOp(String(body.opKey || ''), w.user_id, 'wd-reject', (add) => {
+    return moneyOp(sysKey('wd-reject', w.id), w.user_id, 'wd-reject', (add) => {
       add(w.user_id, 'hold', -w.amount, 'wd-reject', 'заявка ' + w.id);
       add(w.user_id, 'available', w.amount, 'wd-reject', 'заявка ' + w.id);
       q.updWd.run('rejected', String(body.note || '').slice(0, 200) || 'отклонена оператором', w.id);
@@ -2436,7 +2543,14 @@ function sendFile(req, res, file, type) {
 /* Обработчик вынесен отдельно: слушать приходится не один порт (почему —
    у listenOn ниже), а один http.Server умеет слушать только один. */
 const handler = async (req, res) => {
-  const url = new URL(req.url, 'http://localhost');
+  let url;
+  try {
+    url = new URL(req.url, 'http://localhost');
+  } catch (e) {
+    /* «GET //», «GET ///» и прочие адреса без хоста разбору не поддаются.
+       Это не повод падать: отвечаем 400 и живём дальше. */
+    return send(res, 400, { error: 'Неверный адрес запроса' });
+  }
   if (req.method === 'OPTIONS') return send(res, 204, {});
   if (req.method === 'GET' && (url.pathname === '/operator' || url.pathname === '/operator.html')) {
     return sendOperatorPage(res);
@@ -2598,6 +2712,15 @@ function dieLoud(tag, e) {
    оборванном обещании. Сохраняем это честное поведение — денежному
    серверу нельзя жить в неопределённом состоянии — но перед смертью
    успеваем отправить тревогу. */
+/* Раз в час подрезаем журнал ошибок — вместо прежней подрезки на каждом
+   обращении к /api/errors (синхронный SQLite вставал поперёк всего). */
+setInterval(() => {
+  try {
+    const n = db.prepare('SELECT COUNT(*) AS n FROM errors').get().n;
+    if (n > 25000) q.trimErrors.run();
+  } catch (e) { /* уборка не обязана удаться */ }
+}, 3600000).unref();
+
 process.on('unhandledRejection', (e) => dieLoud('обещание без catch', e));
 process.on('uncaughtException', (e) => dieLoud('исключение', e));
 
