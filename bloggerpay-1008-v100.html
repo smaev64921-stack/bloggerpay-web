@@ -76031,114 +76031,179 @@ html #pg-balance .bal-safe, html #pg-balance [data-bpw="adv"], html #pg-balance 
 
 <style id="bp-kycfirst-css">
 /* ══ Вывод: сначала проверка личности, потом деньги ══════════════════
-   Как у бирж и кошельков (Bybit, Wise, ЮMoney): новый аккаунт, нажав
-   «Вывести», попадает не в форму суммы с закрытой кнопкой, а на экран
-   «Подтвердите личность» — шаги, прогресс, одна главная кнопка. Форма
-   вывода показывается только когда телефон подтверждён и оператор
-   одобрил паспорт с селфи. Сами шаги — прежние шторки bp-kyc-js.
-   Откат: удалить style#bp-kycfirst-css и script#bp-kycfirst.            */
+   Как у бирж и кошельков: новый аккаунт, нажав «Вывести», попадает не в
+   форму суммы с закрытой кнопкой, а на экран проверки личности. Форма
+   вывода показывается, когда телефон подтверждён и оператор одобрил
+   паспорт с селфи. Сами шаги — прежние шторки bp-kyc-js.
+
+   ОФОРМЛЕНИЕ (переделано 03.09.2026). Было: щит, полоса прогресса и три
+   одинаковые карточки — так выглядит любой экран верификации, и человек
+   читал его как формальность. Стало: маршрут документов. Ваши бумаги
+   едут от телефона к живому человеку и обратно, и экран показывает
+   именно это — линия с остановками, время отправки машинописью и один
+   акцент: бледный штамп «на проверке» у текущей остановки. Бумажная
+   слоновая кость вместо ещё одного синего — цвет самого документа;
+   синий остаётся только у главной кнопки.
+   Откат: удалить style#bp-kycfirst-css и script#bp-kycfirst.          */
 #pg-withdraw.bp-kf-on .wd-body > :not(#bpKf){ display:none!important }
 body.bp-kf-on #bw2WdCta{ display:none!important }
 #bpKf{ display:none }
 #pg-withdraw.bp-kf-on #bpKf{ display:block }
 
-/* Палитра экрана: не «предупреждение», а спокойный служебный шаг.
-   Синий — только у активного действия, зелёный — у сделанного, тёплый
-   янтарь — у ожидания. Карточки на один тон светлее фона, границы тонкие:
-   на чёрном телефоне это читается аккуратно и дорого. */
-.bpkf{ --kf-line:rgba(255,255,255,.08); --kf-card:rgba(255,255,255,.035);
-  padding:4px 0 30px }
-.bpkf-hero{ text-align:center; padding:10px 6px 22px }
-.bpkf-shield{
-  width:76px; height:76px; margin:0 auto 16px; border-radius:26px;
-  background:linear-gradient(158deg,#3b7bef 0%,#2f6ce0 42%,#1b49a8 100%);
+.kf3{
+  --ink:#f2f4f8;              /* заголовки */
+  --dim:#8b8f9c;              /* пояснения */
+  --line:rgba(255,255,255,.085);
+  --paper:#e8e1d1;            /* слоновая кость — цвет документа */
+  --ochre:#d9a441;            /* ожидание: тёплый охристый, как печать */
+  --green:#57d99a;
+  --blue:#4c8bf5;
+  --red:#f0788a;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  padding:6px 0 34px;
+}
+
+/* ── шапка: надзаголовок и счёт остановок ── */
+.kf3-top{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:18px }
+.kf3-eyebrow{
+  font-size:10px; font-weight:800; letter-spacing:.19em; text-transform:uppercase;
+  color:var(--dim);
+}
+.kf3[data-state="pending"] .kf3-eyebrow{ color:var(--ochre) }
+.kf3[data-state="rejected"] .kf3-eyebrow{ color:var(--red) }
+.kf3-count{
+  font-family:var(--mono); font-size:11px; font-weight:600; color:var(--dim);
+  font-variant-numeric:tabular-nums; letter-spacing:.04em;
+}
+.kf3-count b{ color:var(--ink); font-weight:700 }
+
+/* ── заголовок: состояние, а не требование ── */
+.kf3-h1{
+  font-size:29px; line-height:1.1; font-weight:800; letter-spacing:-.045em;
+  color:var(--ink); margin:0 0 11px;
+}
+.kf3-h1 em{ font-style:normal; color:var(--paper); display:block }
+.kf3-lede{ font-size:13.5px; line-height:1.62; color:var(--dim); margin:0 0 26px; max-width:31em }
+.kf3-lede b{ color:var(--paper); font-weight:600 }
+
+/* ── маршрут документов ──
+   Линия — не украшение: она показывает, что шаги идут подряд и вернуться
+   на предыдущий нельзя. Пройденный отрезок сплошной, будущий пунктиром. */
+.kf3-route{ list-style:none; margin:0; padding:0 }
+.kf3-stop{
+  position:relative; display:flex; gap:15px; padding:0 0 22px 0;
+  -webkit-tap-highlight-color:transparent;
+}
+.kf3-stop:last-child{ padding-bottom:4px }
+.kf3-stop::before{                       /* отрезок линии вниз от узла */
+  content:''; position:absolute; left:13px; top:28px; bottom:0; width:2px;
+  background:var(--line); border-radius:2px;
+}
+.kf3-stop:last-child::before{ display:none }
+.kf3-stop.done::before{ background:rgba(87,217,154,.34) }
+.kf3-stop.now::before,.kf3-stop.pending::before,.kf3-stop.rejected::before,.kf3-stop.wait::before{
+  /* дальше дороги ещё нет — пунктир, а не сплошная линия */
+  background:repeating-linear-gradient(180deg,rgba(255,255,255,.16) 0 5px,transparent 5px 11px);
+}
+.kf3-node{
+  position:relative; z-index:1; flex-shrink:0;
+  width:28px; height:28px; border-radius:50%;
   display:flex; align-items:center; justify-content:center;
-  box-shadow:0 18px 42px rgba(27,73,168,.45), inset 0 1px 0 rgba(255,255,255,.25);
+  font-family:var(--mono); font-size:11.5px; font-weight:700; color:var(--dim);
+  background:#111318; border:1.5px solid var(--line);
 }
-.bpkf-shield svg{ width:34px; height:34px }
-.bpkf-h1{ font-size:22px; font-weight:800; letter-spacing:-.5px; color:var(--t1,#fff); margin-bottom:9px; line-height:1.2 }
-.bpkf-h2{ font-size:13px; line-height:1.6; color:var(--t2,#a9a9b6); max-width:320px; margin:0 auto }
+.kf3-node svg{ width:13px; height:13px }
+.kf3-stop.done .kf3-node{ border-color:rgba(87,217,154,.5); color:var(--green) }
+.kf3-stop.now .kf3-node{ border-color:var(--paper); color:var(--paper) }
+.kf3-stop.pending .kf3-node{ border-color:rgba(217,164,65,.6); color:var(--ochre) }
+.kf3-stop.rejected .kf3-node{ border-color:rgba(240,120,138,.6); color:var(--red) }
+.kf3-stop.wait .kf3-node{ opacity:.5 }
+/* дыхание у текущей остановки: медленное, одно на экран */
+.kf3-pulse{
+  position:absolute; inset:-6px; border-radius:50%; border:1.5px solid currentColor;
+  opacity:0; animation:kf3Breathe 2.8s ease-out infinite;
+}
+@keyframes kf3Breathe{
+  0%{ transform:scale(.72); opacity:.5 }
+  70%{ transform:scale(1.18); opacity:0 }
+  100%{ opacity:0 }
+}
+.kf3-body{ flex:1; min-width:0; padding-top:3px }
+.kf3-name{ font-size:15px; font-weight:700; color:var(--ink); letter-spacing:-.012em; line-height:1.25 }
+.kf3-stop.wait .kf3-name{ color:var(--dim) }
+.kf3-meta{
+  font-family:var(--mono); font-size:11.5px; line-height:1.5; color:var(--dim);
+  margin-top:5px; font-variant-numeric:tabular-nums; letter-spacing:.005em;
+}
+.kf3-stop.done .kf3-meta{ color:rgba(87,217,154,.75) }
+.kf3-stop.pending .kf3-meta{ color:rgba(217,164,65,.85) }
+.kf3-stop.rejected .kf3-meta{ color:rgba(240,120,138,.9) }
+.kf3-stop.tap{ cursor:pointer }
+.kf3-stop.tap .kf3-name::after{
+  content:'→'; font-family:var(--mono); font-size:13px; color:var(--paper);
+  margin-left:8px; opacity:.75;
+}
+.kf3-stop.tap:active .kf3-body{ transform:translateX(2px) }
+.kf3-body{ transition:transform .14s ease }
 
-/* полоса прогресса */
-.bpkf-prog{ display:flex; align-items:center; gap:12px; margin:0 2px 14px }
-.bpkf-prog-k{ font-size:11.5px; font-weight:700; color:var(--t3,#8a8a99); white-space:nowrap; letter-spacing:.1px }
-.bpkf-prog-k b{ color:var(--t1,#fff) }
-.bpkf-bar{ flex:1; height:5px; border-radius:3px; background:rgba(255,255,255,.07); overflow:hidden }
-.bpkf-bar i{ display:block; height:100%; border-radius:3px;
-  background:linear-gradient(90deg,#2f6ce0,#5b93f5); transition:width .45s cubic-bezier(.22,1,.36,1) }
+/* Штамп — единственная вольность на экране. Появляется только там, где
+   документ действительно лежит у человека на столе. */
+.kf3-stamp{
+  position:absolute; right:2px; top:6px; transform:rotate(-7deg);
+  font-size:9.5px; font-weight:800; letter-spacing:.2em; text-transform:uppercase;
+  color:var(--ochre); opacity:.34; border:1.5px solid currentColor; border-radius:5px;
+  padding:5px 8px 4px; pointer-events:none; white-space:nowrap;
+}
+.kf3[data-state="rejected"] .kf3-stamp{ color:var(--red) }
 
-/* шаги */
-.bpkf-steps{ display:flex; flex-direction:column; gap:9px }
-.bpkf-step{
-  display:flex; align-items:center; gap:13px; padding:14px 15px; border-radius:18px;
-  background-color:var(--kf-card); border:1px solid var(--kf-line);
-  -webkit-tap-highlight-color:transparent; transition:transform .12s, border-color .2s;
+/* ── пояснение: разворачивает только текущее состояние ── */
+.kf3-note{
+  border-left:2px solid var(--line); padding:2px 0 2px 14px; margin:6px 0 0;
+  font-size:12.5px; line-height:1.62; color:var(--dim);
 }
-.bpkf-step.now{
-  border-color:rgba(91,147,245,.42);
-  background-image:linear-gradient(158deg,rgba(47,108,224,.20) 0%,rgba(47,108,224,.05) 70%);
-  cursor:pointer;
-}
-.bpkf-step.done{ border-color:rgba(61,220,132,.20); background-color:rgba(61,220,132,.045) }
-.bpkf-step.pending{ border-color:rgba(255,190,60,.26); background-color:rgba(255,190,60,.05) }
-.bpkf-step.rejected{ border-color:rgba(240,71,94,.38); background-color:rgba(240,71,94,.06); cursor:pointer }
-.bpkf-step.wait{ opacity:.42 }
-.bpkf-step.now:active,.bpkf-step.rejected:active{ transform:scale(.99) }
-.bpkf-num{
-  width:36px; height:36px; border-radius:13px; flex-shrink:0;
-  display:flex; align-items:center; justify-content:center;
-  font-size:14.5px; font-weight:800; color:var(--t2,#a9a9b6); background:rgba(255,255,255,.06);
-}
-.bpkf-step.now .bpkf-num{
-  background:linear-gradient(158deg,#3b7bef,#1b49a8); color:#fff;
-  box-shadow:0 7px 18px rgba(47,108,224,.5);
-}
-.bpkf-step.done .bpkf-num{ background:rgba(61,220,132,.17); color:#5fe0a0 }
-.bpkf-step.pending .bpkf-num{ background:rgba(255,190,60,.16); color:#ffc94d }
-.bpkf-step.rejected .bpkf-num{ background:rgba(240,71,94,.16); color:#ff8fa0 }
-.bpkf-num svg{ width:17px; height:17px }
-.bpkf-info{ flex:1; min-width:0 }
-.bpkf-name{ font-size:14.5px; font-weight:700; color:var(--t1,#fff); line-height:1.25; letter-spacing:-.1px }
-.bpkf-sub{ font-size:11.5px; color:var(--t2,#a9a9b6); line-height:1.45; margin-top:3px }
-.bpkf-step.done .bpkf-sub{ color:#7fd9a8 }
-.bpkf-step.pending .bpkf-sub{ color:#e8c274 }
-.bpkf-step.rejected .bpkf-sub{ color:#ff9aa8 }
-.bpkf-chev{ color:var(--t3,#8a8a99); display:flex; flex-shrink:0 }
-.bpkf-chev svg{ width:17px; height:17px }
+.kf3-note b{ display:block; color:var(--ink); font-weight:700; margin-bottom:4px; font-size:13px }
+.kf3[data-state="pending"] .kf3-note{ border-left-color:rgba(217,164,65,.5) }
+.kf3[data-state="rejected"] .kf3-note{ border-left-color:rgba(240,120,138,.55) }
 
-/* пояснение под шагами */
-.bpkf-note{ display:flex; gap:12px; align-items:flex-start; margin-top:13px; padding:13px 14px; border-radius:16px; font-size:12px; line-height:1.55 }
-.bpkf-note.pending{ background:rgba(255,190,60,.07); border:1px solid rgba(255,190,60,.20); color:#e3c489 }
-.bpkf-note.rejected{ background:rgba(240,71,94,.07); border:1px solid rgba(240,71,94,.22); color:#ffb3bd }
-.bpkf-note b{ display:block; color:var(--t1,#fff); font-weight:800; margin-bottom:3px; font-size:13px }
-.bpkf-note svg{ width:18px; height:18px; flex-shrink:0; margin-top:1px }
-
-/* действия */
-.bpkf-go{
-  width:100%; height:54px; margin-top:18px; border:none; border-radius:17px;
-  background:linear-gradient(135deg,#3b7bef,#1b49a8); color:#fff;
-  font-family:inherit; font-size:15.5px; font-weight:800; cursor:pointer;
-  box-shadow:0 12px 30px rgba(27,73,168,.42), inset 0 1px 0 rgba(255,255,255,.2);
+/* ── действия ── */
+.kf3-go{
+  width:100%; height:54px; margin-top:26px; border:none; border-radius:15px;
+  background:var(--blue); color:#fff; font-family:inherit;
+  font-size:15px; font-weight:700; letter-spacing:-.01em; cursor:pointer;
   display:flex; align-items:center; justify-content:center; gap:9px;
-  -webkit-tap-highlight-color:transparent; transition:transform .12s, filter .2s;
+  -webkit-tap-highlight-color:transparent; transition:transform .14s ease, background .2s;
 }
-.bpkf-go:active{ transform:scale(.985); filter:brightness(1.06) }
-.bpkf-go svg{ width:17px; height:17px }
-.bpkf-go.ghost{
-  background:var(--kf-card); border:1px solid var(--kf-line);
-  box-shadow:none; color:var(--t2,#a9a9b6); cursor:default;
+.kf3-go:active{ transform:scale(.985) }
+.kf3-go svg{ width:16px; height:16px }
+.kf3-go.quiet{                 /* ждём оператора — кнопка не кричит */
+  background:transparent; border:1px solid var(--line); color:var(--ink);
 }
-.bpkf-go.ghost:active{ transform:none; filter:none }
-.bpkf-go.busy{ opacity:.6; pointer-events:none }
-.bpkf-link{
-  display:block; width:100%; margin-top:10px; padding:12px; border:none; background:none;
-  color:var(--acc2,#5b93f5); font-family:inherit; font-size:13px; font-weight:700; cursor:pointer;
+.kf3-go.busy{ opacity:.55; pointer-events:none }
+.kf3-link{
+  display:block; width:100%; margin-top:12px; padding:11px; border:none; background:none;
+  color:var(--paper); font-family:inherit; font-size:12.5px; font-weight:600; cursor:pointer;
+  letter-spacing:-.005em;
 }
-.bpkf-link svg{ width:14px; height:14px; vertical-align:-2px; margin-right:3px }
-.bpkf-hint{ margin-top:12px; font-size:11.5px; line-height:1.55; color:var(--t3,#8a8a99); text-align:center; padding:0 10px }
-.bpkf-safe{ display:flex; align-items:flex-start; justify-content:center; gap:8px; margin-top:18px;
-  font-size:11px; color:var(--t3,#8a8a99); text-align:left; line-height:1.5; padding:0 4px }
-.bpkf-safe svg{ width:13px; height:13px; flex-shrink:0; margin-top:2px }
+.kf3-link svg{ display:inline-block; width:13px; height:13px; vertical-align:-2px; margin-right:6px }
+.kf3-hint{ margin-top:14px; font-size:11.5px; line-height:1.6; color:var(--dim); text-align:center }
+.kf3-foot{
+  display:flex; gap:9px; align-items:flex-start; margin:24px 0 0;
+  font-size:11px; line-height:1.6; color:#6f7480;
+}
+.kf3-foot svg{ width:13px; height:13px; flex-shrink:0; margin-top:2px }
+
+/* ── въезд: остановки появляются одна за другой ──
+   fill-mode только forwards. С both элемент до старта показывает кадр
+   «прозрачно», а анимация в скрытой панели не стартует вовсе — третья
+   остановка так и оставалась невидимой (эта ловушка в проекте не первая). */
+.kf3-stop{ animation:kf3Rise .42s cubic-bezier(.22,1,.36,1) forwards }
+.kf3-stop:nth-child(2){ animation-delay:.06s }
+.kf3-stop:nth-child(3){ animation-delay:.12s }
+@keyframes kf3Rise{ from{ opacity:0; transform:translateY(7px) } to{ opacity:1; transform:none } }
+@media (prefers-reduced-motion:reduce){
+  .kf3-stop{ animation:none }
+  .kf3-pulse{ animation:none; opacity:.28; transform:scale(1) }
+}
 </style>
 <script id="bp-kycfirst">
 (function(){
@@ -76186,73 +76251,126 @@ function next(){
 }
 function edit(){ if(canEdit()) call('bpKycIdent'); }
 
-function step(n, cls, title, sub, tap){
-  var num = cls === 'done' ? I.tick : cls === 'pending' ? I.clock : cls === 'rejected' ? I.alert : String(n);
-  var right = (cls === 'now' || cls === 'rejected') ? '<span class="bpkf-chev">' + I.chev + '</span>' : '';
-  return '<div class="bpkf-step ' + cls + '"' + (tap ? ' data-tap="1" role="button" tabindex="0"' : '') + '>' +
-    '<div class="bpkf-num">' + num + '</div>' +
-    '<div class="bpkf-info"><div class="bpkf-name">' + title + '</div><div class="bpkf-sub">' + sub + '</div></div>' +
-    right + '</div>';
+/* «40 минут назад» вместо отметки времени: человеку важно, сколько он
+   уже ждёт, а не когда именно нажал кнопку. */
+function hourWord(n){ var m = n % 10, h = n % 100; return (h >= 11 && h <= 14) ? 'часов' : m === 1 ? 'час' : (m >= 2 && m <= 4) ? 'часа' : 'часов'; }
+function dayWord(n){ var m = n % 10, h = n % 100; return (h >= 11 && h <= 14) ? 'дней' : m === 1 ? 'день' : (m >= 2 && m <= 4) ? 'дня' : 'дней'; }
+function sinceSent(){
+  var at = Number(idn().at) || 0;
+  if(!at) return '';
+  var m = Math.floor((Date.now() - at) / 60000);
+  if(m < 1) return 'только что';
+  if(m < 60) return m + ' ' + minWord(m) + ' назад';
+  var h = Math.floor(m / 60);
+  if(h < 24) return h + ' ' + hourWord(h) + ' назад';
+  var d = Math.floor(h / 24);
+  return d === 1 ? 'вчера' : d + ' ' + dayWord(d) + ' назад';
+}
+
+/* Остановка маршрута. Линию между остановками рисует CSS: она показывает,
+   что шаги идут подряд и перепрыгнуть через один нельзя. */
+function stop(n, cls, name, meta, tap, stamp){
+  var inner = cls === 'done' ? I.tick
+            : cls === 'pending' ? I.clock
+            : cls === 'rejected' ? I.alert
+            : String(n);
+  var pulse = (cls === 'now' || cls === 'pending') ? '<span class="kf3-pulse"></span>' : '';
+  return '<li class="kf3-stop ' + cls + (tap ? ' tap' : '') + '"'
+    + (tap ? ' data-tap="1" role="button" tabindex="0"' : '') + '>'
+    + '<span class="kf3-node">' + pulse + inner + '</span>'
+    + '<div class="kf3-body"><div class="kf3-name">' + name + '</div>'
+    + (meta ? '<div class="kf3-meta">' + meta + '</div>' : '') + '</div>'
+    + (stamp ? '<span class="kf3-stamp">' + stamp + '</span>' : '')
+    + '</li>';
 }
 
 function paint(box){
   var p = phoneOk(), st = idSt(), sent = idSent(), ce = canEdit();
   var doneN = (p ? 1 : 0) + (st === 'verified' ? 1 : 0);
-  var cur = !p ? 1 : 2;
+  var cur = Math.min(3, doneN + 1);
   var left = mins(editLeftMs());
-
-  var s1 = p ? step(1, 'done', 'Телефон', 'Подтверждён · ' + esc(phoneMask()))
-             : step(1, 'now', 'Телефон', 'Пришлём код в SMS — займёт минуту', true);
-  var s2;
-  if(!p)                       s2 = step(2, 'wait', 'Паспорт и селфи', 'После телефона');
-  else if(st === 'verified')   s2 = step(2, 'done', 'Паспорт и селфи', 'Личность подтверждена');
-  else if(st === 'pending' && sent)  s2 = step(2, 'pending', 'Паспорт и селфи', 'На проверке у оператора' + (ce ? ' · изменить можно ещё ' + left + ' ' + minWord(left) : ''));
-  else if(st === 'pending')    s2 = step(2, 'now', 'Паспорт и селфи', 'Анкета и фото сохранены на телефоне — нажмите, чтобы отправить', true);
-  else if(st === 'rejected')   s2 = step(2, 'rejected', 'Паспорт и селфи', 'Отклонено' + (idNote() ? ': ' + esc(idNote()) : '') + ' — отправьте заново', true);
-  else                         s2 = step(2, 'now', 'Паспорт и селфи', 'Фото разворота и селфи с паспортом в руках', true);
-  var s3 = step(3, 'wait', 'Реквизиты и вывод', 'Откроется сразу после проверки');
-
-  var note = '';
-  if(p && st === 'pending' && sent){
-    note = '<div class="bpkf-note pending">' + I.clock + '<div><b>Документы на проверке</b>Оператор сверяет фото с анкетой — обычно до 24 часов. Статус обновится сам, ничего делать не нужно.</div></div>';
-  } else if(p && st === 'pending'){
-    note = '<div class="bpkf-note pending">' + I.alert + '<div><b>Документы ещё не ушли</b>Связь с сервером прервалась. Анкета и оба фото сохранены на этом телефоне — нажмите «Отправить», всё уже заполнено.</div></div>';
-  } else if(p && st === 'rejected'){
-    note = '<div class="bpkf-note rejected">' + I.alert + '<div><b>Проверка не пройдена</b>' + (idNote() ? esc(idNote()) + '. ' : '') + 'Снимите документы ещё раз — чётко, без бликов, все углы в кадре.</div></div>';
-  }
 
   /* Есть ли касса. Открытая с диска копия или статический хостинг
      сервером не подкреплены — там вывода нет вовсе. */
   var kassa = true;
   try{ kassa = !!(window.bpSrv && window.bpSrv.configured()); }catch(e){ kassa = true; }
+
+  /* Состояние экрана: от него заголовок, цвет надзаголовка и кнопка. */
+  var state = !p ? 'phone'
+            : st === 'verified' ? 'ready'
+            : st === 'rejected' ? 'rejected'
+            : (st === 'pending' && sent) ? 'pending'
+            : 'docs';
+
+  /* Заголовок называет положение дел, а не требование к человеку. */
+  var H = {
+    phone:    ['Начнём', 'с телефона'],
+    docs:     ['Остались', 'документы'],
+    pending:  ['Документы', 'у оператора'],
+    rejected: ['Оператор', 'вернул документы'],
+    ready:    ['Личность', 'подтверждена']
+  }[state];
+  var LEDE = {
+    phone: 'Код придёт в SMS. Номер нужен, чтобы деньги не ушли на чужой.',
+    docs: 'Разворот паспорта и селфи с ним в руках. Смотрит живой человек, не робот.',
+    pending: 'Оператор сверяет фото с анкетой. Обычно <b>до 24 часов</b> — статус обновится сам, приходить сюда не нужно.',
+    rejected: (idNote() ? esc(idNote()) + '. ' : '') + 'Снимите документы заново: чётко, без бликов, все углы в кадре.',
+    ready: 'Осталось указать, куда отправлять деньги.'
+  }[state];
+
+  var s1 = p
+    ? stop(1, 'done', 'Телефон', esc(phoneMask()))
+    : stop(1, 'now', 'Телефон', 'код в SMS · минута', true);
+
+  var s2;
+  if(!p)                            s2 = stop(2, 'wait', 'Паспорт и селфи', 'после телефона');
+  else if(st === 'verified')        s2 = stop(2, 'done', 'Паспорт и селфи', 'подтверждено оператором');
+  else if(st === 'pending' && sent) s2 = stop(2, 'pending', 'Паспорт и селфи', 'отправлено ' + sinceSent(), false, 'на проверке');
+  else if(st === 'pending')         s2 = stop(2, 'now', 'Паспорт и селфи', 'сохранено на телефоне · не отправлено', true);
+  else if(st === 'rejected')        s2 = stop(2, 'rejected', 'Паспорт и селфи', 'вернули на доработку', true, 'вернули');
+  else                              s2 = stop(2, 'now', 'Паспорт и селфи', 'разворот и селфи с паспортом', true);
+
+  var s3 = st === 'verified'
+    ? stop(3, 'now', 'Реквизиты и вывод', 'карта или номер для СБП', true)
+    : stop(3, 'wait', 'Реквизиты и вывод', 'откроется после проверки');
+
+  var note = '';
   if(!kassa){
-    note = '<div class="bpkf-note rejected">' + I.alert + '<div><b>Вывод здесь недоступен</b>'
-      + 'Эта копия приложения работает без кассы: документы отправлять некуда, и деньги она не переводит. '
-      + 'Откройте BloggerPay по адресу сервиса или через бота в Телеграме — там вывод работает.</div></div>';
+    note = '<div class="kf3-note"><b>Вывод здесь недоступен</b>Эта копия приложения работает без кассы: '
+         + 'документы отправлять некуда. Откройте BloggerPay по адресу сервиса или через бота в Телеграме.</div>';
   }
 
   var cta;
-  if(!kassa) cta = '<div class="bpkf-hint">Проверка личности и вывод работают только на боевом адресе сервиса.</div>';
-  else if(!p) cta = '<button type="button" class="bpkf-go" data-go="1">Подтвердить телефон' + I.ar + '</button>';
-  else if(st === 'pending' && sent){
-    cta = '<button type="button" class="bpkf-go" data-refresh="1">' + I.clock + 'Проверить статус</button>'
-        + (ce ? '<button type="button" class="bpkf-link" data-edit="1">' + I.pen + ' Изменить данные · ещё ' + left + ' ' + minWord(left) + '</button>'
-              : '<div class="bpkf-hint">Изменить анкету можно было в течение часа после отправки. Дальше — только решение оператора.</div>');
+  if(!kassa){
+    cta = '<div class="kf3-hint">Проверка личности и вывод работают только на боевом адресе сервиса.</div>';
+  } else if(!p){
+    cta = '<button type="button" class="kf3-go" data-go="1">Подтвердить телефон' + I.ar + '</button>';
+  } else if(st === 'pending' && sent){
+    cta = '<button type="button" class="kf3-go quiet" data-refresh="1">' + I.clock + 'Проверить статус</button>'
+        + (ce
+            ? '<button type="button" class="kf3-link" data-edit="1">' + I.pen + 'Изменить данные · ещё ' + left + ' ' + minWord(left) + '</button>'
+            : '<div class="kf3-hint">Изменить анкету можно было в течение часа после отправки. Дальше решает оператор.</div>');
+  } else if(st === 'rejected'){
+    cta = '<button type="button" class="kf3-go" data-go="1">Отправить документы заново' + I.ar + '</button>';
+  } else if(st === 'pending'){
+    cta = '<button type="button" class="kf3-go" data-go="1">Отправить документы' + I.ar + '</button>';
+  } else {
+    cta = '<button type="button" class="kf3-go" data-go="1">Загрузить документы' + I.ar + '</button>';
   }
-  else if(st === 'rejected') cta = '<button type="button" class="bpkf-go" data-go="1">Отправить документы заново' + I.ar + '</button>';
-  else if(st === 'pending') cta = '<button type="button" class="bpkf-go" data-go="1">Отправить документы' + I.ar + '</button>';
-  else cta = '<button type="button" class="bpkf-go" data-go="1">Загрузить документы' + I.ar + '</button>';
 
   paintGuard(box);
   box.innerHTML =
-    '<div class="bpkf">' +
-      '<div class="bpkf-hero"><div class="bpkf-shield">' + I.shield + '</div>' +
-        '<div class="bpkf-h1">Подтвердите личность</div>' +
-        '<div class="bpkf-h2">Один раз — и вывод открыт. Так деньги не уйдут по чужому паспорту, а мы выполняем требования закона.</div></div>' +
-      '<div class="bpkf-prog"><div class="bpkf-prog-k">Шаг <b>' + cur + '</b> из 3</div><div class="bpkf-bar"><i style="width:' + Math.round(doneN / 3 * 100) + '%"></i></div></div>' +
-      '<div class="bpkf-steps">' + s1 + s2 + s3 + '</div>' +
+    '<div class="kf3" data-state="' + state + '">' +
+      '<div class="kf3-top">' +
+        '<span class="kf3-eyebrow">Открываем вывод</span>' +
+        '<span class="kf3-count"><b>' + cur + '</b>/3</span>' +
+      '</div>' +
+      '<h2 class="kf3-h1">' + H[0] + '<em>' + H[1] + '</em></h2>' +
+      '<p class="kf3-lede">' + LEDE + '</p>' +
+      '<ol class="kf3-route">' + s1 + s2 + s3 + '</ol>' +
       note + cta +
-      '<div class="bpkf-safe">' + I.lock + 'Фото и данные видит только оператор выплат. Третьим лицам не передаём.</div>' +
+      '<p class="kf3-foot">' + I.lock + '<span>Фото и данные видит только оператор выплат — третьим лицам не передаём. '
+        + 'Проверка личности обязательна по закону для денежных расчётов.</span></p>' +
     '</div>';
 }
 
@@ -76261,7 +76379,7 @@ function paint(box){
 function paintGuard(box){
   try{
     setTimeout(function(){
-      box.querySelectorAll('.bpkf-num, .bpkf-step, .bpkf-note, .bpkf-go').forEach(function(el){
+      box.querySelectorAll('.kf3-node, .kf3-stop, .kf3-note, .kf3-go').forEach(function(el){
         el.__bpGreenDone = 1;
         if(el.style && el.style.backgroundColor) el.style.removeProperty('background-color');
       });
