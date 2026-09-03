@@ -2422,8 +2422,10 @@ const routes = {
       return { status: 429, body: { error: 'Слишком много попыток — подождите десять минут' } };
     }
     const key = String(body.key || '');
-    const okKey = !!ADMIN_KEY && key.length === ADMIN_KEY.length
-      && crypto.timingSafeEqual(Buffer.from(key), Buffer.from(ADMIN_KEY));
+    /* Сравниваем байты, а не символы: ключ из двухбайтовых символов
+       нужной длины ронял timingSafeEqual (та же ловушка, что в isAdmin). */
+    const kb = Buffer.from(key, 'utf8'), ab = Buffer.from(ADMIN_KEY, 'utf8');
+    const okKey = !!ADMIN_KEY && kb.length === ab.length && crypto.timingSafeEqual(kb, ab);
     if (!okKey) {
       adminMissed(req);
       return { status: 403, body: { error: 'Ключ владельца не подошёл' } };
@@ -2777,6 +2779,33 @@ function boot() {
      Без ключа, но с MAIL_DEBUG=1 сервер раздаёт код прямо в ответе
      любому, кто знает чей-нибудь адрес: этого достаточно, чтобы сменить
      чужой пароль одним запросом. */
+  /* Файлы, которые площадки читают по прямой ссылке. Пропажа любого из
+     них ломает уже выданное подтверждение — поэтому проверяем всегда. */
+  try {
+    const need = [
+      ['/terms.html', 'условия использования'],
+      ['/privacy.html', 'политика конфиденциальности'],
+    ];
+    const missing = [];
+    for (const [route, what] of need) {
+      const hit = staticFile(route);
+      if (!hit || !fs.existsSync(hit.file)) missing.push(what + ' (' + route + ')');
+    }
+    /* Файл-подпись площадки: имя выдаёт сама площадка, поэтому ищем любой. */
+    const signs = fs.readdirSync(SITE_DIR).filter((n) => /^tiktok[A-Za-z0-9]{8,64}\.txt$/.test(n));
+    if (!signs.length) missing.push('файл-подпись TikTok (tiktok<буквы-цифры>.txt в корне проекта)');
+    if (missing.length) {
+      console.error('[BloggerPay] ПРОПАЛИ ПУБЛИЧНЫЕ ФАЙЛЫ: ' + missing.join(', ')
+        + '. Площадки читают их по прямой ссылке — без них подтверждение сайта'
+        + ' и проверка приложения отваливаются.');
+      tgAlert('files:missing:' + missing.length,
+        '⚠️ На сервере нет файлов, которые читают площадки:\n\n' + missing.join('\n')
+        + '\n\nБез них TikTok отзовёт подтверждение сайта.', 'server');
+    } else {
+      console.log('[BloggerPay] публичные файлы на месте: условия, политика, подпись ' + signs.join(', '));
+    }
+  } catch (e) { /* проверка не обязана удаться */ }
+
   /* Площадки: ключи и связь. Обмен кода на данные аккаунта делает сам
      сервер, поэтому его доступ к площадке важнее, чем доступ телефона.
      Проверяем тем же кодом, что и кнопка в пульте, и пишем в журнал —

@@ -76054,11 +76054,11 @@ body.bp-kf-on #bw2WdCta{ display:none!important }
   --ink:#f2f4f8;              /* заголовки */
   --dim:#8b8f9c;              /* пояснения */
   --line:rgba(255,255,255,.085);
-  --paper:#e8e1d1;            /* слоновая кость — цвет документа */
-  --ochre:#d9a441;            /* ожидание: тёплый охристый, как печать */
-  --green:#57d99a;
-  --blue:#4c8bf5;
-  --red:#f0788a;
+  --paper:#8fb4f7;            /* светлый синий приложения — вторая строка заголовка */
+  --ochre:#f6a823;            /* ожидание: янтарь, как во всём приложении */
+  --green:#3ddc84;
+  --blue:#2f6ce0;
+  --red:#f0475e;
   --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
   padding:6px 0 34px;
 }
@@ -76140,8 +76140,8 @@ body.bp-kf-on #bw2WdCta{ display:none!important }
 .kf3-stop.rejected .kf3-meta{ color:rgba(240,120,138,.9) }
 .kf3-stop.tap{ cursor:pointer }
 .kf3-stop.tap .kf3-name::after{
-  content:'→'; font-family:var(--mono); font-size:13px; color:var(--paper);
-  margin-left:8px; opacity:.75;
+  content:'→'; font-family:var(--mono); font-size:13px; color:#5b93f5;
+  margin-left:8px; opacity:.85;
 }
 .kf3-stop.tap:active .kf3-body{ transform:translateX(2px) }
 .kf3-body{ transition:transform .14s ease }
@@ -76151,7 +76151,7 @@ body.bp-kf-on #bw2WdCta{ display:none!important }
 .kf3-stamp{
   position:absolute; right:2px; top:6px; transform:rotate(-7deg);
   font-size:9.5px; font-weight:800; letter-spacing:.2em; text-transform:uppercase;
-  color:var(--ochre); opacity:.34; border:1.5px solid currentColor; border-radius:5px;
+  color:var(--ochre); opacity:.42; border:1.5px solid currentColor; border-radius:5px;
   padding:5px 8px 4px; pointer-events:none; white-space:nowrap;
 }
 .kf3[data-state="rejected"] .kf3-stamp{ color:var(--red) }
@@ -76168,7 +76168,7 @@ body.bp-kf-on #bw2WdCta{ display:none!important }
 /* ── действия ── */
 .kf3-go{
   width:100%; height:54px; margin-top:26px; border:none; border-radius:15px;
-  background:var(--blue); color:#fff; font-family:inherit;
+  background:linear-gradient(135deg,#3b7bef,#1b49a8); color:#fff; font-family:inherit;
   font-size:15px; font-weight:700; letter-spacing:-.01em; cursor:pointer;
   display:flex; align-items:center; justify-content:center; gap:9px;
   -webkit-tap-highlight-color:transparent; transition:transform .14s ease, background .2s;
@@ -76181,7 +76181,7 @@ body.bp-kf-on #bw2WdCta{ display:none!important }
 .kf3-go.busy{ opacity:.55; pointer-events:none }
 .kf3-link{
   display:block; width:100%; margin-top:12px; padding:11px; border:none; background:none;
-  color:var(--paper); font-family:inherit; font-size:12.5px; font-weight:600; cursor:pointer;
+  color:#5b93f5; font-family:inherit; font-size:12.5px; font-weight:600; cursor:pointer;
   letter-spacing:-.005em;
 }
 .kf3-link svg{ display:inline-block; width:13px; height:13px; vertical-align:-2px; margin-right:6px }
@@ -78178,9 +78178,8 @@ html .pay2-plastic::after{
   content:''; position:absolute; right:-40px; top:-70px; width:180px; height:180px;
   border-radius:50%; background:radial-gradient(circle,rgba(255,255,255,.09),transparent 68%); pointer-events:none;
 }
-html .pay2-plastic.sbp{ background:linear-gradient(135deg,#2a1e4d,#14111f 70%) }
-html .pay2-plastic.mir{ background:linear-gradient(135deg,#123a2c,#0f1a17 70%) }
-html .pay2-plastic.mc{  background:linear-gradient(135deg,#3d2118,#16110f 70%) }
+/* Подложка одна для всех систем: цвет карты не должен спорить с
+   приложением. Отличает их значок платёжной системы, а не фон. */
 html .pay2-p-top{ display:flex; align-items:center; justify-content:space-between; gap:10px; position:relative }
 html .pay2-p-logo{ font-size:11px; font-weight:800; letter-spacing:.4px; color:rgba(255,255,255,.72) }
 html .pay2-p-mark{ display:flex; align-items:center; height:20px }
@@ -79036,6 +79035,169 @@ function soon(){
 document.addEventListener('click', soon, true);
 setInterval(function(){ if(!document.hidden) soon(); }, 2000);
 setTimeout(soon, 1500);
+})();
+</script>
+
+<style id="bp-adm-entry-css">
+/* ══ Вход в панель владельца ═════════════════════════════════════════
+   Панель есть (bpAdminPanel), но открыть её из интерфейса было нечем:
+   кнопку из профиля убрали, а плавающая ⚙ включается только из самой
+   панели — замкнутый круг. Теперь в боковом меню появляется пункт
+   «Панель владельца», и только у того, кому права подтвердил сервер
+   (GET /api/admin/whoami через bpIsAdminNow). Рядом — ссылка на пульт
+   выплат: это отдельная страница, ключ оператора спрашивает она сама.
+   Откат: удалить style#bp-adm-entry-css и script#bp-adm-entry.        */
+html #bpAdmEntry,html #bpAdmCash{ display:none }
+/* пункт меню — та же строка-флекс, что и соседние */
+html #bpAdmEntry.on,html #bpAdmCash.on{ display:flex }
+html #bpAdmEntry .drw-item-ico svg{ stroke:#f6a823 }
+html #bpAdmEntry .drw-item-lbl{ color:#f6a823 }
+html #bpAdmSep{ display:none }
+html #bpAdmSep.on{ display:block }
+</style>
+<script id="bp-adm-entry">
+(function(){
+'use strict';
+if(window.__bpAdmEntry) return; window.__bpAdmEntry = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e); }catch(_){} }
+var GEAR = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
+var CASH = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 10v4M18 10v4"/></svg>';
+var ARR = '<div class="drw-item-arr"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>';
+
+function item(id, ico, label){
+  var d = document.createElement('div');
+  d.className = 'drw-item'; d.id = id;
+  d.setAttribute('role', 'button'); d.setAttribute('tabindex', '0');
+  d.innerHTML = '<div class="drw-item-ico">' + ico + '</div>'
+    + '<span class="drw-item-lbl">' + label + '</span>' + ARR;
+  return d;
+}
+
+function mount(){
+  try{
+    /* пункты живут в .drw-nav — туда и добавляем, до подвала с выходом */
+    var list = document.querySelector('#drw .drw-nav');
+    if(!list || document.getElementById('bpAdmEntry')) return;
+    var sep = document.createElement('div');
+    sep.className = 'drw-sep'; sep.id = 'bpAdmSep';
+
+    var panel = item('bpAdmEntry', GEAR, 'Панель владельца');
+    panel.addEventListener('click', function(){
+      try{ if(typeof closeDrawer === 'function') closeDrawer(); }catch(e){}
+      setTimeout(function(){ try{ if(window.bpAdminPanel) window.bpAdminPanel(); }catch(e){ E(e); } }, 140);
+    });
+
+    var cash = item('bpAdmCash', CASH, 'Пульт выплат');
+    cash.addEventListener('click', function(){
+      try{ if(typeof closeDrawer === 'function') closeDrawer(); }catch(e){}
+      /* Отдельная страница вне мини-аппа: она сама спросит ключ оператора. */
+      var url = '/operator';
+      try{
+        var tg = window.Telegram && window.Telegram.WebApp;
+        if(tg && tg.initData && typeof tg.openLink === 'function'){ tg.openLink(location.origin + url); return; }
+      }catch(e){}
+      try{ window.open(url, '_blank'); }catch(e){ location.href = url; }
+    });
+
+    list.appendChild(sep); list.appendChild(panel); list.appendChild(cash);
+    paint();
+  }catch(e){ E(e); }
+}
+
+function paint(){
+  try{
+    var on = false;
+    try{ on = !!(window.bpIsAdminNow && window.bpIsAdminNow()); }catch(e){}
+    ['bpAdmSep', 'bpAdmEntry', 'bpAdmCash'].forEach(function(id){
+      var el = document.getElementById(id);
+      if(el) el.classList.toggle('on', on);
+    });
+    try{ paintClaim(); }catch(e){}
+  }catch(e){ E(e); }
+}
+
+/* Права спрашиваем при открытии меню: там пункт и должен появиться. */
+var origOpen = window.openDrawer;
+if(typeof origOpen === 'function' && !origOpen.__bpAdmEntry){
+  window.openDrawer = function(){
+    var r = origOpen.apply(this, arguments);
+    mount();
+    try{
+      if(window.bpAskAdmin) window.bpAskAdmin(false).then(paint);
+      else paint();
+    }catch(e){ paint(); }
+    return r;
+  };
+  window.openDrawer.__bpAdmEntry = true;
+}
+
+/* ── Разовое получение прав владельца ──
+   Пункт в настройках, виден пока права не получены и только когда есть
+   связь с кассой. Ключ оператора спрашиваем один раз: он лежит в
+   настройках сервера, знает его владелец. */
+function claimRow(){
+  try{
+    if(document.getElementById('bpAdmClaim')) return;
+    var card = document.querySelector('#pg-settings .st2-card');
+    if(!card) return;
+    var row = document.createElement('div');
+    row.className = 'st2-row'; row.id = 'bpAdmClaim';
+    row.setAttribute('role', 'button'); row.setAttribute('tabindex', '0');
+    row.style.display = 'none';
+    row.innerHTML = '<span class="st2-ico gold"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round">'
+      + '<path d="M12 2l7 4v6c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg></span>'
+      + '<span class="st2-t"><span class="st2-n">Права владельца</span>'
+      + '<span class="st2-s">Открыть панель управления платформой</span></span>'
+      + '<span class="st2-arr"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span>';
+    row.addEventListener('click', claim);
+    card.appendChild(row);
+    paintClaim();
+  }catch(e){ E(e); }
+}
+function paintClaim(){
+  try{
+    var row = document.getElementById('bpAdmClaim'); if(!row) return;
+    var s = window.bpSrv;
+    var live = !!(s && s.configured() && s.token());
+    var adm = false;
+    try{ adm = !!(window.bpIsAdminNow && window.bpIsAdminNow()); }catch(e){}
+    row.style.display = (live && !adm) ? '' : 'none';
+  }catch(e){}
+}
+function claim(){
+  var s = window.bpSrv;
+  if(!s || !s.configured() || !s.token()){
+    try{ showAuthToast('Права проверяются на сервере — сначала войдите', 'err'); }catch(e){}
+    return;
+  }
+  var ask = (typeof window.bpPrompt === 'function')
+    ? window.bpPrompt({ title:'Ключ владельца', sub:'Он задан в настройках сервера (ADMIN_KEY). Вводится один раз — дальше право живёт на вашем аккаунте.', placeholder:'Ключ оператора', okText:'Подтвердить', required:true })
+    : Promise.resolve(window.prompt('Ключ владельца'));
+  Promise.resolve(ask).then(function(key){
+    key = String(key || '').trim();
+    if(!key) return;
+    return s.raw('POST', '/api/admin/claim', { key: key }).then(function(){
+      try{ showAuthToast('Права владельца получены', 'ok'); }catch(e){}
+      if(window.bpAskAdmin) window.bpAskAdmin(true).then(function(){ paint(); paintClaim(); });
+    }).catch(function(err){
+      try{ showAuthToast(String((err && err.message) || 'Ключ не подошёл'), 'err'); }catch(e){}
+    });
+  });
+}
+
+var origGoTo = window.goTo;
+if(typeof origGoTo === 'function' && !origGoTo.__bpAdmClaim){
+  window.goTo = function(page){
+    var r = origGoTo.apply(this, arguments);
+    if(String(page) === 'settings') setTimeout(function(){ claimRow(); paintClaim(); }, 80);
+    return r;
+  };
+  window.goTo.__bpAdmClaim = true;
+}
+
+setTimeout(function(){ mount(); paint(); claimRow(); }, 1200);
+setInterval(function(){ if(!document.hidden) paint(); }, 3000);
 })();
 </script>
 
