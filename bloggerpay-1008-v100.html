@@ -12801,7 +12801,7 @@ function cpwHandleDoc(input, num) {
   if(!input.files || !input.files[0]) return;
   const name = input.files[0].name;
   const lbl = document.getElementById('cpwDoc' + num + 'Label');
-  if(lbl) { lbl.innerHTML = '<span style="color:#3ddc84"></span>' + name; }
+  if(lbl) { lbl.innerHTML = '<span style="color:#3ddc84"></span>' + bpEsc(name); }
   // Re-validate
   cpwValidateStep(5);
 }
@@ -16080,7 +16080,9 @@ function updateProfileUI() {
   const aboutEl = document.getElementById('profAbout');
   if(aboutEl) {
     const aboutText = (currentUser && currentUser.about) || stats.about || 'Расскажите о себе и своём контенте';
-    aboutEl.innerHTML = aboutText.replace(/\n/g,'<br>') + '<span class="ab-hint"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>Нажмите чтобы изменить</span>';
+    /* Текст — чужой ввод: сначала экранируем, потом переносы. */
+    const aboutSafe = (typeof bpEsc === 'function' ? bpEsc(String(aboutText)) : String(aboutText).replace(/[<>&"]/g, function(c){ return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]; }));
+    aboutEl.innerHTML = aboutSafe.replace(/\n/g,'<br>') + '<span class="ab-hint"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>Нажмите чтобы изменить</span>';
   }
   setText('profAud', stats.audience || '0');
   setText('profReach', stats.reach || '0');
@@ -17700,10 +17702,10 @@ function cs3Launch() {
   const _fmtLabelsList = _getSelectedFormatLabels();
   const realFmt = _fmtLabelsList.length > 0 ? _fmtLabelsList.join(' + ') : 'Рекламный пост';
 
-  const deadlines = ['3 дня', '5 дней', '7 дней', '10 дней', '14 дней'];
-  // ══ Дедлайн из ТЗ если есть, иначе случайный ══
+  // ══ Дедлайн из ТЗ если есть, иначе единый срок по умолчанию ══
+  //    (раньше — случайный из списка: срок сделки не должен зависеть от жребия)
   const _badDates = ['Выберите дату','дд.мм.гггг','Select date',''];
-  const realDl = (dateToLbl && !_badDates.includes(dateToLbl.trim())) ? dateToLbl : deadlines[Math.floor(Math.random() * deadlines.length)];
+  const realDl = (dateToLbl && !_badDates.includes(dateToLbl.trim())) ? dateToLbl : '14 дней';
 
   triggerOrderRequest({
     brand, link, what, task, dateFromLbl, dateToLbl,
@@ -18498,7 +18500,7 @@ function renderMyCard(cardData) {
     </div>
     </div>
     <div class="blc-soc-zone">
-      <div class="blc-socs">${cardData.socsHtml || ''}</div>
+      <div class="blc-socs">${(typeof bpSafeSocs === 'function') ? bpSafeSocs(cardData.socsHtml || '') : ''}</div>
     </div>
     <div style="padding:0 12px 10px">
     <div class="blc-strip">
@@ -22450,7 +22452,7 @@ function abcRenderUrlArea(pid) {
       <!-- чип с URL + кнопки в одной строке -->
       <div class="abc-url-saved">
         <div class="abc-url-chip">
-          <span class="abc-url-chip-txt">${handle}</span>
+          <span class="abc-url-chip-txt">${bpEsc(handle)}</span>
         </div>
         <button class="abc-url-edit-btn" onclick="abcEditUrl('${pid}')">Изменить</button>
         <button class="abc-channel-peek-btn ${p.panelOpen ? 'open' : ''}" id="abc-peek-btn-${pid}" onclick="abcTogglePanel('${pid}')" title="Инфо о канале">
@@ -29944,7 +29946,7 @@ function bdsOnVideoFilePicked(input) {
   const lbl = document.getElementById('bdsVideoFileLabel');
   if(lbl) {
     const mb = (file.size/1048576);
-    lbl.innerHTML = `<span style="color:#3ddc84;font-weight:700">${_bdsPickedVideoName}</span><br><span style="font-size:10.5px;color:rgba(255,255,255,.35)">${mb.toFixed(1)} МБ · нажмите чтобы заменить</span>`;
+    lbl.innerHTML = `<span style="color:#3ddc84;font-weight:700">${bpEsc(_bdsPickedVideoName)}</span><br><span style="font-size:10.5px;color:rgba(255,255,255,.35)">${mb.toFixed(1)} МБ · нажмите чтобы заменить</span>`;
   }
   const prev = document.getElementById('bdsVideoFilePreview');
   if(prev) { prev.src = _bdsPickedVideoURL; prev.style.display = 'block'; }
@@ -31368,7 +31370,9 @@ function campLaunch(campId) {
 
   c.status = 'active';
   if (!c.createdAt) c.createdAt = new Date().toISOString();
-  if (!c.deadline)  c.deadline  = new Date(Date.now() + (Math.floor(Math.random()*25)+10)*86400000).toISOString();
+  /* Срок не указан — берём общий срок по умолчанию (14 дней), а не
+     случайный: условие сделки должно быть одинаковым у всех сторон. */
+  if (!c.deadline)  c.deadline  = new Date(Date.now() + 14*86400000).toISOString();
 
   // Стартовые метрики — нули; заполняются по реальным сделкам.
   if (!c.bloggersAssigned) {
@@ -36365,8 +36369,8 @@ function eq(a, b){
 }
 function isLive(d){
   var s = String(d.status || ''), st = String(d.step || '');
-  if(s === 'done' || s === 'cancelled' || s === 'declined') return false;
-  if(st === '6' || st === 'cancelled') return false;
+  if(s === 'done' || s === 'cancelled' || s === 'declined' || s === 'withdrawn' || s === 'expired' || s === 'refunded') return false;
+  if(st === '6' || st === 'cancelled' || st === 'withdrawn' || st === 'expired') return false;
   return true;
 }
 /* ─────────────────────────────────────────────────────────────────────
@@ -37963,7 +37967,7 @@ window.openVideoReviewModal = function(dealId){
 
     '<div class="vr-vid">' +
       '<div class="vr-stage" ' +
-        (link && link.ok ? ' onclick="window.open(\'' + link.href + '\',\'_blank\',\'noopener\')"'
+        (link && link.ok ? ' onclick="window.open(\'' + bpJs(bpUrlRaw(link.href)) + '\',\'_blank\',\'noopener\')"'
                          : 'onclick="bpNotify(\'info\',\'Видео от блогера\',\'Прямая ссылка не указана — уточните её в чате.\')"') + ' role="button" tabindex="0">' +
         '<div class="vr-play"><svg width="24" height="24" viewBox="0 0 24 24" fill="#fff" style="margin-left:3px"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>' +
         '<div class="vr-tag">Рекламное видео</div>' +
@@ -51679,6 +51683,17 @@ function tick(){
         var views = num(j.views2) || num(j.views);
         var amount = Math.round(num(window.bpCalcPayout ? window.bpCalcPayout(c, views) : j.payout));
         j.payout = amount;
+        /* С кассой платит только сессия плательщика: автоприёмку исполняет
+           вкладка владельца кампании через общий путь приёмки (сервер →
+           местная часть). Остальные вкладки ждут его решения. */
+        if(window.bpMoneyServerMode && window.bpMoneyServerMode()){
+          if(!idEq(c.ownerId, myId())) return;
+          j.payout = amount; j.autoAccepted = true; joinPut(j); changed = true;
+          window.__bpVvSkip = 1;
+          try{ if(typeof window.bpTaskDecide === 'function') window.bpTaskDecide(j.campId, j.userId, 'accepted'); }
+          catch(e){ E(e); } finally{ window.__bpVvSkip = 0; }
+          return;
+        }
         var pay = taskPay(j.campId, j.userId, amount, 'Автоприёмка: рекламодатель не ответил за ' + AUTO_ACCEPT_H + ' ч');
         if(pay.ok){
           j.status = 'accepted'; j.decidedAt = now; j.autoAccepted = true;
@@ -61766,7 +61781,9 @@ function ruleFor(c){
       if(dl && typeof parseDealDeadlineMs === 'function') dlms = parseDealDeadlineMs(dl);
     }catch(e){}
     if(dlms !== null && dlms <= 0){
-      return { id:'refund', at: since + GRACE_H * H, over:true,
+      /* Отсчёт льготных часов — от момента дедлайна, а не от начала этапа:
+         иначе просроченная на неделю сделка отменялась бы мгновенно. */
+      return { id:'refund', at: Math.max(since, Date.now() + dlms) + GRACE_H * H, over:true,
         adv:'Срок публикации вышел. Через {L} сделка отменится и деньги вернутся вам',
         blg:'Срок публикации вышел. Через {L} сделка отменится и деньги вернутся рекламодателю' };
     }
@@ -71827,10 +71844,19 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
     try{
       if(typeof currentUser !== 'undefined' && currentUser && currentUser.srvId) return currentUser.srvId;
     }catch(e){}
-    try{ return Number(localStorage.getItem('bp_srv_uid')) || null; }catch(e){ return null; }
+    /* Запасная копия подписана почтой: общий ключ на устройство отдавал
+       второй вкладке серверный id первой — и выплата адресовалась не тому. */
+    try{
+      var mail = String((typeof currentUser !== 'undefined' && currentUser && currentUser.email) || '').toLowerCase();
+      return mail ? (Number(localStorage.getItem('bpSrvUid:' + mail)) || null) : null;
+    }catch(e){ return null; }
   }
   function setMySrvId(id){
-    try{ localStorage.setItem('bp_srv_uid', String(id)); }catch(e){ E(e); }
+    try{
+      var mail = String((typeof currentUser !== 'undefined' && currentUser && currentUser.email) || '').toLowerCase();
+      if(mail) localStorage.setItem('bpSrvUid:' + mail, String(id));
+      localStorage.removeItem('bp_srv_uid');           /* общий ключ прежних версий */
+    }catch(e){ E(e); }
     try{
       if(typeof currentUser !== 'undefined' && currentUser){
         currentUser.srvId = id;
@@ -72152,7 +72178,9 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
     if(typeof orig !== 'function') return;
     window.bpTaskDecide = function(campId, uid, decision, reason){
       var self = this, args = arguments;
-      if(decision !== 'accepted' || !serverMode()) return orig.apply(self, args);
+      /* __bpDecideLocal ставит слой bp-decide-order: касса уже заплатила,
+         теперь нужна только местная половина — без второго release. */
+      if(decision !== 'accepted' || !serverMode() || window.__bpDecideLocal) return orig.apply(self, args);
 
       /* Сколько платим и кому — берём из записи об участии. */
       var amount = 0, to = null;
@@ -72255,7 +72283,7 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
       /* Свой флаг занятости, НЕ dataset.busy: wdGo первой строкой выходит
          по dataset.busy, и пропущенный клик умирал бы — сервер списал,
          а местной записи нет. */
-      if(btn.__bpBusy) return;
+      if(btn.__bpBusy){ e.preventDefault(); e.stopImmediatePropagation(); return; }   /* запрос в полёте — повтор глушим целиком */
 
       var amount = amountFromInput();
       if(amount <= 0) return;            /* пусть прежний код сам отругает */
@@ -72496,7 +72524,7 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
         return;
       }
       if(btn.dataset && btn.dataset.busy) return;
-      if(btn.__bpBusy) return;
+      if(btn.__bpBusy){ e.preventDefault(); e.stopImmediatePropagation(); return; }   /* запрос в полёте — повтор глушим целиком */
       var amount = tuAmountNow();
       if(amount < 1000) return;          /* минимум и отказ объяснит прежний код */
       try{ if(btn.dataset && ('ready' in btn.dataset) && btn.dataset.ready !== '1') return; }catch(_){}
@@ -77150,6 +77178,492 @@ if(typeof origDecide === 'function' && !origDecide.__bpPrompt){
   };
   window.bpTaskDecide.__bpPrompt = true;
 }
+})();
+</script>
+
+<script id="bp-decide-guard">
+/* ══ Один путь принятия работы и спор без системного prompt ══════════
+   По внешнему аудиту (пункты 3, 8, 9, 25, 28):
+
+   · bpDecideWork — старая кнопка «Принять/Отклонить» в списке заданий —
+     платила блогеру МЕСТНО, минуя кассу: серверные обёртки висят только
+     на bpTaskDecide. При подключённой кассе выплата на сервере не
+     проходила, а в приложении рисовалась. Теперь обе кнопки ведут в
+     bpTaskDecide — единственный путь с проверкой спора, идемпотентной
+     выплатой и серверным release.
+   · Причина отклонения и текст спора спрашивались системным prompt(),
+     который в вебвью Телеграма не открывается — кнопка не делала ничего.
+   · bpTaskDecide не проверял, что решение принимает владелец кампании:
+     в местном режиме блогер мог из консоли «принять» свою же работу.
+     Сервер это и так отклоняет (release — только плательщик), здесь
+     закрываем и местную половину.
+
+   Откат: удалить этот блок.                                          */
+(function(){
+'use strict';
+if(window.__bpDecideGuard) return; window.__bpDecideGuard = 1;
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e); }catch(_){} }
+function toast(m, k){ try{ showAuthToast(m, k || 'info'); }catch(e){} }
+function me(){ try{ return (typeof currentUser !== 'undefined' && currentUser) || null; }catch(e){ return null; } }
+function campOf(id){
+  try{ return ((typeof window._loadCamps === 'function' ? window._loadCamps() : []) || [])
+    .find(function(c){ return c && String(c.id) === String(id); }) || null; }catch(e){ return null; }
+}
+function isArb(){ try{ return typeof bpIsArbiter === 'function' && bpIsArbiter(); }catch(e){ return false; } }
+
+/* Один системный prompt подменяем на время ОДНОГО синхронного вызова:
+   прежний код читает ответ сразу, поэтому шторка спрашивает заранее,
+   а во время вызова prompt просто возвращает готовый текст. */
+function withAnswer(text, fn){
+  var op = window.prompt;
+  window.prompt = function(){ return text; };
+  try{ return fn(); } finally{ window.prompt = op; }
+}
+
+/* ── 1. Владелец решает, остальные — нет ── */
+var origDecide = window.bpTaskDecide;
+if(typeof origDecide === 'function' && !origDecide.__bpOwner){
+  window.bpTaskDecide = function(campId, uid, decision, reason){
+    try{
+      var m = me(), c = campOf(campId);
+      if(c && m && !isArb() && String(c.ownerId) !== String(m.id)){
+        toast('Решение по работе принимает владелец кампании', 'err');
+        return { ok:false, why:'не владелец' };
+      }
+    }catch(e){ E(e); }
+    return origDecide.apply(this, arguments);
+  };
+  window.bpTaskDecide.__bpOwner = true;
+}
+
+/* ── 2. Старая кнопка списка заданий → единый путь ── */
+if(typeof window.bpDecideWork === 'function'){
+  window.bpDecideWork = function(campId, userId, decision){
+    if(typeof window.bpTaskDecide !== 'function') return;
+    if(decision === 'rejected'){
+      /* причину спросит bp-prompt внутри bpTaskDecide */
+      return window.bpTaskDecide(campId, userId, 'rejected', '');
+    }
+    return window.bpTaskDecide(campId, userId, 'accepted');
+  };
+}
+
+/* ── 3. Открытие спора — своя шторка вместо prompt ── */
+var origDispute = window.bpTaskDispute;
+if(typeof origDispute === 'function' && !origDispute.__bpPrompt){
+  window.bpTaskDispute = function(campId, userId){
+    var self = this, args = arguments;
+    if(typeof window.bpPrompt !== 'function') return origDispute.apply(self, args);
+    var m = me(), c = campOf(campId);
+    var iAmAdv = !!(m && c && String(c.ownerId) === String(m.id));
+    window.bpPrompt({
+      title: 'Открыть спор',
+      sub: iAmAdv ? 'Что не так с работой? Опишите для арбитра — не короче 30 символов.'
+                  : 'Почему решение неверное? Опишите для арбитра — не короче 30 символов.',
+      multiline: true, okText: 'Передать арбитру', required: true,
+      requiredText: 'Нужно описание не короче 30 символов', maxLength: 1000
+    }).then(function(text){
+      if(text == null) return;
+      text = String(text).trim();
+      if(text.length < 30){ toast('Нужно описание не короче 30 символов', 'err'); return; }
+      try{ withAnswer(text, function(){ return origDispute.apply(self, args); }); }
+      catch(e){ E(e); }
+    });
+  };
+  window.bpTaskDispute.__bpPrompt = true;
+}
+})();
+</script>
+
+<script id="bp-urlhard">
+/* ══ Адреса и сохранённая разметка соцсетей — под замком ═════════════
+   bpUrlRaw резал javascript:/vbscript:/data:, но пропускал ту же схему с
+   управляющими символами внутри и blob:/file:. Здесь фильтр жёстче, а
+   socsHtml карточки (строка разметки, сохранённая в localStorage) перед
+   выводом чистится от обработчиков и скриптов.                       */
+(function(){
+'use strict';
+if(window.__bpUrlHard) return; window.__bpUrlHard = 1;
+var esc = function(s){ try{ return bpEsc(String(s == null ? '' : s)); }catch(e){ return String(s == null ? '' : s).replace(/[<>&"]/g, ''); } };
+window.bpUrlRaw = function(u){
+  var s = String(u == null ? '' : u).trim();
+  var probe = s.replace(/[\x00-\x20\x7f-\x9f]/g, '').toLowerCase();   /* управляющие символы и пробелы внутри схемы */
+  if(/^(javascript|vbscript|blob|file|about):/.test(probe)) return '';
+  if(/^data:/.test(probe) && !/^data:image\/(png|jpe?g|gif|webp);/.test(probe)) return '';
+  return s;
+};
+window.bpUrl = function(u){ return esc(window.bpUrlRaw(u)); };
+/* Сохранённая разметка соцсетей: убираем on*-атрибуты, <script>, javascript: */
+window.bpSafeSocs = function(html){
+  var h = String(html || '');
+  if(!h) return '';
+  h = h.replace(/<\s*script[\s\S]*?<\s*\/\s*script\s*>/gi, '')
+       .replace(/<\s*(iframe|object|embed|svg|math|link|meta|style)[\s\S]*?>/gi, '')
+       .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+       .replace(/(href|src)\s*=\s*("|')\s*(javascript|vbscript|data):[^"']*\2/gi, '$1=$2$2');
+  return h;
+};
+})();
+</script>
+
+<script id="bp-decide-order">
+/* ══ Приёмка работы с кассой: проверки → подтверждение → касса → журнал ═
+   Что было не так (аудит, пункты 3, 4, 5, 7, 19, 20). Обёртка bp-money
+   стояла СНАРУЖИ шторки подтверждения и всех местных проверок: первое
+   же нажатие «Принять» уносило деньги на сервере, потом открывалась
+   шторка, а её «Принять и выплатить» проводило ВТОРОЙ release — флаг
+   __bpVvSkip гас раньше ответа сервера, ключ операции у каждого запроса
+   был случайный, и сервер не знал ни статуса работы, ни спора.
+
+   Теперь порядок один: спор → статус → журнал → шторка подтверждения →
+   касса с детерминированным ключом «кампания+блогер+раунд» → местная
+   половина. Повтор из любой вкладки упирается в тот же ключ и не двигает
+   деньги. Откат: удалить этот блок и «|| window.__bpDecideLocal» в
+   bp-money.                                                            */
+(function(){
+'use strict';
+if(window.__bpDecideOrder) return; window.__bpDecideOrder = 1;
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e); }catch(_){} }
+function toast(m, k){ try{ showAuthToast(m, k || 'info'); }catch(e){} }
+function srv(){ return window.bpSrv; }
+function serverMode(){ try{ return typeof window.bpMoneyServerMode === 'function' && window.bpMoneyServerMode(); }catch(e){ return false; } }
+function num(v){ var n = Number(String(v == null ? '' : v).replace(/[^\d.\-]/g, '')); return isFinite(n) ? n : 0; }
+function LS(k){ try{ var a = JSON.parse(localStorage.getItem(k) || '[]'); return Array.isArray(a) ? a : []; }catch(e){ return []; } }
+function joinOf(campId, uid){
+  return LS('bp_task_joins').find(function(x){ return x && String(x.campId) === String(campId) && String(x.userId) === String(uid); }) || null;
+}
+function paid(campId, uid, round){
+  try{ return typeof window.bpTaskPaid === 'function' && !!window.bpTaskPaid(campId, uid, round); }catch(e){ return false; }
+}
+function disputed(campId, uid){
+  try{ var d = typeof window.bpTaskDisputeOf === 'function' && window.bpTaskDisputeOf(campId, uid);
+       return !!(d && d.status !== 'resolved' && d.status !== 'withdrawn'); }catch(e){ return false; }
+}
+function payeeOf(j, uid){
+  var to = null;
+  if(j && j.srvId) to = Number(j.srvId);
+  if(!to){
+    var card = LS('bp_my_cards').find(function(x){ return x && (String(x.userId) === String(uid) || (j && String(x.name) === String(j.userName))); });
+    if(card && card.srvId) to = Number(card.srvId);
+  }
+  return to;
+}
+var busy = {};
+
+var prev = window.bpTaskDecide;
+if(typeof prev === 'function' && !prev.__bpOrder){
+  window.bpTaskDecide = function(campId, uid, decision, reason){
+    var self = this, args = arguments;
+    if(decision !== 'accepted' || !serverMode() || window.__bpDecideLocal) return prev.apply(self, args);
+
+    /* 1. Местные проверки — ДО денег. */
+    var j = joinOf(campId, uid);
+    if(!j){ toast('Участник задания не найден', 'err'); return { ok:false }; }
+    if(j.status !== 'submitted'){
+      toast(j.status === 'accepted' ? 'Эта работа уже принята' : 'Работа сейчас не на проверке', 'err');
+      return { ok:false };
+    }
+    if(paid(campId, uid, j.round)){ toast('Эта публикация уже оплачена', 'err'); return { ok:false }; }
+    if(disputed(campId, uid)){ toast('По этой работе идёт спор — решение за арбитром', 'err'); return { ok:false }; }
+    var key = String(campId) + ':' + String(uid);
+    if(busy[key]){ return { ok:false, busy:true }; }
+
+    /* 2. Подтверждение — шторка bp-vv. Без флага пропуска нижняя цепочка
+          лишь откроет её и вернёт deferred; денег не касается. Шторка по
+          «Принять и выплатить» зовёт нас снова уже с __bpVvSkip. */
+    if(!window.__bpVvSkip){
+      window.__bpDecideLocal = 1;
+      try{ return prev.apply(self, args); } finally{ window.__bpDecideLocal = 0; }
+    }
+
+    /* 3. Касса: ключ операции детерминирован для публикации — повтор из
+          любой вкладки сервер отдаёт как repeated без движения денег. */
+    var amount = Math.round(num(j.payout));
+    if(amount <= 0){ toast('Не нашли сумму выплаты по заданию', 'err'); return { ok:false }; }
+    var to = payeeOf(j, uid);
+    if(!to){ toast('Блогер не подключён к серверу — выплату через кассу провести нельзя', 'err'); return { ok:false }; }
+    var opKey = 'cp:' + String(campId) + ':' + String(uid) + ':r' + String(j.round || 1);
+    busy[key] = 1;
+    var body = { dealId: 'camp:' + String(campId), toUserId: to, amount: amount, opKey: opKey };
+    return srv().raw('POST', '/api/deals/release', body).then(function(res){
+      /* 4. Местная половина под флагами: bp-money пропускает, bp-vv не
+            открывает шторку. Если соседняя вкладка успела «отклонить»,
+            возвращаем работу на проверку — деньги уже ушли. */
+      var jj = joinOf(campId, uid);
+      if(jj && jj.status === 'rejected'){ jj.status = 'submitted'; try{ var all = LS('bp_task_joins'); all.forEach(function(x){ if(x && String(x.campId) === String(campId) && String(x.userId) === String(uid)) x.status = 'submitted'; }); localStorage.setItem('bp_task_joins', JSON.stringify(all)); }catch(e){} }
+      var out = null;
+      window.__bpDecideLocal = 1; var hadSkip = window.__bpVvSkip; window.__bpVvSkip = 1;
+      try{ out = prev.call(self, campId, uid, 'accepted', reason); }
+      catch(e){ E(e); }
+      finally{ window.__bpDecideLocal = 0; window.__bpVvSkip = hadSkip; busy[key] = 0; }
+      try{ if(window.bpMoney && typeof bpMoney.sync === 'function') bpMoney.sync(); }catch(e){}
+      return out || { ok:true, server:res };
+    }).catch(function(e){
+      busy[key] = 0;
+      toast(String((e && e.message) || 'Выплата не прошла'), 'err');
+      return { ok:false, why: String((e && e.message) || '') };
+    });
+  };
+  window.bpTaskDecide.__bpOrder = true;
+}
+
+/* Спор по обычной сделке: выплата из чата не должна обходить арбитра.
+   Сервер спора не знает, поэтому держим замок здесь, перед кассой. */
+function lockedDeal(did){ try{ return !!(did && typeof window.bpDealLocked === 'function' && window.bpDealLocked(did)); }catch(e){ return false; } }
+['confirmCompletionById', 'confirmCompletion'].forEach(function(name){
+  var orig = window[name];
+  if(typeof orig !== 'function' || orig.__bpDispute) return;
+  window[name] = function(){
+    var did = null;
+    try{
+      if(name === 'confirmCompletionById') did = String(arguments[0] || '');
+      else {
+        var c = (typeof CHAT_CONTACTS !== 'undefined' && typeof currentChatId !== 'undefined')
+          ? CHAT_CONTACTS.find(function(x){ return x && x.id === currentChatId; }) : null;
+        if(c) did = String(c._dealId || '');
+      }
+    }catch(e){}
+    if(lockedDeal(did)){ toast('По сделке идёт спор — деньги ждут решения арбитра', 'err'); return; }
+    return orig.apply(this, arguments);
+  };
+  window[name].__bpDispute = true;
+});
+})();
+</script>
+
+<script id="bp-req-addr">
+/* ══ Входящие заявки — только адресованные мне ══════════════════════
+   Ключ заявок один на устройство; заявка без адресата (toBloggerId
+   пустой) показывалась любому блогеру, вошедшему на этом телефоне.     */
+(function(){
+'use strict';
+if(window.__bpReqAddr) return; window.__bpReqAddr = 1;
+var og = window.getMyIncomingRequests;
+if(typeof og !== 'function') return;
+window.getMyIncomingRequests = function(){
+  var out = og.apply(this, arguments) || [];
+  var me = (typeof currentUser !== 'undefined' && currentUser && currentUser.id != null) ? String(currentUser.id) : null;
+  if(!me) return [];
+  return out.filter(function(r){ return r && r.toBloggerId != null && String(r.toBloggerId) === me; });
+};
+})();
+</script>
+
+<script id="bp-dl-anchor">
+/* ══ Сроки: «7 дней» становится датой в момент принятия, напоминания живы ═
+   Относительный срок («N дней») хранился как текст и никогда не
+   наступал — у сторон не было одинаковой даты. При принятии заявки
+   превращаем его в дату от этого момента. Заодно подключаем
+   bpCheckDeadlines, который был написан, но не вызывался.             */
+(function(){
+'use strict';
+if(window.__bpDlAnchor) return; window.__bpDlAnchor = 1;
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e); }catch(_){} }
+function abs(days, from){
+  var d = new Date(from || Date.now()); d.setDate(d.getDate() + days);
+  var p = function(n){ return ('0' + n).slice(-2); };
+  return p(d.getDate()) + '.' + p(d.getMonth() + 1) + '.' + d.getFullYear();
+}
+function anchor(dl, from){
+  var m = /^\s*(\d{1,3})\s*(дн|дня|дней|day)/i.exec(String(dl || ''));
+  return m ? abs(Number(m[1]), from) : null;
+}
+var ou = window._sharedDealUpsert;
+if(typeof ou === 'function' && !ou.__bpAnchor){
+  window._sharedDealUpsert = function(patch){
+    try{
+      if(patch && patch.conditions && patch.conditions.deadline){
+        var a = anchor(patch.conditions.deadline, patch.acceptedAt || patch.createdAt);
+        if(a) patch.conditions.deadline = a;
+      }
+      if(patch && patch.deadline && typeof patch.deadline === 'string'){
+        var b = anchor(patch.deadline, patch.acceptedAt || patch.createdAt);
+        if(b) patch.deadline = b;
+      }
+    }catch(e){ E(e); }
+    return ou.apply(this, arguments);
+  };
+  window._sharedDealUpsert.__bpAnchor = true;
+}
+function run(){ try{ if(!document.hidden && typeof bpCheckDeadlines === 'function') bpCheckDeadlines(); }catch(e){ E(e); } }
+setInterval(run, 60000);
+document.addEventListener('visibilitychange', function(){ if(!document.hidden) setTimeout(run, 500); });
+setTimeout(run, 4000);
+})();
+</script>
+
+<script id="bp-budget-int">
+/* ══ Бюджет — целые рубли на входе ═══════════════════════════════════
+   Три разных разборщика чисел читали «100,50» как 10 050, «100.50» как
+   100.5 и 100, а сервер принимает только целые. Округляем на входе —
+   там, где бюджет попадает в данные.                                  */
+(function(){
+'use strict';
+if(window.__bpBudgetInt) return; window.__bpBudgetInt = 1;
+function toInt(v){
+  if(typeof v === 'number') return Math.round(v);
+  var t = String(v == null ? '' : v).replace(/[\s ]/g, '').replace(',', '.').replace(/[^\d.\-]/g, '');
+  var n = parseFloat(t); return isFinite(n) ? Math.round(n) : 0;
+}
+var ot = window.triggerOrderRequest;
+if(typeof ot === 'function' && !ot.__bpInt){
+  window.triggerOrderRequest = function(d){
+    try{ if(d && d.budget != null) d.budget = toInt(d.budget); }catch(e){}
+    return ot.apply(this, arguments);
+  };
+  window.triggerOrderRequest.__bpInt = true;
+}
+var os = window._saveCamps;
+if(typeof os === 'function' && !os.__bpInt){
+  window._saveCamps = function(arr){
+    try{
+      (arr || []).forEach(function(c){
+        if(!c) return;
+        ['budget', 'budgetTotal', 'budgetExact', 'fixedPrice', 'rate', 'maxPayout'].forEach(function(k){
+          if(c[k] != null && c[k] !== '' && typeof c[k] !== 'number') c[k] = toInt(c[k]);
+          else if(typeof c[k] === 'number') c[k] = Math.round(c[k]);
+        });
+      });
+    }catch(e){}
+    return os.apply(this, arguments);
+  };
+  window._saveCamps.__bpInt = true;
+}
+})();
+</script>
+
+<script id="bp-terms-lock">
+/* ══ Условия оплаты не меняются задним числом ════════════════════════
+   Пока по заданию есть участники в работе, ставка, фикс и лимит выплаты
+   заморожены: иначе рекламодатель менял цену после сдачи роликов, и
+   выплата считалась по новой.                                         */
+(function(){
+'use strict';
+if(window.__bpTermsLock) return; window.__bpTermsLock = 1;
+function toast(m, k){ try{ showAuthToast(m, k || 'info'); }catch(e){} }
+function num(v){ var n = Number(String(v == null ? '' : v).replace(/[^\d.]/g, '')); return isFinite(n) ? n : 0; }
+function liveJoins(id){
+  try{ return (JSON.parse(localStorage.getItem('bp_task_joins') || '[]') || []).filter(function(j){
+    return j && String(j.campId) === String(id) && (j.status === 'joined' || j.status === 'submitted' || j.status === 'in_progress');
+  }).length; }catch(e){ return 0; }
+}
+var os = window.bpSaveTaskTerms;
+if(typeof os === 'function' && !os.__bpLock){
+  window.bpSaveTaskTerms = function(id){
+    try{
+      if(liveJoins(id) > 0){
+        var c = (typeof window._loadCamps === 'function' ? window._loadCamps() : []).find(function(x){ return x && String(x.id) === String(id); });
+        var v = function(i){ var e = document.getElementById(i); return e ? String(e.value || '').trim() : ''; };
+        var fixedMode = !!document.querySelector('#bpTermsSheet .tf-s.on[onclick*="fixed"]');
+        if(c){
+          var changed = (fixedMode ? 'fixed' : 'views') !== (c.payMode || 'views')
+            || (fixedMode ? num(v('tfFixed')) !== num(c.fixedPrice) : num(v('tfRate')) !== num(c.rate))
+            || (v('tfMaxPay') !== '' && num(v('tfMaxPay')) !== num(c.maxPayout));
+          if(changed){
+            toast('По заданию есть работы в процессе — ставку и лимит выплаты менять уже нельзя', 'err');
+            return;
+          }
+        }
+      }
+    }catch(e){}
+    return os.apply(this, arguments);
+  };
+  window.bpSaveTaskTerms.__bpLock = true;
+}
+})();
+</script>
+
+<script id="bp-del-guard">
+/* ══ Аккаунт с живыми сделками не удаляется ══════════════════════════
+   Админка удаляла человека без проверок: у второй стороны зависала
+   сделка и холд, кампания оставалась активной без владельца, заявки
+   лежали в хранилище навсегда.                                        */
+(function(){
+'use strict';
+if(window.__bpDelGuard) return; window.__bpDelGuard = 1;
+function toast(m, k){ try{ showAuthToast(m, k || 'info'); }catch(e){} }
+function LS(k){ try{ var a = JSON.parse(localStorage.getItem(k) || '[]'); return Array.isArray(a) ? a : []; }catch(e){ return []; } }
+var DEAD = { done:1, cancelled:1, declined:1, expired:1, withdrawn:1, finished:1, refunded:1 };
+function eq(a, b){ return a != null && b != null && String(a) === String(b); }
+window.bpUserBusy = function(uid){
+  var why = [];
+  LS('bp_shared_deals_v1').forEach(function(d){
+    if(!d || DEAD[String(d.status)] || String(d.step) === '6' || String(d.step) === 'cancelled') return;
+    if(eq(d.advertiserId, uid) || eq(d.bloggerId, uid)) why.push('активная сделка');
+  });
+  LS('bp_campaigns').forEach(function(c){ if(c && eq(c.ownerId, uid) && String(c.status) === 'active') why.push('активная кампания'); });
+  LS('bp_task_joins').forEach(function(j){ if(j && eq(j.userId, uid) && (j.status === 'joined' || j.status === 'submitted')) why.push('работа в процессе'); });
+  LS('bp_pending_requests_v1').forEach(function(r){ if(r && !r._declined && (eq(r.fromAdvertiserId, uid) || eq(r.toBloggerId, uid))) why.push('открытая заявка'); });
+  return why.length ? why.filter(function(x, i, a){ return a.indexOf(x) === i; }).join(', ') : '';
+};
+var od = window.bpaDelUser;
+if(typeof od === 'function' && !od.__bpGuard){
+  window.bpaDelUser = function(id){
+    var b = window.bpUserBusy(id);
+    if(b){ toast('Сначала закройте: ' + b + '. Удалять аккаунт с живыми сделками нельзя', 'err'); return; }
+    return od.apply(this, arguments);
+  };
+  window.bpaDelUser.__bpGuard = true;
+}
+var oc = window.confirmDeleteAccount;
+if(typeof oc === 'function' && !oc.__bpGuard){
+  window.confirmDeleteAccount = function(btn){
+    var uid = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null;
+    var b = uid != null ? window.bpUserBusy(uid) : '';
+    if(b){ toast('Сначала закройте: ' + b, 'err'); try{ if(btn) btn.disabled = false; }catch(e){} return; }
+    var r = oc.apply(this, arguments);
+    /* после удаления — вычищаем заявки удалённого из общего ключа */
+    try{
+      Promise.resolve(r).then(function(){
+        if(typeof currentUser !== 'undefined' && currentUser && eq(currentUser.id, uid)) return;   /* не удалился */
+        var left = LS('bp_pending_requests_v1').filter(function(x){ return x && !eq(x.fromAdvertiserId, uid) && !eq(x.toBloggerId, uid); });
+        localStorage.setItem('bp_pending_requests_v1', JSON.stringify(left));
+      });
+    }catch(e){}
+    return r;
+  };
+  window.confirmDeleteAccount.__bpGuard = true;
+}
+})();
+</script>
+
+<script id="bp-repeat-fix">
+/* ══ «Повторить сделку» — полноценная заявка с эскроу ═══════════════
+   Кнопка повтора клала заявку без dealId: у сделки не было общей записи,
+   касса не замораживала бюджет, выплата потом не находила ключ. Теперь
+   заявка получает id сделки и проходит ту же заморозку, что и обычная. */
+(function(){
+'use strict';
+if(window.__bpRepeatFix) return; window.__bpRepeatFix = 1;
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e); }catch(_){} }
+function toast(m, k){ try{ showAuthToast(m, k || 'info'); }catch(e){} }
+var orig = window.submitRepeatDeal;
+if(typeof orig !== 'function' || orig.__bpFix) return;
+window.submitRepeatDeal = function(){
+  var before = 0;
+  try{ before = (typeof pendingOrderRequests !== 'undefined') ? pendingOrderRequests.length : 0; }catch(e){}
+  var r = orig.apply(this, arguments);
+  try{
+    if(typeof pendingOrderRequests === 'undefined' || pendingOrderRequests.length <= before) return r;
+    var req = pendingOrderRequests[pendingOrderRequests.length - 1];
+    if(!req || String(req.id || '').indexOf('repeat_') !== 0 || req.dealId) return r;
+    req.dealId = 'deal_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    if(typeof savePendingRequests === 'function') savePendingRequests();
+    /* Заморозка в кассе — тем же путём, что у обычной заявки. Отказ
+       кассы отзывает заявку: предложение без денег блогер видеть не должен. */
+    if(typeof window.bpEnsureHold === 'function'){
+      Promise.resolve(window.bpEnsureHold(req)).catch(function(e){
+        try{
+          pendingOrderRequests = pendingOrderRequests.filter(function(x){ return x && x.id !== req.id; });
+          if(typeof savePendingRequests === 'function') savePendingRequests();
+        }catch(_){}
+        toast('Заявка отозвана: ' + String((e && e.message) || 'касса не заморозила бюджет'), 'err');
+      });
+    }
+  }catch(e){ E(e); }
+  return r;
+};
+window.submitRepeatDeal.__bpFix = true;
 })();
 </script>
 </body>

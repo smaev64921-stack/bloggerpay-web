@@ -1650,7 +1650,9 @@ const routes = {
     const amount = body.amount;
     const requisites = String(body.requisites || '').trim().slice(0, 200);
     if (!amountOk(amount)) return { status: 400, body: { error: 'Сумма — целое число от 1 до 100 000 000' } };
-    if (amount < 100) return { status: 400, body: { error: 'Минимальный вывод — 100 ₽' } };
+    /* Тот же минимум, что и на экране: иначе прямым запросом к API можно
+       было завести заявку на 100 ₽, которой интерфейс не обещает. */
+    if (amount < 1000) return { status: 400, body: { error: 'Минимальный вывод — 1 000 ₽' } };
     if (!requisites) return { status: 400, body: { error: 'Укажите реквизиты' } };
     const fee = Math.round(amount * FEE_PCT / 100);
     const net = amount - fee;
