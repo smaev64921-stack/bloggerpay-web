@@ -2632,6 +2632,9 @@ const SITE = {
   '/index.html': { name: 'bloggerpay-1008-v100.html', type: 'text/html; charset=utf-8' },
   '/onboarding.html': { name: 'onboarding.html', type: 'text/html; charset=utf-8' },
   '/privacy.html': { name: 'privacy.html', type: 'text/html; charset=utf-8' },
+  /* Условия использования: их адрес спрашивают площадки при проверке
+     приложения, ссылка внутри мини-аппа им не подходит. */
+  '/terms.html': { name: 'terms.html', type: 'text/html; charset=utf-8' },
   '/sw.js': { name: 'sw.js', type: 'text/javascript; charset=utf-8' },
   '/logo.jpg': { name: 'logo.jpg', type: 'image/jpeg' },
 };
