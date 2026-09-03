@@ -2637,8 +2637,11 @@ const SITE = {
 };
 function staticFile(pathname) {
   const rec = SITE[pathname];
-  if (!rec) return null;
-  return { file: path.join(SITE_DIR, rec.name), type: rec.type };
+  if (rec) return { file: path.join(SITE_DIR, rec.name), type: rec.type };
+  /* Файл-подпись площадки: /tiktok<буквы и цифры>.txt из корня проекта. */
+  const sign = /^\/(tiktok[A-Za-z0-9]{8,64}\.txt)$/.exec(pathname);
+  if (sign) return { file: path.join(SITE_DIR, sign[1]), type: 'text/plain; charset=utf-8' };
+  return null;
 }
 function sendFile(req, res, file, type) {
   let buf;
