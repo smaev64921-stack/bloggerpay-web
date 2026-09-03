@@ -157,6 +157,9 @@ if (MAIL_DEBUG && /^https?:\/\//i.test(PUBLIC_URL) && reachableOutside(PUBLIC_UR
 /* Кавычки и пробелы вокруг значения — самая частая причина «неизвестный
    client_key»: площадка получает ключ вместе с ними и не узнаёт его. */
 const cleanKey = (v) => String(v == null ? '' : v).trim().replace(/^["']+|["']+$/g, '').trim();
+/* Свои адреса площадки: сюда вписывают прокси, если напрямую не пускают. */
+const TT_AUTH_BASE = (cleanKey(ENV.TT_AUTH_BASE) || 'https://www.tiktok.com').replace(/\/+$/, '');
+const TT_API_BASE = (cleanKey(ENV.TT_API_BASE) || 'https://open.tiktokapis.com').replace(/\/+$/, '');
 const OAUTH = {
   youtube: {
     id: cleanKey(ENV.YT_CLIENT_ID), secret: cleanKey(ENV.YT_CLIENT_SECRET),
@@ -167,9 +170,16 @@ const OAUTH = {
   },
   tiktok: {
     id: cleanKey(ENV.TT_CLIENT_KEY), secret: cleanKey(ENV.TT_CLIENT_SECRET),
-    auth: 'https://www.tiktok.com/v2/auth/authorize/',
-    token: 'https://open.tiktokapis.com/v2/oauth/token/',
-    scope: 'user.info.basic,user.info.profile,user.info.stats',
+    /* TT_AUTH_BASE — куда отправляем человека (по умолчанию сам TikTok);
+       TT_API_BASE — куда сервер ходит за токеном и данными аккаунта.
+       Второе важнее: браузер человека может быть за VPN, а сервер нет. */
+    auth: TT_AUTH_BASE + '/v2/auth/authorize/',
+    token: TT_API_BASE + '/v2/oauth/token/',
+    userInfo: TT_API_BASE + '/v2/user/info/',
+    /* Список прав задаётся настройкой: пока приложение не прошло проверку,
+       TikTok выдаёт только user.info.basic, а запрос лишнего права —
+       ещё одна стена после ключа. */
+    scope: cleanKey(ENV.TT_SCOPE) || 'user.info.basic,user.info.profile,user.info.stats',
     label: 'TikTok',
   },
 };
@@ -2095,6 +2105,94 @@ const routes = {
     return { status: 200, body: { platforms } };
   },
 
+  'GET /api/admin/verify/probe': async (req, body, url) => {
+    if (!isAdmin(req)) return { status: 403, body: { error: 'Нужен X-Admin-Key' } };
+    const p = String(url.searchParams.get('platform') || '');
+    const cfg = OAUTH[p];
+    if (!cfg) return { status: 400, body: { error: 'Неизвестная площадка' } };
+    const out = {
+      platform: p, label: cfg.label,
+      keys: !!(cfg.id && cfg.secret),
+      redirect: PUBLIC_URL + '/api/verify/callback/' + p,
+      scope: cfg.scope,
+      authHost: (() => { try { return new URL(cfg.auth).host; } catch (e) { return ''; } })(),
+      apiHost: (() => { try { return new URL(cfg.token).host; } catch (e) { return ''; } })(),
+    };
+    if (!out.keys) {
+      out.verdict = 'Ключи площадки не заданы: заполните ключ и секрет в настройках сервера.';
+      return { status: 200, body: out };
+    }
+
+    /* Ходить будем с ограничением по времени: заблокированный адрес
+       иначе держит запрос до самого таймаута системы. */
+    const once = async (address, opts) => {
+      const stop = AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined;
+      try {
+        const r = await fetch(address, Object.assign({ redirect: 'follow', signal: stop }, opts || {}));
+        const text = await r.text().catch(() => '');
+        return { ok: true, status: r.status, url: r.url, text: text.slice(0, 4000) };
+      } catch (e) {
+        return { ok: false, why: String((e && e.message) || e) };
+      }
+    };
+    const grab = async (address, opts) => {
+      const a = await once(address, opts);
+      if (a.ok) return a;
+      return once(address, opts);              /* вторая попытка: обрыв ещё не блокировка */
+    };
+
+    /* 1. Виден ли сервер площадки вообще. Обмен кода на данные делает
+          именно сервер: если отсюда не открывается — вход не заработает,
+          сколько ни правь ключи. */
+    const api = await grab(cfg.token, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'grant_type=authorization_code' });
+    /* Данные аккаунта запрашиваются отдельным адресом — его тоже
+       проверяем: бывает, что обмен токена проходит, а этот висит. */
+    const info = cfg.userInfo ? await grab(cfg.userInfo + '?fields=open_id', { headers: { Authorization: 'Bearer probe' } }) : { ok: true };
+    out.tokenReachable = api.ok;
+    out.infoReachable = info.ok;
+    out.apiReachable = api.ok && info.ok;
+    if (!api.ok) out.apiWhy = api.why;
+    else if (!info.ok) out.apiWhy = info.why;
+
+    /* 2. Узнаёт ли площадка ключ. Открываем ту же страницу входа, что
+          увидит человек, и смотрим, не ругается ли она на client_key. */
+    const q1 = new URLSearchParams({
+      response_type: 'code', state: 'probe', redirect_uri: out.redirect, scope: cfg.scope,
+    });
+    if (p === 'youtube') { q1.set('client_id', cfg.id); q1.set('access_type', 'online'); }
+    else q1.set('client_key', cfg.id);
+    const auth = await grab(cfg.auth + '?' + q1.toString(), {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36', Accept: 'text/html' },
+    });
+    out.authReachable = auth.ok;
+    if (!auth.ok) out.authWhy = auth.why;
+    if (auth.ok) {
+      const t = auth.text || '';
+      out.authStatus = auth.status;
+      /* Страница входа собирается скриптами: ошибка про ключ до тела ответа
+         обычно не доходит, поэтому признак берём только явный. */
+      out.keyRejected = /client_key/i.test(t) && /(invalid_client|unknown client|client key is)/i.test(t);
+      out.scopeRejected = /invalid[_ ]?scope|scope.*not.*(approved|authorized)/i.test(t);
+    }
+
+    out.verdict = !out.apiReachable
+      ? 'С этого сервера ' + out.apiHost + (out.tokenReachable && !out.infoReachable
+          ? ' открывается наполовину: обмен кода проходит, а запрос данных аккаунта нет.'
+          : ' не открывается.')
+        + ' Обмен кода на данные делает сервер, поэтому вход не заработает, пока не пропишете рабочий адрес в TT_API_BASE.'
+      : out.authReachable === false
+        ? 'Страница входа ' + out.authHost + ' с сервера не открывается. Человеку она может быть доступна, проверьте вход руками.'
+        : out.keyRejected
+          ? 'Площадка не узнала ключ: нужен именно Client key из раздела Credentials — не App ID и не секрет.'
+          : out.scopeRejected
+            ? 'Ключ принят, но запрошенные права не одобрены. Оставьте в TT_SCOPE только user.info.basic и подайте приложение на проверку.'
+            : 'Ключи заданы, адреса площадки с сервера открываются. Верен ли сам ключ,'
+              + ' отсюда не проверить: TikTok сверяет его уже в браузере. Откройте вход'
+              + ' в приложении — ошибка «client_key» там значит, что ключ не тот либо'
+              + ' приложение ещё не одобрено (тогда входят только тестовые аккаунты).';
+    return { status: 200, body: out };
+  },
+
   'GET /api/verify/list': async (req) => {
     const u = auth(req);
     if (!u) return { status: 401, body: { error: 'Нужен вход' } };
@@ -2438,7 +2536,7 @@ async function handleVerifyCallback(req, res, url) {
       })).json();
       if (!tok.access_token) throw new Error((tok.error_description || tok.error) || 'TikTok не выдал доступ');
       const me = await (await fetch(
-        'https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name,profile_deep_link,follower_count',
+        cfg.userInfo + '?fields=open_id,display_name,profile_deep_link,follower_count',
         { headers: { Authorization: 'Bearer ' + tok.access_token } })).json();
       const d = me.data && me.data.user;
       if (!d) throw new Error('TikTok не отдал данные аккаунта');

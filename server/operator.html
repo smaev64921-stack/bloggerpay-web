@@ -77,6 +77,9 @@
 .plat.off span{ color:var(--warn) }
 .plat i{ display:block; font-style:normal; font-size:var(--fs-sm); color:var(--t3);
   margin:6px 0 8px; word-break:break-all }
+.plat-out{ white-space:pre-wrap; font-size:var(--fs-sm); line-height:1.5; margin-top:8px }
+.plat-out.good{ color:var(--ok) }
+.plat-out.warn{ color:var(--warn) }
 .recon{border-radius:12px;padding:13px 15px;margin-bottom:18px;font-size:var(--fs-md);
     border:1px solid var(--line);background:var(--card)}
   .recon.ok{border-color:rgba(61,220,132,.35);background:rgba(61,220,132,.08)}
@@ -488,7 +491,9 @@ function paintPlats(){
         + '<b>' + esc(it.label || k) + '</b>'
         + '<span>' + (it.configured ? 'подключено' : 'ключи не заданы') + '</span>'
         + '<i>адрес возврата: ' + esc(it.redirect || '') + '</i>'
-        + '<button class="btn sm" data-copy="' + esc(it.redirect || '') + '">Скопировать адрес</button>'
+        + '<button class="btn sm" data-copy="' + esc(it.redirect || '') + '">Скопировать адрес</button> '
+        + '<button class="btn sm ghost" data-probe="' + esc(k) + '">Проверить</button>'
+        + '<div class="plat-out" id="plat-out-' + esc(k) + '"></div>'
         + '</div>';
     }).join('');
   }).catch(function(){ $('plats').innerHTML = ''; });
@@ -605,6 +610,27 @@ document.addEventListener('click', function(e){
   }
 
   if(t.dataset.t !== undefined){ TAB = t.dataset.t; renderTabs(); refresh(); return; }
+
+  if(t.dataset.probe){
+    var pk = t.dataset.probe, box = $('plat-out-' + pk);
+    t.disabled = true; if(box) box.textContent = 'Спрашиваем площадку…';
+    api('GET', '/api/admin/verify/probe?platform=' + encodeURIComponent(pk))
+      .then(function(r){
+        t.disabled = false;
+        if(!box) return;
+        var lines = [r.verdict];
+        lines.push('ключи: ' + (r.keys ? 'заданы' : 'НЕ заданы')
+          + ' · адрес площадки с сервера: ' + (r.apiReachable ? 'открывается' : 'НЕ открывается')
+          + ' · права: ' + r.scope);
+        box.textContent = lines.join('\n');
+        box.className = 'plat-out ' + (/в порядке/.test(r.verdict || '') ? 'good' : 'warn');
+      })
+      .catch(function(err){
+        t.disabled = false;
+        if(box){ box.textContent = err.message; box.className = 'plat-out warn'; }
+      });
+    return;
+  }
 
   if(t.dataset.copy){
     var text = t.dataset.copy;
