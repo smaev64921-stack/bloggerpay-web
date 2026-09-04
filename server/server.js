@@ -439,6 +439,16 @@ catch (e) { /* индекс мог не создаться на старом д�
 try { db.exec('ALTER TABLE channels ADD COLUMN avatar TEXT'); }
 catch (e) { /* уже есть */ }
 
+/* Вход через Google (04.09.2026). Связь ведём по google_sub — это
+   постоянный номер аккаунта у Google. По почте связывать нельзя: почту
+   можно сменить или занять чужой обычной регистрацией, и человек
+   получил бы чужой аккаунт вместе с балансом (та же причина, по которой
+   телеграм-вход связывается по tg_id). */
+try { db.exec('ALTER TABLE users ADD COLUMN google_sub TEXT'); }
+catch (e) { /* уже есть */ }
+try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_gsub ON users(google_sub) WHERE google_sub IS NOT NULL'); }
+catch (e) { /* индекс мог не создаться на старом движке — не критично */ }
+
 /* ── Мелкая утварь ─────────────────────────────────────────────────── */
 
 const q = {
@@ -448,6 +458,10 @@ const q = {
   insTgUser: db.prepare(`INSERT INTO users (email, name, role, pass_salt, pass_hash, tg_id)
     VALUES (?,?,?,?,?,?)`),
   linkTg: db.prepare('UPDATE users SET tg_id = ? WHERE id = ?'),
+  userByGoogle: db.prepare('SELECT * FROM users WHERE google_sub = ?'),
+  insGoogleUser: db.prepare(`INSERT INTO users (email, name, role, pass_salt, pass_hash, google_sub)
+    VALUES (?,?,?,?,?,?)`),
+  linkGoogle: db.prepare('UPDATE users SET google_sub = ? WHERE id = ?'),
   insUser: db.prepare('INSERT INTO users (email, name, role, pass_salt, pass_hash) VALUES (?,?,?,?,?)'),
   insSession: db.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?,?,?)'),
   session: db.prepare(`SELECT s.token, s.expires_at, u.* FROM sessions s
@@ -1200,6 +1214,20 @@ setInterval(() => {
    привязывается к тому, кто ввёл этот код В ПРИЛОЖЕНИИ, где он уже
    авторизован. Ссылка, отданная чужому человеку, бесполезна: код
    видит только он сам, и подтвердит он свой канал себе же. */
+/* Вход через Google. Человек уходит на страницу Google и возвращается
+   на наш адрес возврата — а приложение всё это время ждёт в другом окне
+   (в мини-аппе — вообще в другом браузере). Поэтому результат входа
+   кладём сюда под одноразовой меткой, а приложение забирает его по
+   метке или по короткому коду, который человек видит на странице
+   возврата. Живёт 15 минут, забирается один раз. */
+const glog = new Map();           /* nonce → {at, code, token, user, done, tries} */
+const GLOG_TTL = 15 * 60 * 1000;
+function glogSweep() {
+  const now = Date.now();
+  for (const [k, v] of glog) if (now - v.at > GLOG_TTL) glog.delete(k);
+}
+setInterval(glogSweep, 60000).unref();
+
 const vfy = new Map();            /* nonce → {userId, platform, at, channel, code, tries} */
 const VFY_TTL = 15 * 60 * 1000;
 function vfySweep() {
@@ -1925,6 +1953,60 @@ const routes = {
   /* Вход из мини-аппа. Пароль не нужен: личность подтверждает Телеграм,
      а подпись проверяется выше. Если человек уже заходил по email —
      привязываем телеграм к тому же аккаунту, а не заводим второй. */
+  /* ── Вход через Google ──
+     Три шага: приложение просит ссылку (start), человек входит у Google,
+     Google возвращает его на callback — там мы заводим или находим
+     аккаунт и кладём готовую сессию под метку. Приложение забирает её
+     (claim) по метке или по коду со страницы возврата. */
+  'GET /api/auth/google/start': async (req, body, url) => {
+    if (!rateLimit(req, 'glogin', 20, 60000)) return tooOften;
+    const cfg = OAUTH.youtube;      /* тот же клиент Google, что и у подтверждения канала */
+    if (!cfg.id || !cfg.secret) {
+      return { status: 503, body: { error: 'Вход через Google ещё не настроен: на сервере нет ключей Google' } };
+    }
+    glogSweep();
+    const nonce = crypto.randomBytes(24).toString('hex');
+    const role = url.searchParams.get('role') === 'advertiser' ? 'advertiser' : 'blogger';
+    glog.set(nonce, { at: Date.now(), code: '', token: '', user: null, done: false, tries: 0, role });
+    const q1 = new URLSearchParams({
+      response_type: 'code',
+      client_id: cfg.id,
+      redirect_uri: PUBLIC_URL + '/api/auth/google/callback',
+      /* просим только то, что нужно для входа: кто это и как зовут */
+      scope: 'openid email profile',
+      state: nonce,
+      access_type: 'online',
+      /* пусть человек сам выберет, каким аккаунтом входит */
+      prompt: 'select_account',
+    });
+    return { status: 200, body: { url: 'https://accounts.google.com/o/oauth2/v2/auth?' + q1.toString(), nonce } };
+  },
+
+  /* Приложение спрашивает: вход уже случился? Возвращаем сессию один раз. */
+  'GET /api/auth/google/pending': async (req, body, url) => {
+    if (!rateLimit(req, 'glogpend', 120, 60000)) return tooOften;
+    const nonce = String(url.searchParams.get('nonce') || '');
+    const rec = glog.get(nonce);
+    if (!rec) return { status: 404, body: { error: 'Вход не найден или просрочен' } };
+    if (!rec.done) return { status: 200, body: { state: 'waiting' } };
+    glog.delete(nonce);
+    return { status: 200, body: { state: 'ok', token: rec.token, user: rec.user } };
+  },
+
+  /* Возврат из другого браузера: человек видит код на странице возврата
+     и вводит его в приложении. Метка при этом не нужна. */
+  'POST /api/auth/google/claim': async (req, body) => {
+    if (!rateLimit(req, 'glogclaim', 30, 60000)) return tooOften;
+    const code = String(body.code || '').replace(/\D/g, '');
+    if (code.length !== 6) return { status: 400, body: { error: 'Код — шесть цифр' } };
+    for (const [k, rec] of glog) {
+      if (!rec.done || rec.code !== code) continue;
+      glog.delete(k);
+      return { status: 200, body: { token: rec.token, user: rec.user } };
+    }
+    return { status: 404, body: { error: 'Код не подошёл или устарел' } };
+  },
+
   'POST /api/auth/telegram': async (req, body) => {
     if (!rateLimit(req, 'tg', 30, 60000)) return tooOften;
     /* Порог давности — наш, не клиентский: иначе перехваченная строка
@@ -2984,7 +3066,11 @@ const routes = {
 /* Человек вернулся с площадки. Меняем код на токен, спрашиваем у
    площадки, чей это канал, и записываем. Токен после этого выбрасываем:
    хранить его — значит держать ключ от чужого аккаунта. */
-function verifyPage(res, title, text, good, code) {
+/* goto — адрес, куда вернуть человека: страница уходит туда сама через
+   пару секунд, а кнопка остаётся на случай, если переход не сработал.
+   Нужно для входа через Google: в том же браузере приложение подхватит
+   вход по метке в адресе, и код вводить не придётся. */
+function verifyPage(res, title, text, good, code, goto) {
   const esc = (s) => String(s).replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
   const html = '<!doctype html><meta charset="utf-8">'
     + '<meta name="viewport" content="width=device-width,initial-scale=1">'
@@ -2997,10 +3083,119 @@ function verifyPage(res, title, text, good, code) {
     + 'code{display:block;margin:18px auto 6px;padding:14px 10px;max-width:260px;'
     + 'background:#171a20;border:1px solid #2f6ce0;border-radius:14px;'
     + 'font:800 34px/1 ui-monospace,Menlo,Consolas,monospace;letter-spacing:8px;color:#fff}</style>'
+    + (goto ? '<meta http-equiv="refresh" content="2;url=' + esc(goto) + '">' : '')
+    + '<style>a.go{display:inline-block;margin-top:16px;padding:13px 20px;border-radius:14px;'
+    + 'background:#2f6ce0;color:#fff;text-decoration:none;font-weight:700;font-size:15px}</style>'
     + '<div><b>' + esc(title) + '</b><p>' + esc(text) + '</p>'
-    + (code ? '<code>' + esc(code) + '</code>' : '') + '</div>';
+    + (code ? '<code>' + esc(code) + '</code>' : '')
+    + (goto ? '<a class="go" href="' + esc(goto) + '">Вернуться в приложение</a>' : '')
+    + '</div>';
   res.writeHead(good ? 200 : 400, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
   res.end(html);
+}
+
+/* ── Возврат от Google после входа ──
+   Меняем код на токен, спрашиваем у Google, кто это, находим или заводим
+   аккаунт и кладём готовую сессию под метку. Человеку показываем код:
+   если он вернулся в другом браузере (так бывает из мини-аппа), метка
+   приложению недоступна, и код — единственный способ забрать вход. */
+async function handleGoogleCallback(req, res, url) {
+  const cfg = OAUTH.youtube;
+  const state = String(url.searchParams.get('state') || '');
+  const code = url.searchParams.get('code');
+  const rec = glog.get(state);
+
+  if (!rec) return verifyPage(res, 'Ссылка не найдена', 'Начните вход заново из приложения.', false);
+  if (Date.now() - rec.at > GLOG_TTL) {
+    glog.delete(state);
+    return verifyPage(res, 'Слишком долго', 'Ссылка входа живёт 15 минут. Начните заново.', false);
+  }
+  if (!code) {
+    glog.delete(state);
+    return verifyPage(res, 'Вход отменён', 'Вы не разрешили доступ — аккаунт не создан.', false);
+  }
+  if (rec.done) {
+    return verifyPage(res, 'Код уже выдан',
+      'Введите его в приложении. Если код потерян — начните вход заново.', false, rec.code);
+  }
+
+  const ask = async (address, opts) => {
+    let last;
+    for (let i = 0; i < 2; i++) {
+      try {
+        const stop = AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined;
+        const r = await fetch(address, Object.assign({ signal: stop }, opts || {}));
+        return await r.json();
+      } catch (e) { last = e; }
+    }
+    throw new Error('Google не ответил вовремя. Попробуйте ещё раз через минуту.');
+  };
+
+  try {
+    const tok = await ask(cfg.token, {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code, client_id: cfg.id, client_secret: cfg.secret,
+        redirect_uri: PUBLIC_URL + '/api/auth/google/callback',
+        grant_type: 'authorization_code',
+      }),
+    });
+    if (!tok.access_token) throw new Error(tok.error_description || 'Google не выдал доступ');
+
+    const me = await ask('https://www.googleapis.com/oauth2/v3/userinfo',
+      { headers: { Authorization: 'Bearer ' + tok.access_token } });
+    const sub = String(me.sub || '');
+    if (!sub) throw new Error('Google не сказал, кто вошёл');
+    /* Непроверенную почту не принимаем: иначе чужой аккаунт с такой же
+       почтой мог бы отобрать вход. */
+    const mail = (me.email_verified === false) ? '' : String(me.email || '').toLowerCase();
+    const name = String(me.name || '').trim().slice(0, 120)
+      || (mail ? mail.split('@')[0] : 'Пользователь Google');
+
+    let u = q.userByGoogle.get(sub);
+    if (!u) {
+      /* Пароля у такого аккаунта нет: вход только через Google, поэтому
+         в поля хеша кладём случайный мусор, которым войти нельзя. */
+      let email = mail || ('g' + sub + '@google.local');
+      if (q.userByEmail.get(email)) {
+        /* Почта уже занята обычной регистрацией. Чужой аккаунт не
+           отдаём: заводим свой на служебном адресе. */
+        email = 'g' + sub + '@google.local';
+        if (q.userByEmail.get(email)) email = 'g' + sub + '.' + crypto.randomBytes(3).toString('hex') + '@google.local';
+      }
+      const salt = crypto.randomBytes(16).toString('hex');
+      const dead = crypto.randomBytes(32).toString('hex');
+      const role = rec.role === 'advertiser' ? 'advertiser' : 'blogger';
+      try {
+        q.insGoogleUser.run(email, name, role, salt, dead, sub);
+      } catch (e) {
+        return verifyPage(res, 'Не вышло создать аккаунт', 'Попробуйте ещё раз через минуту.', false);
+      }
+      u = q.userByGoogle.get(sub);
+    }
+    if (!u) return verifyPage(res, 'Не вышло войти', 'Попробуйте ещё раз через минуту.', false);
+    if (u.is_blocked) {
+      glog.delete(state);
+      return verifyPage(res, 'Аккаунт заблокирован', 'Напишите в поддержку.', false);
+    }
+    syncAdminFlag(u);
+
+    const token = newToken();
+    const exp = new Date(Date.now() + SESSION_DAYS * 864e5).toISOString();
+    q.insSession.run(token, u.id, exp);
+
+    rec.done = true;
+    rec.token = token;
+    rec.user = { id: u.id, email: u.email, name: u.name, role: u.role };
+    rec.code = String(crypto.randomInt(100000, 1000000));
+    glog.set(state, rec);
+
+    return verifyPage(res, 'Вы вошли',
+      'Сейчас вернём вас в приложение. Если оно открыто в другом месте — введите там этот код:',
+      true, rec.code, APP_BASE + '?glogin=' + encodeURIComponent(state));
+  } catch (e) {
+    return verifyPage(res, 'Не вышло войти', String((e && e.message) || e).slice(0, 160), false);
+  }
 }
 
 async function handleVerifyCallback(req, res, url) {
@@ -3228,6 +3423,11 @@ const handler = async (req, res) => {
   }
   if (req.method === 'GET' && url.pathname.startsWith('/api/verify/callback/')) {
     return handleVerifyCallback(req, res, url);
+  }
+  /* Возврат человека от Google после входа. Отдаём страницу, а не JSON:
+     сюда приходит браузер, а не приложение. */
+  if (req.method === 'GET' && url.pathname === '/api/auth/google/callback') {
+    return handleGoogleCallback(req, res, url);
   }
   /* Страница показа кода. Саму метку страница берёт из адреса уже в
      браузере — сервер здесь отдаёт только вёрстку и ничего не решает. */

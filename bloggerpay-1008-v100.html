@@ -81839,5 +81839,254 @@ try{
 })();
 </script>
 
+<style id="bp-glogin-css">
+/* ══ ВХОД ЧЕРЕЗ GOOGLE ════════════════════════════════════════════════
+   Кнопка на экране входа была заглушкой («скоро будет доступно»).
+   Теперь она работает: человек выбирает свой аккаунт у Google, а мы
+   заводим или находим его учётную запись и впускаем — без пароля.
+   Возврат от Google приходит в браузер, а приложение может ждать в
+   другом окне (в мини-аппе — вообще в другом браузере). Поэтому пока
+   человек входит, показываем шторку: она сама подхватывает вход, а если
+   он вернулся в другом браузере — принимает код со страницы возврата.
+   Откат: удалить style#bp-glogin-css и script#bp-glogin.              */
+html .glg-ov{
+  position:fixed; inset:0; z-index:600; background:rgba(4,4,6,.78);
+  display:flex; align-items:flex-end; justify-content:center;
+}
+html .glg-sheet{
+  width:100%; max-width:420px; box-sizing:border-box;
+  background:#0f0f15; border:1px solid var(--brd2,rgba(255,255,255,.15)); border-bottom:none;
+  border-radius:22px 22px 0 0; padding:10px 18px max(22px,env(safe-area-inset-bottom,0px));
+}
+html .glg-sheet .h{ width:38px; height:4px; border-radius:2px; background:rgba(255,255,255,.16); margin:0 auto 14px }
+html .glg-sheet b{ display:block; font-size:17px; font-weight:800; color:var(--t1,#f2f4f8); letter-spacing:-.4px }
+html .glg-sheet p{ font-size:12.5px; color:var(--t3,#7d818c); line-height:1.5; margin:6px 0 14px }
+html .glg-code{
+  width:100%; box-sizing:border-box; text-align:center; letter-spacing:8px;
+  font:inherit; font-size:22px; font-weight:800; color:var(--t1,#f2f4f8);
+  background:rgba(255,255,255,.05); border:1px solid var(--brd,rgba(255,255,255,.09));
+  border-radius:14px; padding:13px 12px; outline:none;
+}
+html .glg-code:focus{ border-color:var(--acc-br,rgba(47,108,224,.42)) }
+html .glg-code.bad{ border-color:rgba(240,71,94,.6) }
+html .glg-act{
+  width:100%; margin-top:12px; padding:14px; border:none; border-radius:14px;
+  background:var(--acc,#2f6ce0); color:#fff; font:inherit; font-size:15px; font-weight:700;
+  cursor:pointer; -webkit-tap-highlight-color:transparent;
+}
+html .glg-act:disabled{ opacity:.5; cursor:default }
+html .glg-x{
+  width:100%; margin-top:8px; padding:11px; border:none; background:none;
+  color:var(--t3,#7d818c); font:inherit; font-size:12.5px; font-weight:600; cursor:pointer;
+}
+html .glg-err{ font-size:12px; color:#f0788a; margin-top:10px; line-height:1.45; min-height:1px }
+</style>
+<script id="bp-glogin">
+(function(){
+'use strict';
+if(window.__bpGLogin) return; window.__bpGLogin = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'glogin'); }catch(_){} }
+function $(id){ return document.getElementById(id); }
+function toast(m, k){ try{ showAuthToast(m, k || 'info'); }catch(e){} }
+function srv(){ return window.bpSrv; }
+function ready(){
+  try{ var s = srv(); return !!(s && s.configured && s.configured() && typeof s.raw === 'function'); }
+  catch(e){ return false; }
+}
+
+/* ── Впускаем человека ──
+   Сервер уже знает, кто это, и выдал ключ сессии. Приложение работает на
+   местной записи пользователя, поэтому находим её по почте или заводим
+   новую. Пароля у такой записи нет — вход только через Google. */
+function letIn(token, who){
+  /* Ключ сессии кладём тем же способом, что и обычный вход: мост сам
+     знает, где его держать (во вкладке, с копией под почту). Своя
+     запись в localStorage не работала — мост её не видит. */
+  try{
+    var mail0 = String(who.email || '').toLowerCase();
+    if(srv() && typeof srv().setToken === 'function') srv().setToken(token, mail0);
+  }catch(e){ E(e); }
+  try{ if(window.bpMoney && typeof bpMoney.setMySrvId === 'function') bpMoney.setMySrvId(who.id); }catch(e){ E(e); }
+
+  var mail = String(who.email || '').toLowerCase();
+  var rec = null;
+  try{
+    rec = (typeof users !== 'undefined' && users)
+      ? users.find(function(x){ return x && String(x.email || '').toLowerCase() === mail; })
+      : null;
+  }catch(e){ E(e); }
+
+  if(!rec){
+    try{
+      rec = {
+        id: Date.now(),
+        accountId: (typeof bpNextAccountId === 'function') ? bpNextAccountId() : null,
+        email: mail,
+        phone: '',
+        /* Пароля нет: в поля кладём случайный мусор, которым не войти.
+           Так же устроен вход по Телеграму. */
+        passSalt: (typeof _bpRandSalt === 'function') ? _bpRandSalt() : String(Math.random()),
+        passHash: 'google-' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2),
+        name: who.name || 'Пользователь Google',
+        role: who.role === 'advertiser' ? 'advertiser' : 'blogger',
+        google: true,
+        srvId: who.id,
+        registeredAt: new Date().toISOString(),
+        balance: 0, hold: 0, totalTopup: 0, topupHistory: [],
+        stats: { theme: '—', audience: '0', reach: '0', chatTime: '—', rating: 0,
+          campaigns: '0', views: '0', earned: '0' }
+      };
+      users.push(rec);
+      if(typeof saveUsers === 'function') saveUsers();
+    }catch(e){ E(e); toast('Не вышло завести аккаунт на этом устройстве', 'err'); return false; }
+  } else {
+    try{ rec.srvId = who.id; rec.google = true; if(typeof saveUsers === 'function') saveUsers(); }catch(e){ E(e); }
+  }
+
+  try{
+    currentUser = rec;
+    if(typeof rememberMe === 'undefined' || rememberMe) saveSession(rec);
+    localStorage.setItem('bp_role_u_' + rec.id, rec.role);
+    sessionStorage.setItem('bp_role', rec.role);
+  }catch(e){ E(e); }
+  close();
+  toast('Вы вошли через Google', 'ok');
+  setTimeout(function(){ try{ enterApp(false); }catch(e){ E(e); } }, 600);
+  return true;
+}
+
+/* ── Шторка ожидания ─────────────────────────────────────────────── */
+var _nonce = '', _timer = null, _tries = 0;
+
+function close(){
+  if(_timer){ clearInterval(_timer); _timer = null; }
+  var ov = $('glgOv');
+  if(ov) ov.remove();
+}
+window.bpGLoginClose = function(){ _nonce = ''; close(); };
+
+function sheet(){
+  close();
+  var ov = document.createElement('div');
+  ov.id = 'glgOv'; ov.className = 'glg-ov';
+  ov.addEventListener('click', function(e){ if(e.target === ov) window.bpGLoginClose(); });
+  ov.innerHTML = '<div class="glg-sheet" role="dialog" aria-label="Вход через Google">'
+    + '<div class="h"></div>'
+    + '<b>Заканчиваем вход</b>'
+    + '<p>Выберите аккаунт в открывшемся окне Google. Как только войдёте — приложение подхватит это само.'
+    + ' Если вход открылся в другом браузере, введите код с той страницы.</p>'
+    + '<input class="glg-code" id="glgCode" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code">'
+    + '<div class="glg-err" id="glgErr"></div>'
+    + '<button type="button" class="glg-act" id="glgGo">Войти по коду</button>'
+    + '<button type="button" class="glg-x" onclick="bpGLoginClose()">Отмена</button>'
+    + '</div>';
+  document.body.appendChild(ov);
+  var go = $('glgGo');
+  if(go) go.addEventListener('click', byCode);
+  var inp = $('glgCode');
+  if(inp) inp.addEventListener('keydown', function(e){ if(e.key === 'Enter') byCode(); });
+}
+
+function err(m){
+  var e = $('glgErr');
+  if(e) e.textContent = m || '';
+  var i = $('glgCode');
+  if(i && m) i.classList.add('bad');
+}
+
+function byCode(){
+  var i = $('glgCode');
+  var code = String((i && i.value) || '').replace(/\D/g, '');
+  if(code.length !== 6){ err('Код — шесть цифр со страницы возврата'); return; }
+  err('');
+  var go = $('glgGo');
+  if(go) go.disabled = true;
+  srv().raw('POST', '/api/auth/google/claim', { code: code })
+    .then(function(j){
+      if(j && j.token) letIn(j.token, j.user || {});
+      else { err('Код не подошёл'); if(go) go.disabled = false; }
+    })
+    .catch(function(e2){
+      err((e2 && e2.message) || 'Код не подошёл или устарел');
+      if(go) go.disabled = false;
+    });
+}
+
+/* Пока человек у Google — спрашиваем сервер, не вошёл ли он уже.
+   Две минуты: дольше ждать бессмысленно, метка живёт 15 минут и код
+   всё равно останется рабочим. */
+function watch(){
+  _tries = 0;
+  if(_timer) clearInterval(_timer);
+  _timer = setInterval(function(){
+    _tries++;
+    if(_tries > 60 || !_nonce){ clearInterval(_timer); _timer = null; return; }
+    srv().raw('GET', '/api/auth/google/pending?nonce=' + encodeURIComponent(_nonce))
+      .then(function(j){
+        if(j && j.state === 'ok' && j.token){
+          clearInterval(_timer); _timer = null;
+          letIn(j.token, j.user || {});
+        }
+      })
+      .catch(function(){ /* метку могли уже забрать — не шумим */ });
+  }, 2000);
+}
+
+function openLink(u){
+  try{
+    var tg = window.Telegram && window.Telegram.WebApp;
+    if(tg && tg.initData && typeof tg.openLink === 'function'){ tg.openLink(u); return; }
+  }catch(e){ E(e); }
+  try{ window.open(u, '_blank', 'noopener'); }catch(e){ location.href = u; }
+}
+
+/* Заменяем заглушку. Ссылку от сервера получаем СРАЗУ по нажатию и в том
+   же жесте открываем: если ждать ответа, браузер посчитает открытие
+   окна непрошеным и заблокирует. */
+window.loginGoogle = function(){
+  if(!ready()){
+    toast('Вход через Google работает только с сервером. Проверьте связь.', 'err');
+    return;
+  }
+  var role = '';
+  try{ role = (typeof _regRole !== 'undefined' && _regRole) ? _regRole : ''; }catch(e){}
+  var win = null;
+  try{
+    var tg = window.Telegram && window.Telegram.WebApp;
+    if(!(tg && tg.initData)) win = window.open('', '_blank');
+  }catch(e){ E(e); }
+
+  srv().raw('GET', '/api/auth/google/start' + (role ? ('?role=' + encodeURIComponent(role)) : ''))
+    .then(function(j){
+      if(!j || !j.url) throw new Error('Сервер не дал ссылку входа');
+      _nonce = j.nonce || '';
+      sheet();
+      watch();
+      if(win && !win.closed){ win.location = j.url; }
+      else openLink(j.url);
+    })
+    .catch(function(e2){
+      try{ if(win && !win.closed) win.close(); }catch(_){}
+      toast((e2 && e2.message) || 'Не вышло начать вход через Google', 'err');
+    });
+};
+
+/* Возврат в ТОМ ЖЕ браузере: страница возврата уводит обратно в
+   приложение с меткой в адресе — забираем вход сразу. */
+try{
+  var q = new URLSearchParams(location.search);
+  var back = q.get('glogin');
+  if(back && ready()){
+    _nonce = back;
+    srv().raw('GET', '/api/auth/google/pending?nonce=' + encodeURIComponent(back))
+      .then(function(j){ if(j && j.state === 'ok' && j.token) letIn(j.token, j.user || {}); })
+      .catch(function(){});
+    try{ history.replaceState(null, '', location.pathname); }catch(e){}
+  }
+}catch(e){ E(e); }
+})();
+</script>
+
 </body>
 </html>
