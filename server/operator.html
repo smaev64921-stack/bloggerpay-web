@@ -121,21 +121,29 @@
   .msg.on{opacity:1}
   .msg.bad{border-color:var(--bad);color:var(--bad)}
   .note{color:var(--t3);font-size:var(--fs-sm);margin-top:16px;line-height:1.65;max-width:70ch}
+/* Выход из пульта: закрывает сессию владельца на этом устройстве. */
+.leave{ float:right; margin:2px 0 0 12px; padding:7px 12px; border-radius:9px; cursor:pointer;
+  background:#1d1e20; border:1px solid #2a2b2e; color:#a9adb4; font:inherit; font-size:13px }
+.leave:hover{ color:#e6e8ec; border-color:#3a3c40 }
+.gate .hint{ color:#7e838b; font-size:13px; margin-top:-6px }
 </style>
 </head>
 <body>
 
 <div id="gate" class="gate">
   <h1>Выплаты BloggerPay</h1>
-  <p>Введите ключ оператора. Он берётся из <span class="req">server/.env</span>,
-     строка <span class="req">ADMIN_KEY</span>. Ключ остаётся в этой вкладке
-     и исчезает, когда вы её закроете.</p>
+  <p>Введите ключ оператора один раз. Он берётся из <span class="req">server/.env</span>,
+     строка <span class="req">ADMIN_KEY</span>. Дальше пульт открывается сам —
+     двенадцать часов или до нажатия «Выйти».</p>
+  <p class="hint">Если открыть пульт из приложения (меню → «Пульт выплат»),
+     ключ не понадобится вовсе.</p>
   <input type="password" id="key" placeholder="Ключ оператора" autocomplete="off">
   <div style="margin-top:12px"><button class="btn" id="enter">Войти</button></div>
   <div id="gateErr" style="color:var(--bad);font-size:var(--fs-sm);margin-top:10px"></div>
 </div>
 
 <div class="wrap" id="app" hidden>
+  <button type="button" id="leave" class="leave">Выйти</button>
   <h1 id="pageTitle">Выплаты</h1>
   <p class="sub" id="pageSub">Сервер деньги не отправляет — переводите своим банком и отмечайте здесь.</p>
 
@@ -234,11 +242,20 @@ function say(text, bad){
    Проверяем заранее и говорим по-человечески. */
 function keyLooksSane(k){ return /^[!-~]+$/.test(k); }
 
+/* Ключ больше не летит в каждом запросе: после входа сервер выдал
+   сессию (кука), а заголовок X-Admin-Session говорит ему, что запрос
+   пришёл с нашей же страницы, а не подделан чужим сайтом.
+   KEY остаётся запасным путём — на случай, если куку не приняли. */
 function api(method, path, body){
-  if(!keyLooksSane(KEY)) return Promise.reject(new Error('ключ-не-подходит'));
+  var h = { 'Content-Type': 'application/json', 'X-Admin-Session': '1' };
+  if(KEY){
+    if(!keyLooksSane(KEY)) return Promise.reject(new Error('ключ-не-подходит'));
+    h['X-Admin-Key'] = KEY;
+  }
   return fetch(path, {
     method: method,
-    headers: { 'Content-Type': 'application/json', 'X-Admin-Key': KEY },
+    headers: h,
+    credentials: 'same-origin',
     body: body ? JSON.stringify(body) : undefined,
   }).then(function(r){
     return r.json().catch(function(){ return {}; }).then(function(j){
@@ -257,30 +274,51 @@ function opKey(kind, id){
   return 'bp-op-' + kind + '-' + id;
 }
 
+/* Открыть пульт. Ключ здесь спрашивают только тогда, когда сервер и
+   правда не пускает: если владелец уже вошёл в приложении своей почтой
+   или вводил ключ раньше (сессия жива 12 часов), пульт открывается
+   сразу. */
+function openConsole(){
+  $('gate').hidden = true;
+  $('app').hidden = false;
+  renderTabs();
+  /* Ссылка вида /operator#kyc из админ-панели приложения открывает
+     нужный раздел сразу — без лишнего клика по вкладке. */
+  var want = String(location.hash || '').slice(1);
+  if(/^(kyc|deals|errors)$/.test(want)) switchSection(want); else refresh();
+}
 function enter(){
-  KEY = $('key').value.trim();
-  if(!KEY){ $('gateErr').textContent = 'Введите ключ'; return; }
-  if(!keyLooksSane(KEY)){
+  var typed = $('key').value.trim();
+  if(!typed){ $('gateErr').textContent = 'Введите ключ'; return; }
+  if(!keyLooksSane(typed)){
     $('gateErr').textContent = 'В ключе только латинские буквы, цифры и знаки — похоже, скопировалось лишнее';
     return;
   }
-  api('GET', '/api/admin/overview').then(function(){
-    try{ sessionStorage.setItem('bp_op_key', KEY); }catch(e){}
-    $('gate').hidden = true;
-    $('app').hidden = false;
-    renderTabs();
-    /* Ссылка вида /operator#kyc из админ-панели приложения открывает
-       нужный раздел сразу — без лишнего клика по вкладке. */
-    var want = String(location.hash || '').slice(1);
-    if(/^(kyc|deals|errors)$/.test(want)) switchSection(want); else refresh();
+  $('gateErr').textContent = '';
+  fetch('/api/admin/session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Session': '1' },
+    credentials: 'same-origin',
+    body: JSON.stringify({ key: typed }),
+  }).then(function(r){
+    return r.json().catch(function(){ return {}; }).then(function(j){
+      if(r.status === 429) throw new Error(j.error || 'Слишком много попыток');
+      if(!r.ok) throw new Error(j.error || 'Ключ не подошёл');
+      return j;
+    });
+  }).then(function(){
+    KEY = '';               /* дальше работает сессия, ключ не нужен */
+    openConsole();
   }).catch(function(e){
     var m = String(e && e.message || '');
     $('gateErr').textContent =
-        m === 'ключ-не-подходит' ? 'В ключе есть недопустимые символы'
-      : /403|Нужен X-Admin-Key/.test(m) ? 'Ключ не подошёл'
-      : /Failed to fetch|NetworkError/.test(m) ? 'Сервер не отвечает — он запущен?'
-      : m;
+        /Failed to fetch|NetworkError/.test(m) ? 'Сервер не отвечает — он запущен?' : m;
   });
+}
+function leave(){
+  fetch('/api/admin/logout', { method: 'POST', headers: { 'X-Admin-Session': '1' }, credentials: 'same-origin' })
+    .catch(function(){})
+    .then(function(){ location.reload(); });
 }
 
 function renderTabs(){
@@ -673,13 +711,38 @@ document.addEventListener('click', function(e){
 });
 
 $('enter').addEventListener('click', enter);
+$('leave').addEventListener('click', leave);
 $('key').addEventListener('keydown', function(e){ if(e.key === 'Enter') enter(); });
 
-/* Ключ переживает перезагрузку вкладки, но не её закрытие. */
-try{
-  var saved = sessionStorage.getItem('bp_op_key');
-  if(saved){ $('key').value = saved; enter(); }
-}catch(e){}
+/* Первым делом спрашиваем сервер: пустит ли он без ключа. Пустит, если
+   владелец уже вошёл своей почтой в приложении или вводил ключ раньше —
+   тогда пульт открывается сразу, второй раз ключ никто не спрашивает.
+   Прежний путь (ключ в sessionStorage вкладки) больше не нужен: сессия
+   живёт на сервере, а не в странице. */
+try{ sessionStorage.removeItem('bp_op_key'); }catch(e){}
+(function(){
+  /* Пришли из приложения по ссылке с билетом — меняем его на сессию и
+     сразу убираем из адреса, чтобы он не осел в истории браузера. */
+  var m = /(?:^|[#&])t=([\w.]+)/.exec(String(location.hash || ''));
+  var ticket = m ? m[1] : '';
+  if(ticket){
+    try{ history.replaceState(null, '', location.pathname + location.search
+      + String(location.hash || '').replace(/(?:^|[#&])t=[\w.]+/, '').replace(/^&/, '#')); }catch(e){}
+  }
+  function ask(){
+    return fetch('/api/admin/session', { credentials: 'same-origin', headers: { 'X-Admin-Session': '1' } })
+      .then(function(r){ return r.json(); })
+      .then(function(j){ if(j && j.ok){ openConsole(); return true; } return false; });
+  }
+  var start = ticket
+    ? fetch('/api/admin/session', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-Admin-Session': '1' },
+        body: JSON.stringify({ ticket: ticket }),
+      }).then(function(r){ return r.ok; }).catch(function(){ return false; })
+    : Promise.resolve(false);
+  start.then(function(done){ if(done) openConsole(); else ask(); }).catch(function(){});
+})();
 
 setInterval(function(){ if(!$('app').hidden) refresh(); }, 20000);
 </script>

@@ -2703,7 +2703,8 @@ const routes = {
   'POST /api/admin/session': async (req, body) => {
     if (!rateLimit(req, 'admsess', 20, 60000)) return tooOften;
     const u = auth(req);
-    let pass = !!(u && u.is_admin);
+    /* уже владелец — по аккаунту, по ключу в заголовке или по живой сессии */
+    let pass = isAdmin(req);
     /* переход из приложения во внешний браузер */
     if (!pass && body && body.ticket) pass = ticketOk(body.ticket);
     if (!pass) {

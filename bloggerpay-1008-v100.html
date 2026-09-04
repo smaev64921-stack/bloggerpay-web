@@ -79193,13 +79193,29 @@ function mount(){
     var cash = item('bpAdmCash', CASH, 'Пульт выплат');
     cash.addEventListener('click', function(){
       try{ if(typeof closeDrawer === 'function') closeDrawer(); }catch(e){}
-      /* Отдельная страница вне мини-аппа: она сама спросит ключ оператора. */
+      /* Пульт — отдельная страница, и Телеграм откроет её во ВНЕШНЕМ
+         браузере, где нашей сессии нет. Раньше он спрашивал ключ второй
+         раз. Теперь берём у сервера одноразовый билет (две минуты) и
+         открываем пульт по ссылке с ним: он сам меняет билет на сессию
+         и стирает из адреса. Не вышло взять билет — открываем как
+         раньше, там останется ручной ввод ключа. */
       var url = '/operator';
-      try{
-        var tg = window.Telegram && window.Telegram.WebApp;
-        if(tg && tg.initData && typeof tg.openLink === 'function'){ tg.openLink(location.origin + url); return; }
-      }catch(e){}
-      try{ window.open(url, '_blank'); }catch(e){ location.href = url; }
+      function go(hash){
+        var full = location.origin + url + (hash || '');
+        try{
+          var tg = window.Telegram && window.Telegram.WebApp;
+          if(tg && tg.initData && typeof tg.openLink === 'function'){ tg.openLink(full); return; }
+        }catch(e){}
+        try{ window.open(url + (hash || ''), '_blank'); }catch(e){ location.href = url + (hash || ''); }
+      }
+      var S = window.bpSrv;
+      if(S && S.configured && S.configured() && S.token && S.token()){
+        S.raw('POST', '/api/admin/session', { wantTicket: true })
+          .then(function(j){ go(j && j.ticket ? ('#t=' + j.ticket) : ''); })
+          .catch(function(){ go(''); });
+        return;
+      }
+      go('');
     });
 
     list.appendChild(sep); list.appendChild(panel); list.appendChild(cash);
