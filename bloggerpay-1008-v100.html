@@ -11496,7 +11496,7 @@ window.BP_LOGO="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAYAAABccq
         Google
       </button>
       <button class="auth-soc-btn" onclick="loginTelegram()">
-        <img loading="lazy" class="soc-img" src="https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/telegram.svg" alt="Telegram">
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#2AABEE"/><path d="M5.5 11.9l11-4.24c.51-.19.96.12.79.9l-1.87 8.82c-.14.63-.52.79-1.05.49l-2.9-2.14-1.4 1.35c-.15.15-.29.29-.6.29l.21-3.02 5.5-4.97c.24-.21-.05-.33-.37-.12l-6.8 4.28-2.93-.92c-.64-.2-.65-.64.13-.95z" fill="#fff"/></svg>
         Telegram
       </button>
     </div>
@@ -81971,7 +81971,7 @@ function ready(){
    Сервер уже знает, кто это, и выдал ключ сессии. Приложение работает на
    местной записи пользователя, поэтому находим её по почте или заводим
    новую. Пароля у такой записи нет — вход только через Google. */
-function letIn(token, who){
+function letIn(token, who, how){
   /* Ключ сессии кладём тем же способом, что и обычный вход: мост сам
      знает, где его держать (во вкладке, с копией под почту). Своя
      запись в localStorage не работала — мост её не видит. */
@@ -82000,20 +82000,24 @@ function letIn(token, who){
            Так же устроен вход по Телеграму. */
         passSalt: (typeof _bpRandSalt === 'function') ? _bpRandSalt() : String(Math.random()),
         passHash: 'google-' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2),
-        name: who.name || 'Пользователь Google',
+        name: who.name || (how === 'telegram' ? 'Пользователь Телеграма' : 'Пользователь Google'),
         role: who.role === 'advertiser' ? 'advertiser' : 'blogger',
-        google: true,
         srvId: who.id,
         registeredAt: new Date().toISOString(),
         balance: 0, hold: 0, totalTopup: 0, topupHistory: [],
         stats: { theme: '—', audience: '0', reach: '0', chatTime: '—', rating: 0,
           campaigns: '0', views: '0', earned: '0' }
       };
+      rec[how === 'telegram' ? 'telegram' : 'google'] = true;
       users.push(rec);
       if(typeof saveUsers === 'function') saveUsers();
     }catch(e){ E(e); toast('Не вышло завести аккаунт на этом устройстве', 'err'); return false; }
   } else {
-    try{ rec.srvId = who.id; rec.google = true; if(typeof saveUsers === 'function') saveUsers(); }catch(e){ E(e); }
+    try{
+      rec.srvId = who.id;
+      rec[how === 'telegram' ? 'telegram' : 'google'] = true;
+      if(typeof saveUsers === 'function') saveUsers();
+    }catch(e){ E(e); }
   }
 
   try{
@@ -82024,10 +82028,14 @@ function letIn(token, who){
   }catch(e){ E(e); }
   forget();
   close();
-  toast('Вы вошли через Google', 'ok');
+  toast(how === 'telegram' ? 'Вы вошли через Телеграм' : 'Вы вошли через Google', 'ok');
   setTimeout(function(){ try{ enterApp(false); }catch(e){ E(e); } }, 600);
   return true;
 }
+
+/* Впуск один на все способы: вход через Телеграм зовёт эту же функцию,
+   чтобы правила заведения местной записи не разъехались. */
+window.bpAuthLetIn = function(token, who, how){ return letIn(token, who, how); };
 
 /* ── Своя метка входа ──
    Метку, с которой начали вход, помним на устройстве. Она нужна дважды:
@@ -82250,15 +82258,15 @@ try{
 html #formLogin .auth-or{ display:flex }
 html #formLogin .auth-socials{ display:grid }
 html #formLogin.bp-tg-in .auth-soc-btn[onclick*="loginGoogle"]{ display:flex }
-html:not(.bp-in-tg) .auth-socials{ grid-template-columns:1fr }
-html:not(.bp-in-tg) .auth-soc-btn[onclick*="loginTelegram"]{ display:none }
-/* Пометка «скоро» и приглушённый цвет — не про Google: он работает.
-   Вне Телеграма помечать больше нечего (кнопка Телеграма скрыта),
-   внутри Телеграма работают обе. */
-html .auth-soc-btn[onclick*="loginGoogle"], html .auth-soc-btn[onclick*="bpGLoginReg"],
-html.bp-in-tg .auth-soc-btn{ opacity:1!important }
-html .auth-soc-btn[onclick*="loginGoogle"]::after, html .auth-soc-btn[onclick*="bpGLoginReg"]::after,
-html.bp-in-tg .auth-soc-btn::after{ content:none }
+/* Способ входа, за которым нет ключей, не показываем вовсе: кнопка,
+   которая отвечает «не настроено», хуже отсутствующей. Класс ставит
+   скрипт по ответу /api/auth/methods. */
+html .auth-soc-btn.bp-off{ display:none!important }
+html .auth-socials.bp-one{ grid-template-columns:1fr }
+/* Пометка «скоро» и приглушённый цвет остались с тех пор, когда обе
+   кнопки были заглушками. Теперь работают обе. */
+html .auth-soc-btn{ opacity:1!important }
+html .auth-soc-btn::after{ content:none }
 /* Разделителей «или» стало два: свой перед кнопкой и чужой из блока
    #bpAuthExtra, который встаёт следом. Оставляем один — верхний. */
 html #bpAuthExtra .bp-auth-or{ display:none }
@@ -82306,8 +82314,49 @@ window.bpGLoginReg = function(){
   try{ loginGoogle(); }catch(e){ E(e); }
 };
 
-if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', toReg);
-else toReg();
+/* Какие способы входа настроены. Ответ короткий и кэшируется браузером
+   плохо, поэтому спрашиваем один раз за запуск. */
+function paintMethods(m){
+  try{
+    var rows = document.querySelectorAll('#pg-auth .auth-socials');
+    Array.prototype.forEach.call(rows, function(row){
+      var live = 0;
+      Array.prototype.forEach.call(row.querySelectorAll('.auth-soc-btn'), function(b){
+        var oc = b.getAttribute('onclick') || '';
+        var kind = /Telegram/i.test(oc) ? 'telegram' : 'google';
+        var on = !!m[kind];
+        b.classList.toggle('bp-off', !on);
+        if(on) live++;
+      });
+      row.classList.toggle('bp-one', live === 1);
+      row.style.display = live ? '' : 'none';
+      var or = row.previousElementSibling;
+      if(or && or.classList && or.classList.contains('auth-or')) or.style.display = live ? '' : 'none';
+    });
+  }catch(e){ E(e); }
+}
+
+function askMethods(){
+  var S = window.bpSrv;
+  if(!S || typeof S.raw !== 'function' || !S.configured || !S.configured()){
+    /* Без сервера не работает ни один из этих входов. */
+    paintMethods({ google: false, telegram: false });
+    return;
+  }
+  S.raw('GET', '/api/auth/methods')
+    .then(function(j){ paintMethods({ google: !!(j && j.google), telegram: !!(j && j.telegram) }); })
+    .catch(function(){ paintMethods({ google: true, telegram: false }); });
+}
+
+function boot(){
+  toReg();
+  askMethods();
+  /* Ряд в регистрации клонируется отложенно, а ответ сервера может
+     прийти раньше — красим ещё раз, когда всё на месте. */
+  setTimeout(function(){ toReg(); askMethods(); }, 1200);
+}
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+else boot();
 })();
 </script>
 
@@ -82369,6 +82418,234 @@ window.doLogout = function(){
   }
   return r;
 };
+})();
+</script>
+
+<script id="bp-tglogin">
+/* ══ ВХОД ЧЕРЕЗ TELEGRAM В ОБЫЧНОМ БРАУЗЕРЕ ═════════════════════════
+   Кнопка «Telegram» была заглушкой и показывала «скоро»: настоящий вход
+   умел только мини-апп, а мини-аппа у нас нет — бот открывает сайт
+   обычной ссылкой, и initData не существует ни при каких условиях.
+
+   У Телеграма теперь есть обычный OpenID Connect — тот же порядок, что и
+   у Google: страница согласия, код, обмен кода на подписанный ответ.
+   Поэтому здесь тот же поток и та же шторка ожидания, а впуск —
+   общей функцией bpAuthLetIn.
+
+   Внутри Телеграма (если мини-апп когда-нибудь вернётся) прежний путь по
+   initData сохраняется: мы зовём предыдущую версию функции.
+   Откат: удалить script#bp-tglogin.                                  */
+(function(){
+'use strict';
+if(window.__bpTgLogin) return; window.__bpTgLogin = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'tglogin'); }catch(_){} }
+function $(id){ return document.getElementById(id); }
+function toast(m, k){ try{ showAuthToast(m, k || 'info'); }catch(e){} }
+function srv(){ return window.bpSrv; }
+function ready(){
+  try{ var s = srv(); return !!(s && s.configured && s.configured() && typeof s.raw === 'function'); }
+  catch(e){ return false; }
+}
+
+var NKEY = 'bp_tglogin_n', NLIFE = 15 * 60 * 1000;
+function keep(n){
+  try{ localStorage.setItem(NKEY, JSON.stringify({ n: String(n || ''), at: Date.now() })); }catch(e){}
+}
+function mine(){
+  try{
+    var o = JSON.parse(localStorage.getItem(NKEY) || 'null');
+    if(!o || !o.n || (Date.now() - (o.at || 0)) > NLIFE) return '';
+    return String(o.n);
+  }catch(e){ return ''; }
+}
+function forget(){ try{ localStorage.removeItem(NKEY); }catch(e){} }
+
+var _nonce = '', _timer = null, _tries = 0;
+
+function close(){
+  if(_timer){ clearInterval(_timer); _timer = null; }
+  var ov = $('tglgOv');
+  if(ov) ov.remove();
+}
+window.bpTgLoginClose = function(){ _nonce = ''; forget(); close(); };
+
+function say(t){ var e = $('tglgTxt'); if(e) e.textContent = t; }
+function offerCode(){
+  var h = $('tglgHint'), m = $('tglgMore');
+  if(h && m && m.hidden) h.hidden = false;
+}
+
+function sheet(){
+  close();
+  var ov = document.createElement('div');
+  ov.id = 'tglgOv'; ov.className = 'glg-ov';
+  ov.addEventListener('click', function(e){ if(e.target === ov) window.bpTgLoginClose(); });
+  ov.innerHTML = '<div class="glg-sheet" role="dialog" aria-label="Вход через Телеграм">'
+    + '<div class="h"></div>'
+    + '<b>Заканчиваем вход</b>'
+    + '<div class="glg-wait"><span class="glg-dots"></span>'
+    + '<p id="tglgTxt">Подтвердите вход в открывшемся окне Телеграма — дальше приложение продолжит само.</p></div>'
+    + '<div class="glg-more" id="tglgMore" hidden>'
+    +   '<input class="glg-code" id="tglgCode" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code">'
+    +   '<div class="glg-err" id="tglgErr"></div>'
+    +   '<button type="button" class="glg-act" id="tglgGo">Войти по коду</button>'
+    + '</div>'
+    + '<button type="button" class="glg-hint" id="tglgHint" hidden>Вход открылся в другом браузере? Ввести код</button>'
+    + '<button type="button" class="glg-x" onclick="bpTgLoginClose()">Отмена</button>'
+    + '</div>';
+  document.body.appendChild(ov);
+  var go = $('tglgGo');
+  if(go) go.addEventListener('click', byCode);
+  var inp = $('tglgCode');
+  if(inp) inp.addEventListener('keydown', function(e){ if(e.key === 'Enter') byCode(); });
+  var hint = $('tglgHint');
+  if(hint) hint.addEventListener('click', function(){
+    var m = $('tglgMore');
+    if(m) m.hidden = false;
+    hint.hidden = true;
+    var i = $('tglgCode');
+    if(i) { try{ i.focus(); }catch(e){} }
+  });
+}
+
+function err(m){
+  var e = $('tglgErr');
+  if(e) e.textContent = m || '';
+  var i = $('tglgCode');
+  if(i && m) i.classList.add('bad');
+}
+
+function letIn(token, who){
+  try{
+    if(typeof window.bpAuthLetIn === 'function') return window.bpAuthLetIn(token, who || {}, 'telegram');
+  }catch(e){ E(e); }
+  toast('Вход не получилось завершить на этом устройстве', 'err');
+  return false;
+}
+
+function byCode(){
+  var i = $('tglgCode');
+  var code = String((i && i.value) || '').replace(/\D/g, '');
+  if(code.length !== 6){ err('Код — шесть цифр со страницы возврата'); return; }
+  var n = _nonce || mine();
+  if(!n){ err('Приложение не помнит эту попытку входа — начните вход заново'); return; }
+  err('');
+  var go = $('tglgGo');
+  if(go) go.disabled = true;
+  srv().raw('POST', '/api/auth/telegram/claim', { code: code, nonce: n })
+    .then(function(j){
+      if(j && j.token){ forget(); close(); letIn(j.token, j.user || {}); }
+      else { err('Код не подошёл'); if(go) go.disabled = false; }
+    })
+    .catch(function(e2){
+      err((e2 && e2.message) || 'Код не подошёл или устарел');
+      if(go) go.disabled = false;
+    });
+}
+
+function watch(){
+  _tries = 0;
+  if(_timer) clearInterval(_timer);
+  _timer = setInterval(function(){
+    _tries++;
+    if(!_nonce){ clearInterval(_timer); _timer = null; return; }
+    if(_tries === 10) say('Всё ещё ждём ответ Телеграма…');
+    if(_tries === 23) offerCode();
+    if(_tries > 60){
+      clearInterval(_timer); _timer = null;
+      say('Телеграм так и не ответил. Попробуйте войти ещё раз.');
+      offerCode();
+      return;
+    }
+    srv().raw('GET', '/api/auth/telegram/pending?nonce=' + encodeURIComponent(_nonce))
+      .then(function(j){
+        if(j && j.state === 'ok' && j.token){
+          clearInterval(_timer); _timer = null;
+          forget(); close();
+          letIn(j.token, j.user || {});
+        }
+      })
+      .catch(function(){ /* метку могли уже забрать — не шумим */ });
+  }, 2000);
+}
+
+function openLink(u){
+  try{
+    var tg = window.Telegram && window.Telegram.WebApp;
+    if(tg && tg.initData && typeof tg.openLink === 'function'){ tg.openLink(u); return; }
+  }catch(e){ E(e); }
+  var w = null;
+  try{ w = window.open(u, '_blank', 'noopener'); }catch(e){ E(e); }
+  if(!w){ try{ location.href = u; }catch(e){ E(e); } }
+}
+
+var prev = window.loginTelegram;
+window.loginTelegram = function(){
+  /* Внутри мини-аппа прежний путь по initData короче и надёжнее. */
+  try{
+    var tg = window.Telegram && window.Telegram.WebApp;
+    if(tg && tg.initData && typeof prev === 'function') return prev.apply(this, arguments);
+  }catch(e){ E(e); }
+
+  if(!ready()){
+    toast('Вход через Телеграм работает только с сервером. Проверьте связь.', 'err');
+    return;
+  }
+  var role = '';
+  try{ role = (typeof _regRole !== 'undefined' && _regRole) ? _regRole : ''; }catch(e){}
+  /* Окно открываем в ТОМ ЖЕ нажатии: если ждать ответа сервера, браузер
+     посчитает открытие непрошеным и заблокирует. */
+  var win = null;
+  try{
+    var tg2 = window.Telegram && window.Telegram.WebApp;
+    if(!(tg2 && tg2.initData)) win = window.open('', '_blank');
+  }catch(e){ E(e); }
+
+  srv().raw('GET', '/api/auth/telegram/start' + (role ? ('?role=' + encodeURIComponent(role)) : ''))
+    .then(function(j){
+      if(!j || !j.url) throw new Error('Сервер не дал ссылку входа');
+      _nonce = j.nonce || '';
+      keep(_nonce);
+      sheet();
+      watch();
+      if(win && !win.closed){ win.location = j.url; }
+      else openLink(j.url);
+    })
+    .catch(function(e2){
+      try{ if(win && !win.closed) win.close(); }catch(_){}
+      toast((e2 && e2.message) || 'Не вышло начать вход через Телеграм', 'err');
+    });
+};
+
+/* Возврат в том же браузере — только от своего входа: чужую метку в
+   адресе можно прислать кому угодно, и человек оказался бы в чужом
+   аккаунте, не нажав ничего, кроме ссылки. */
+try{
+  var q = new URLSearchParams(location.search);
+  var back = q.get('tglogin');
+  var own = mine();
+  if(own) _nonce = own;
+  if(back && ready()){
+    try{ history.replaceState(null, '', location.pathname); }catch(e){}
+    if(back === own){
+      srv().raw('GET', '/api/auth/telegram/pending?nonce=' + encodeURIComponent(back))
+        .then(function(j){ if(j && j.state === 'ok' && j.token){ forget(); letIn(j.token, j.user || {}); } })
+        .catch(function(){});
+    } else {
+      toast('Этот вход начинали не здесь. Откройте приложение там, где нажимали «Войти через Telegram».', 'err');
+    }
+  } else if(own && ready()){
+    setTimeout(function(){
+      try{
+        if(typeof currentUser !== 'undefined' && currentUser) return;
+        if(document.getElementById('tglgOv') || document.getElementById('glgOv')) return;
+        _nonce = own;
+        sheet(); watch();
+      }catch(e){ E(e); }
+    }, 1600);
+  }
+}catch(e){ E(e); }
 })();
 </script>
 

@@ -18,7 +18,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const SUITES = [
   'test-scenario.mjs', 'test-kyc.mjs', 'test-verify.mjs', 'test-pay.mjs',
   'test-partial.mjs', 'test-disputes.mjs', 'test-alerts.mjs', 'test-bot.mjs',
-  'test-telegram.mjs', 'test-mail.mjs', 'test-return.mjs', 'test-forge.mjs', 'test-leaderboard.mjs', 'test-cards.mjs', 'test-admin-session.mjs', 'test-google-login.mjs', 'test-sync.mjs', 'test-chan-migrate.mjs',
+  'test-telegram.mjs', 'test-mail.mjs', 'test-return.mjs', 'test-forge.mjs', 'test-leaderboard.mjs', 'test-cards.mjs', 'test-admin-session.mjs', 'test-google-login.mjs', 'test-sync.mjs', 'test-chan-migrate.mjs', 'test-tg-login.mjs',
   'test-guard.mjs',                       /* последним: блокирует адрес */
 ];
 

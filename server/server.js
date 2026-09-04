@@ -183,6 +183,92 @@ const APP_BASE = (SERVER_IS_PUBLIC
   ? PUBLIC_URL
   : (String(ENV.APP_URL || '').trim().replace(/\/+$/, '') || PUBLIC_URL)) + '/';
 
+/* ── Вход через Telegram в обычном браузере ────────────────────────
+   У Телеграма это обычный OpenID Connect: страница согласия, код, обмен
+   кода на id_token, подпись проверяется ключами самого Телеграма.
+   Прежняя проверка initData (checkInitData) осталась для мини-аппа —
+   она про другое и другой формат подписи.
+
+   client_id — это номер бота, то есть начало BOT_TOKEN до двоеточия;
+   поэтому отдельно его задавать не нужно. Секрет выдаёт BotFather в
+   разделе Login Widget, там же прописываются разрешённые адреса. */
+const TG_OIDC = {
+  iss: 'https://oauth.telegram.org',
+  auth: 'https://oauth.telegram.org/auth',
+  token: 'https://oauth.telegram.org/token',
+  jwks: 'https://oauth.telegram.org/.well-known/jwks.json',
+};
+const TG_CLIENT_ID = cleanKey(ENV.TG_CLIENT_ID) || String(BOT_TOKEN).split(':')[0] || '';
+const TG_CLIENT_SECRET = cleanKey(ENV.TG_CLIENT_SECRET);
+
+/* Ключи подписи держим час: они меняются редко, а ходить за ними на
+   каждый вход — лишняя задержка и лишняя точка отказа. */
+let _tgKeys = { at: 0, keys: [] };
+async function tgKeys(force) {
+  if (!force && _tgKeys.keys.length && Date.now() - _tgKeys.at < 3600000) return _tgKeys.keys;
+  const stop = AbortSignal.timeout ? AbortSignal.timeout(10000) : undefined;
+  const r = await fetch(TG_OIDC.jwks, { signal: stop });
+  const j = await r.json();
+  const keys = Array.isArray(j && j.keys) ? j.keys : [];
+  if (keys.length) _tgKeys = { at: Date.now(), keys };
+  return keys;
+}
+const b64u = (v) => Buffer.from(String(v).replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+
+/* Проверяем ПОДПИСЬ, а не только форму ответа: без этого достаточно было
+   бы подсунуть свой id_token, чтобы войти любым человеком. */
+async function tgVerifyIdToken(idToken) {
+  const parts = String(idToken || '').split('.');
+  if (parts.length !== 3) throw new Error('Телеграм прислал непонятный ответ');
+  const head = JSON.parse(b64u(parts[0]).toString('utf8'));
+  const claims = JSON.parse(b64u(parts[1]).toString('utf8'));
+  const data = Buffer.from(parts[0] + '.' + parts[1], 'utf8');
+  const sig = b64u(parts[2]);
+
+  const tryKeys = (keys) => keys.some((jwk) => {
+    try {
+      if (head.kid && jwk.kid && head.kid !== jwk.kid) return false;
+      const key = crypto.createPublicKey({ key: jwk, format: 'jwk' });
+      if (head.alg === 'RS256') return crypto.verify('RSA-SHA256', data, key, sig);
+      if (head.alg === 'ES256' || head.alg === 'ES256K') {
+        return crypto.verify('sha256', data, { key, dsaEncoding: 'ieee-p1363' }, sig);
+      }
+      if (head.alg === 'EdDSA') return crypto.verify(null, data, key, sig);
+      return false;
+    } catch (e) { return false; }
+  });
+
+  let ok = tryKeys(await tgKeys(false));
+  if (!ok) ok = tryKeys(await tgKeys(true));      /* ключ могли только что сменить */
+  if (!ok) throw new Error('Подпись Телеграма не сошлась');
+
+  if (claims.iss !== TG_OIDC.iss) throw new Error('Ответ пришёл не от Телеграма');
+  if (String(claims.aud) !== String(TG_CLIENT_ID)) throw new Error('Ответ выдан не этому боту');
+  /* Минута запаса на расхождение часов — не больше. */
+  if (!(Number(claims.exp) * 1000 > Date.now() - 60000)) throw new Error('Ответ Телеграма просрочен');
+  if (!claims.sub) throw new Error('Телеграм не сказал, кто вошёл');
+  return claims;
+}
+
+/* Найти или завести аккаунт по номеру в Телеграме. Одна дорога и для
+   мини-аппа, и для входа в браузере: иначе правила заведения аккаунтов
+   разъедутся и один человек получит два счёта. */
+function tgAccount(tgId, name, role) {
+  let u = q.userByTg.get(String(tgId));
+  if (u) return u;
+  /* Пароля у такого аккаунта нет: вход только через Телеграм, поэтому в
+     поля хеша кладём случайный мусор, которым войти нельзя. */
+  let email = 'tg' + tgId + '@telegram.local';
+  if (q.userByEmail.get(email)) email = 'tg' + tgId + '.' + crypto.randomBytes(3).toString('hex') + '@telegram.local';
+  const salt = crypto.randomBytes(16).toString('hex');
+  const dead = crypto.randomBytes(32).toString('hex');
+  try {
+    q.insTgUser.run(email, String(name || '').trim().slice(0, 120) || ('Пользователь ' + tgId),
+      role === 'advertiser' ? 'advertiser' : 'blogger', salt, dead, String(tgId));
+  } catch (e) { return null; }
+  return q.userByTg.get(String(tgId));
+}
+
 const OAUTH = {
   youtube: {
     id: cleanKey(ENV.YT_CLIENT_ID), secret: cleanKey(ENV.YT_CLIENT_SECRET),
@@ -1286,10 +1372,14 @@ setInterval(() => {
    метке или по короткому коду, который человек видит на странице
    возврата. Живёт 15 минут, забирается один раз. */
 const glog = new Map();           /* nonce → {at, code, token, user, done, tries} */
+/* То же самое для входа через Телеграм: результат ждёт под меткой, пока
+   приложение его не заберёт. Плюс хранится проверочная строка PKCE. */
+const tglog = new Map();          /* nonce → {at, code, token, user, done, tries, role, verifier} */
 const GLOG_TTL = 15 * 60 * 1000;
 function glogSweep() {
   const now = Date.now();
   for (const [k, v] of glog) if (now - v.at > GLOG_TTL) glog.delete(k);
+  for (const [k, v] of tglog) if (now - v.at > GLOG_TTL) tglog.delete(k);
 }
 setInterval(glogSweep, 60000).unref();
 
@@ -2023,6 +2113,17 @@ const routes = {
      Google возвращает его на callback — там мы заводим или находим
      аккаунт и кладём готовую сессию под метку. Приложение забирает её
      (claim) по метке или по коду со страницы возврата. */
+  /* Какие способы входа настроены на сервере. Нужно интерфейсу: кнопку,
+     за которой нет ключей, лучше не показывать вовсе, чем показывать и
+     отвечать «не настроено» после нажатия. */
+  'GET /api/auth/methods': async () => ({
+    status: 200,
+    body: {
+      google: !!(OAUTH.youtube.id && OAUTH.youtube.secret),
+      telegram: !!(TG_CLIENT_ID && TG_CLIENT_SECRET),
+    },
+  }),
+
   'GET /api/auth/google/start': async (req, body, url) => {
     if (!rateLimit(req, 'glogin', 20, 60000)) return tooOften;
     const cfg = OAUTH.youtube;      /* тот же клиент Google, что и у подтверждения канала */
@@ -2089,6 +2190,72 @@ const routes = {
     return { status: 200, body: { token: rec.token, user: rec.user } };
   },
 
+  /* ── Вход через Телеграм в браузере ──
+     Те же три шага, что и у Google: приложение просит ссылку, человек
+     подтверждает вход у Телеграма, тот возвращает его на наш адрес — там
+     мы меняем код на id_token, заводим или находим аккаунт и кладём
+     готовую сессию под метку. */
+  'GET /api/auth/telegram/start': async (req, body, url) => {
+    if (!rateLimit(req, 'tglogin', 20, 60000)) return tooOften;
+    if (!TG_CLIENT_ID || !TG_CLIENT_SECRET) {
+      return { status: 503, body: { error: 'Вход через Телеграм ещё не настроен: на сервере нет ключей Телеграма' } };
+    }
+    glogSweep();
+    const nonce = crypto.randomBytes(24).toString('hex');
+    const role = url.searchParams.get('role') === 'advertiser' ? 'advertiser' : 'blogger';
+    /* PKCE: код, перехваченный по дороге, без этой строки бесполезен. */
+    const verifier = crypto.randomBytes(32).toString('base64url');
+    const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
+    tglog.set(nonce, { at: Date.now(), code: '', token: '', user: null, done: false, tries: 0, role, verifier });
+    const q1 = new URLSearchParams({
+      response_type: 'code',
+      client_id: TG_CLIENT_ID,
+      redirect_uri: PUBLIC_URL + '/api/auth/telegram/callback',
+      /* Просим только то, что нужно для входа: кто это и как зовут.
+         Телефон не просим — он нам не нужен, а человека пугает. */
+      scope: 'openid profile',
+      state: nonce,
+      code_challenge: challenge,
+      code_challenge_method: 'S256',
+    });
+    return { status: 200, body: { url: TG_OIDC.auth + '?' + q1.toString(), nonce } };
+  },
+
+  'GET /api/auth/telegram/pending': async (req, body, url) => {
+    if (!rateLimit(req, 'tglogpend', 120, 60000)) return tooOften;
+    const nonce = String(url.searchParams.get('nonce') || '');
+    const rec = tglog.get(nonce);
+    if (!rec) return { status: 404, body: { error: 'Вход не найден или просрочен' } };
+    if (!rec.done) return { status: 200, body: { state: 'waiting' } };
+    tglog.delete(nonce);
+    return { status: 200, body: { state: 'ok', token: rec.token, user: rec.user } };
+  },
+
+  /* Возврат открылся в другом браузере: код со страницы возврата.
+     Как и у Google, код сверяется ТОЛЬКО со своей меткой. */
+  'POST /api/auth/telegram/claim': async (req, body) => {
+    if (!rateLimit(req, 'tglogclaim', 30, 60000)) return tooOften;
+    const nonce = String(body.nonce || '').slice(0, 64);
+    const code = String(body.code || '').replace(/\D/g, '');
+    const rec = tglog.get(nonce);
+    if (!rec) return { status: 404, body: { error: 'Вход не найден — начните заново' } };
+    if (Date.now() - rec.at > GLOG_TTL) {
+      tglog.delete(nonce);
+      return { status: 410, body: { error: 'Ссылка входа живёт 15 минут — начните заново' } };
+    }
+    if (rec.tries >= 5) {
+      tglog.delete(nonce);
+      return { status: 429, body: { error: 'Слишком много попыток — начните вход заново' } };
+    }
+    if (code.length !== 6) return { status: 400, body: { error: 'Код — шесть цифр' } };
+    if (!rec.done || code !== rec.code) {
+      rec.tries++;
+      return { status: 400, body: { error: 'Код не подошёл', left: Math.max(0, 5 - rec.tries) } };
+    }
+    tglog.delete(nonce);
+    return { status: 200, body: { token: rec.token, user: rec.user } };
+  },
+
   'POST /api/auth/telegram': async (req, body) => {
     if (!rateLimit(req, 'tg', 30, 60000)) return tooOften;
     /* Порог давности — наш, не клиентский: иначе перехваченная строка
@@ -2110,23 +2277,12 @@ const routes = {
        ведём только по telegram-id, который проставляет сам сервер. */
 
     if (!u) {
-      /* Заводим аккаунт. Пароля у него нет: вход только через Телеграм,
-         поэтому в поля хеша кладём случайный мусор, которым нельзя войти. */
+      /* Заводим ТОЙ ЖЕ функцией, что и вход через браузер: иначе правила
+         заведения аккаунтов разъедутся и один человек получит два счёта. */
       const name = [tg.first_name, tg.last_name].filter(Boolean).join(' ').trim()
         || tg.username || ('Пользователь ' + tgId);
-      /* Адрес мог быть занят до того, как регистрацию на служебный домен
-         закрыли. Тогда берём соседний свободный, а не отказываем входу. */
-      let email = 'tg' + tgId + '@telegram.local';
-      if (q.userByEmail.get(email)) email = 'tg' + tgId + '.' + crypto.randomBytes(3).toString('hex') + '@telegram.local';
-      const salt = crypto.randomBytes(16).toString('hex');
-      const dead = crypto.randomBytes(32).toString('hex');
-      const role = body.role === 'advertiser' ? 'advertiser' : 'blogger';
-      try {
-        q.insTgUser.run(email, name.slice(0, 120), role, salt, dead, tgId);
-      } catch (e) {
-        return { status: 409, body: { error: 'Не удалось создать аккаунт по Телеграму' } };
-      }
-      u = q.userByTg.get(tgId);
+      u = tgAccount(tgId, name, body.role);
+      if (!u) return { status: 409, body: { error: 'Не удалось создать аккаунт по Телеграму' } };
     }
 
     if (u.is_blocked) return { status: 403, body: { error: 'Аккаунт заблокирован' } };
@@ -3184,6 +3340,79 @@ function verifyPage(res, title, text, good, code, goto) {
   res.end(html);
 }
 
+/* ── Возврат от Телеграма после входа ──
+   Меняем код на id_token, проверяем подпись, находим или заводим аккаунт
+   и кладём готовую сессию под метку. Дальше человека уводит обратно в
+   приложение — оно заберёт вход само. */
+async function handleTelegramCallback(req, res, url) {
+  const state = String(url.searchParams.get('state') || '');
+  const code = url.searchParams.get('code');
+  const rec = tglog.get(state);
+
+  if (!rec) return verifyPage(res, 'Ссылка не найдена', 'Начните вход заново из приложения.', false);
+  if (Date.now() - rec.at > GLOG_TTL) {
+    tglog.delete(state);
+    return verifyPage(res, 'Слишком долго', 'Ссылка входа живёт 15 минут. Начните заново.', false);
+  }
+  if (!code) {
+    tglog.delete(state);
+    return verifyPage(res, 'Вход отменён', 'Вы не разрешили доступ — аккаунт не создан.', false);
+  }
+  if (rec.done) {
+    return verifyPage(res, 'Вход уже подтверждён',
+      'Вернитесь в приложение — оно уже впустило вас. Если нет, начните вход заново.',
+      false, rec.code, APP_BASE + '?tglogin=' + encodeURIComponent(state));
+  }
+
+  try {
+    const stop = AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined;
+    const r = await fetch(TG_OIDC.token, {
+      method: 'POST',
+      signal: stop,
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Authorization: 'Basic ' + Buffer.from(TG_CLIENT_ID + ':' + TG_CLIENT_SECRET).toString('base64'),
+      },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: PUBLIC_URL + '/api/auth/telegram/callback',
+        client_id: TG_CLIENT_ID,
+        code_verifier: rec.verifier,
+      }),
+    });
+    const tok = await r.json();
+    if (!tok.id_token) throw new Error(tok.error_description || tok.error || 'Телеграм не выдал ответ о входе');
+
+    const claims = await tgVerifyIdToken(tok.id_token);
+    const tgId = String(claims.sub);
+    const name = String(claims.name || claims.preferred_username || '').trim();
+
+    const u = tgAccount(tgId, name, rec.role);
+    if (!u) return verifyPage(res, 'Не вышло создать аккаунт', 'Попробуйте ещё раз через минуту.', false);
+    if (u.is_blocked) {
+      tglog.delete(state);
+      return verifyPage(res, 'Аккаунт заблокирован', 'Напишите в поддержку.', false);
+    }
+    syncAdminFlag(u);
+
+    const token = newToken();
+    const exp = new Date(Date.now() + SESSION_DAYS * 864e5).toISOString();
+    q.insSession.run(token, u.id, exp);
+
+    rec.done = true;
+    rec.token = token;
+    rec.user = { id: u.id, email: u.email, name: u.name, role: u.role };
+    rec.code = String(crypto.randomInt(100000, 1000000));
+    tglog.set(state, rec);
+
+    return verifyPage(res, 'Вы вошли', 'Возвращаем вас в приложение…',
+      true, rec.code, APP_BASE + '?tglogin=' + encodeURIComponent(state));
+  } catch (e) {
+    return verifyPage(res, 'Не вышло войти', String((e && e.message) || e).slice(0, 160), false);
+  }
+}
+
 /* ── Возврат от Google после входа ──
    Меняем код на токен, спрашиваем у Google, кто это, находим или заводим
    аккаунт и кладём готовую сессию под метку. Дальше человека сразу
@@ -3520,6 +3749,9 @@ const handler = async (req, res) => {
      сюда приходит браузер, а не приложение. */
   if (req.method === 'GET' && url.pathname === '/api/auth/google/callback') {
     return handleGoogleCallback(req, res, url);
+  }
+  if (req.method === 'GET' && url.pathname === '/api/auth/telegram/callback') {
+    return handleTelegramCallback(req, res, url);
   }
   /* Страница показа кода. Саму метку страница берёт из адреса уже в
      браузере — сервер здесь отдаёт только вёрстку и ничего не решает. */
