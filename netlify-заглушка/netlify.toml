@@ -1,0 +1,5 @@
+[[redirects]]
+  from = "/*"
+  to = "https://bot-1788290165-4956-sudarevivan.bothost.tech/:splat"
+  status = 301
+  force = true
