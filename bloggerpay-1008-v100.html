@@ -16271,8 +16271,9 @@ async function doLogin() {
   if(user.blocked){ showAuthToast('Аккаунт заблокирован администратором', 'err'); return; }
   currentUser = user;
   if(rememberMe) saveSession(user);
-  bpNotify('success', 'С возвращением, ' + user.name + '!', 'Вы вошли в аккаунт');
-  setTimeout(()=>enterApp(false), 900);
+  /* Приветствие убрано: человек нажал «Войти» и так знает, что вошёл.
+     Задержка вместе с ним — иначе получалась пустая пауза. */
+  setTimeout(()=>enterApp(false), 0);
 }
 
 /* Выбор роли при регистрации. По умолчанию пусто: роль решает, какой
@@ -16344,8 +16345,11 @@ async function doRegister() {
   try { localStorage.setItem('bp_role_u_' + newUser.id, _regRole); } catch(e){BPERR(e,15610)}
   try { sessionStorage.setItem('bp_role', _regRole); } catch(e){BPERR(e,15611)}
   if(rememberMe) saveSession(newUser);
-  bpNotify('success', 'Аккаунт создан', 'Добро пожаловать в BloggerPay!');
-  setTimeout(()=>enterApp(true), 900);
+  /* Без «Добро пожаловать»: аккаунт создан — открываем приложение.
+     Задержку оставляем маленькой, но не нулевой: слой bp-srvlink через
+     1200 мс разбирает случай «почта уже занята» и рассчитывает, что
+     приложение к этому моменту открылось. */
+  setTimeout(()=>enterApp(true), 120);
 }
 
 /* Раньше функция просто сообщала «ссылка отправлена» — письмо никуда
@@ -75543,9 +75547,10 @@ async function restoreFromServer(email, pass){
     try{ localStorage.setItem('bp_role_u_' + rec.id, role); }catch(e){ E(e); }
     try{ sessionStorage.setItem('bp_role', role); }catch(e){ E(e); }
     try{ if(typeof rememberMe === 'undefined' || rememberMe) saveSession(rec); }catch(e){ E(e); }
-    try{ bpNotify('success', 'С возвращением, ' + rec.name + '!', 'Аккаунт восстановлен — данные и баланс на месте'); }
-    catch(e){ try{ showAuthToast('Аккаунт восстановлен', 'ok'); }catch(_){} }
-    setTimeout(function(){ try{ enterApp(false); }catch(e){ E(e); } }, 900);
+    /* Здесь сообщение по делу: человек входит с НОВОГО устройства, и
+       важно, что данные приехали с сервера, а не завелись пустыми. */
+    try{ showAuthToast('Данные аккаунта загружены с сервера', 'ok'); }catch(e){}
+    setTimeout(function(){ try{ enterApp(false); }catch(e){ E(e); } }, 300);
     return true;
   }catch(e){ E(e); return false; }
 }
@@ -81001,6 +81006,144 @@ var DISP_KEY = 'bp_disputes_v2';
    они не вернулись бы — сервер отдаёт только ver больше запрошенного.
    Новый ключ = один разовый проход ленты с начала. */
 var VER_KEY = 'bpsync_ver2';         /* без префикса bp_ — мимо перехвата bpData */
+var USERS_KEY = 'bp_users';
+var SNAP_KEY = 'bpsync_prof';        /* снимок профиля: по нему считаем, что изменилось */
+
+/* ── ПРОФИЛЬ ЧЕЛОВЕКА ────────────────────────────────────────────────
+   Имя, фото, «о себе», город, сайт, тематики и ссылки жили только в
+   bp_users на устройстве: человек правил профиль на телефоне, а на
+   компьютере не менялось ничего.
+
+   Возим их тем же обменом, конвертом kind='prof' БЕЗ адресата. Это
+   «письмо себе»: сервер отдаёт конверт без адресата только автору
+   (условие a_id) — посторонним такой конверт достаётся лишь у заданий.
+   Номер записи обязан включать серверный номер человека: ключ
+   (kind, rid) на сервере общий, и одинаковый rid у всех сделал бы
+   владельцем первого, кто успел.
+
+   Что НЕ возим: пароль, ключи, реквизиты выплат, документы, баланс —
+   их считает сервер, и им место не здесь. */
+var PROF_FIELDS = ['name', 'about', 'city', 'website', 'theme'];
+
+function profRid(){ var n = mySrv(); return n == null ? '' : 'self:' + n; }
+function snap(){
+  try{ var o = JSON.parse(rawGet(SNAP_KEY) || 'null'); return (o && typeof o === 'object') ? o : { at:{}, val:{} }; }
+  catch(e){ return { at:{}, val:{} }; }
+}
+function saveSnap(o){ try{ rawSet(SNAP_KEY, JSON.stringify(o)); }catch(e){ E(e); } }
+
+/* Фото в объекте пользователя бывает под мегабайт, а в конверт влезает
+   400 КБ. Отправляем отдельную маленькую копию; пока она готовится,
+   профиль уезжает без неё, а не застревает целиком. */
+var AVA_MAX = 120000;
+function avaKey(v){ var t = String(v || ''); return t ? (t.length + ':' + t.slice(-48)) : ''; }
+function makeSmallAva(src, done){
+  try{
+    var img = new Image();
+    img.onload = function(){
+      try{
+        var side = 320;
+        var cv = document.createElement('canvas');
+        cv.width = side; cv.height = side;
+        var g = cv.getContext('2d');
+        var k = Math.max(side / img.width, side / img.height);
+        var w = Math.round(img.width * k), h = Math.round(img.height * k);
+        g.drawImage(img, Math.round((side - w) / 2), Math.round((side - h) / 2), w, h);
+        var out = cv.toDataURL('image/jpeg', 0.8);
+        if(out.length > AVA_MAX) out = cv.toDataURL('image/jpeg', 0.6);
+        done(out.length <= AVA_MAX ? out : '');
+      }catch(e){ E(e); done(''); }
+    };
+    img.onerror = function(){ done(''); };
+    img.src = src;
+  }catch(e){ E(e); done(''); }
+}
+var _avaBusy = false;
+function ensureAva(u, sn){
+  var src = String((u && (u.photo || u.avatar)) || '');
+  var key = avaKey(src);
+  if(!key){ if(sn.avaKey){ sn.avaKey = ''; sn.ava = ''; saveSnap(sn); } return ''; }
+  if(sn.avaKey === key) return sn.ava || '';
+  if(_avaBusy) return sn.ava || '';
+  _avaBusy = true;
+  makeSmallAva(src, function(small){
+    _avaBusy = false;
+    var s2 = snap();
+    s2.avaKey = key; s2.ava = small || '';
+    saveSnap(s2);
+    if(small) schedulePush();
+  });
+  return '';
+}
+
+/* Метку времени полю ставим сами, сравнивая с прошлым снимком: так не
+   надо дописывать её в каждое место правки профиля, а слияние всё равно
+   идёт по полям — «на одном поменял имя, на другом фото» не теряется. */
+function profOf(){
+  var u = me(); if(!u) return null;
+  var sn = snap(), now = Date.now(), changed = false;
+  var val = {};
+  PROF_FIELDS.forEach(function(k){ val[k] = (u[k] == null) ? '' : u[k]; });
+  val.niches = Array.isArray(u.niches) ? u.niches.slice(0, 8) : [];
+  val.socialLinks = (u.socialLinks && typeof u.socialLinks === 'object') ? u.socialLinks : {};
+  val.ava = ensureAva(u, sn);
+
+  var at = sn.at || {};
+  Object.keys(val).forEach(function(k){
+    var a = JSON.stringify(val[k]), b = JSON.stringify((sn.val || {})[k]);
+    if(a !== b){ at[k] = now; changed = true; }
+    else if(at[k] == null) at[k] = 0;
+  });
+  if(changed){ sn.at = at; sn.val = val; saveSnap(sn); }
+  return { v:1, val: val, at: at };
+}
+
+function pushProf(){
+  var rid = profRid(); if(!rid) return;
+  var rec = profOf(); if(!rec) return;
+  put('prof', rid, rec, null, true);
+}
+
+function applyProf(data){
+  try{
+    var u = me(); if(!u || !data || !data.val) return false;
+    var sn = snap(), at = sn.at || {}, mine = sn.val || {};
+    var got = data.val, gotAt = data.at || {};
+    var touched = false;
+    Object.keys(got).forEach(function(k){
+      var theirs = Number(gotAt[k] || 0), ours = Number(at[k] || 0);
+      if(!(theirs > ours)) return;
+      var v = got[k];
+      if(k === 'ava'){
+        if(v && String(v).indexOf('data:image/') !== 0) return;   /* только картинка */
+        u.photo = v || '';
+        u.avatar = v || '';
+      } else if(k === 'niches'){
+        if(!Array.isArray(v)) return;
+        u.niches = v.slice(0, 8);
+      } else if(k === 'socialLinks'){
+        if(!v || typeof v !== 'object') return;
+        u.socialLinks = v;
+      } else {
+        if(typeof v !== 'string' && typeof v !== 'number') return;
+        u[k] = v;
+      }
+      at[k] = theirs;
+      mine[k] = v;
+      touched = true;
+    });
+    if(!touched) return false;
+    sn.at = at; sn.val = mine;
+    if(Object.prototype.hasOwnProperty.call(got, 'ava')) { sn.ava = got.ava || ''; sn.avaKey = avaKey(u.photo); }
+    saveSnap(sn);
+    try{ if(typeof saveUsers === 'function') saveUsers(); }catch(e){ E(e); }
+    try{ if(typeof saveSession === 'function' && typeof rememberMe !== 'undefined' && rememberMe) saveSession(u); }catch(e){ E(e); }
+    /* Экраны перерисовываем теми же функциями, что и само приложение. */
+    try{ if(typeof updateProfileUI === 'function') updateProfileUI(); }catch(e){ E(e); }
+    try{ if(typeof window.bpPf2RenderDone === 'function') window.bpPf2RenderDone(); }catch(e){ E(e); }
+    return true;
+  }catch(e){ E(e); return false; }
+}
 
 /* Читаем и пишем в обход bpData: очередь и подписки нам здесь только
    мешают (иначе принятая с сервера запись тут же поехала бы обратно). */
@@ -81146,6 +81289,9 @@ function pushAll(){
       put('deal', String(d.dealId), d, peer);
     });
     if(dealsFixed) rawSet(DEAL_KEY, JSON.stringify(deals));
+
+    /* Профиль — «письмо себе»: без адресата, видит только автор. */
+    pushProf();
 
     /* ЗАДАНИЯ — общим конвертом: их витрину видят все вошедшие.
        Черновики не публикуем: человек их ещё пишет. */
@@ -81402,6 +81548,7 @@ function pull(force){
           })) touched++;
           else if(row.kind === 'rev' && applyList(REV_KEY, 'id', row.rid, row.data)) touched++;
           else if(row.kind === 'disp' && applyList(DISP_KEY, 'id', row.rid, row.data)) touched++;
+          else if(row.kind === 'prof' && applyProf(row.data)) touched++;
         }
       }catch(e){ E(e); }
     });
@@ -81423,6 +81570,7 @@ function watched(key){
   key = String(key || '');
   return key === REQ_KEY || key === DEAL_KEY || key === CAMP_KEY
       || key === JOIN_KEY || key === REV_KEY || key === DISP_KEY
+      || key === USERS_KEY                       /* правка профиля */
       || key.indexOf(MSG_PREFIX) === 0;
 }
 
@@ -82015,8 +82163,6 @@ function letIn(token, who, how){
     var mail0 = String(who.email || '').toLowerCase();
     if(srv() && typeof srv().setToken === 'function') srv().setToken(token, mail0);
   }catch(e){ E(e); }
-  try{ if(window.bpMoney && typeof bpMoney.setMySrvId === 'function') bpMoney.setMySrvId(who.id); }catch(e){ E(e); }
-
   var mail = String(who.email || '').toLowerCase();
   var rec = null;
   try{
@@ -82062,6 +82208,10 @@ function letIn(token, who, how){
     localStorage.setItem('bp_role_u_' + rec.id, rec.role);
     sessionStorage.setItem('bp_role', rec.role);
   }catch(e){ E(e); }
+  /* Серверный номер проставляем ПОСЛЕ смены currentUser: setMySrvId
+     пишет по почте текущего человека, и вызов раньше клал номер нового
+     человека в запись ПРЕЖНЕГО — то есть портил адресата выплат. */
+  try{ if(window.bpMoney && typeof bpMoney.setMySrvId === 'function') bpMoney.setMySrvId(who.id); }catch(e){ E(e); }
   forget();
   close();
   toast(how === 'telegram' ? 'Вы вошли через Телеграм' : 'Вы вошли через Google', 'ok');
@@ -82960,6 +83110,103 @@ try{
     window.goTo = wrap;
   }
 }catch(e){ E(e); }
+})();
+</script>
+
+<script id="bp-accid">
+/* ══ ОДИН НОМЕР АККАУНТА НА ВСЕХ УСТРОЙСТВАХ ════════════════════════
+   Человек видел «ID: 0001000000» — это счётчик bp_acc_seq ВНУТРИ ЭТОГО
+   браузера: первый заведённый здесь аккаунт получал 0001000000, второй
+   0001000001. На другом телефоне счётчик свой, поэтому один и тот же
+   человек видел два разных номера — и справедливо считал, что попал в
+   разные аккаунты.
+
+   Настоящий единый номер уже есть: это номер человека на сервере
+   (currentUser.srvId), по нему ходят деньги и его же видит оператор.
+   Показываем его. Прежний номер остаётся запасным для тех, кто ни разу
+   не выходил на сервер, — иначе на экране был бы прочерк.
+
+   Поле accountId в записи не трогаем: оно осталось в консоли владельца и
+   в старых записях. Ключом оно нигде не служит — ни в выплатах, ни в
+   спорах, ни в приглашениях.
+   Откат: удалить script#bp-accid.                                    */
+(function(){
+'use strict';
+if(window.__bpAccId) return; window.__bpAccId = 1;
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'accid'); }catch(_){} }
+
+function pad(v){ return String(v).replace(/\D/g, '').padStart(10, '0').slice(-10); }
+
+window.bpAccIdOf = function(u){
+  try{
+    var who = u || (typeof currentUser !== 'undefined' ? currentUser : null);
+    if(!who) return '';
+    if(who.srvId != null && who.srvId !== '') return pad(who.srvId);
+    var n = null;
+    try{
+      if(window.bpMoney && typeof bpMoney.mySrvId === 'function') n = bpMoney.mySrvId();
+    }catch(e){}
+    if(n != null && n !== '') return pad(n);
+    return who.accountId ? String(who.accountId) : '';
+  }catch(e){ E(e); return ''; }
+};
+
+/* Экраны рисуются в разных слоях и в разное время, поэтому не ищем
+   каждую точку показа, а поправляем результат: подписи с номером у нас
+   ровно трёх видов, и все они содержат «ID». */
+function fix(){
+  try{
+    var want = window.bpAccIdOf();
+    if(!want) return;
+    /* Боковое меню рисует номер не по id, а по классу. */
+    var els = [document.getElementById('profHandle'),
+               document.querySelector('.drw-uhandle'),
+               document.getElementById('st2Id')];
+    els.forEach(function(el){
+      if(!el) return;
+      var t = String(el.textContent || '');
+      var m = /^(\s*ID[:\s]*)(\d{6,})\s*$/.exec(t);
+      if(!m) return;
+      if(m[2] === want) return;
+      el.textContent = m[1] + want;
+    });
+  }catch(e){ E(e); }
+}
+
+/* Копирование номера должно давать то же, что человек видит. */
+try{
+  var orig = window.bpCopyAccId;
+  if(typeof orig === 'function' && !orig.__bpAccId){
+    var w = function(){
+      try{
+        var v = window.bpAccIdOf();
+        if(v && navigator.clipboard && navigator.clipboard.writeText){
+          navigator.clipboard.writeText(v);
+          try{ if(typeof toast === 'function') toast('Номер аккаунта скопирован', 'ok'); }catch(e){}
+          return;
+        }
+      }catch(e){ E(e); }
+      return orig.apply(this, arguments);
+    };
+    w.__bpAccId = 1;
+    window.bpCopyAccId = w;
+  }
+}catch(e){ E(e); }
+
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fix);
+else fix();
+setTimeout(fix, 600);
+setTimeout(fix, 1800);
+try{
+  var g = window.goTo;
+  if(typeof g === 'function' && !g.__bpAccId){
+    var wrap = function(){ var r = g.apply(this, arguments); setTimeout(fix, 60); setTimeout(fix, 400); return r; };
+    wrap.__bpAccId = 1;
+    window.goTo = wrap;
+  }
+}catch(e){ E(e); }
+/* Экран профиля перерисовывают несколько слоёв — держим номер верным. */
+setInterval(function(){ if(!document.hidden) fix(); }, 3000);
 })();
 </script>
 
