@@ -73372,6 +73372,12 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
       clearPending();
       var ov = document.getElementById('bpVfyCode'); if(ov) ov.remove();
       toast((j && j.title ? j.title + ' — ' : '') + name + ' подтверждён', 'ok');
+      /* Списки каналов держат ответ сервера 15-60 секунд. Без сброса
+         только что подтверждённая площадка появлялась в профиле и в
+         мастере карточки с задержкой — и выглядело это как «не
+         добавилось». */
+      try{ if(typeof window.bpAbcDropCache === 'function') window.bpAbcDropCache(); }catch(e){}
+      try{ if(typeof window.bpPf2DropChannels === 'function') window.bpPf2DropChannels(); }catch(e){}
       paintVerified();
       try{ if(typeof window.bpAbcAfterVerify === 'function') window.bpAbcAfterVerify(platform); }catch(e){}
     }).catch(function(e){
@@ -80048,6 +80054,10 @@ function handleOf(url, pid){
   }catch(e){ return String(url || ''); }
 }
 var _ch = { at:0, rows:null, busy:false };
+/* Кэш держится минуту. После привязки канала и после выхода из аккаунта
+   ждать её нельзя: в первом случае площадка «появится» только через
+   минуту, во втором в профиле останутся каналы прежнего человека. */
+window.bpPf2DropChannels = function(){ _ch.at = 0; _ch.rows = null; };
 function pullChannels(cb){
   try{
     var S = window.bpSrv;
@@ -82298,6 +82308,67 @@ window.bpGLoginReg = function(){
 
 if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', toReg);
 else toReg();
+})();
+</script>
+
+<script id="bp-logout-clean">
+/* ══ ВЫХОД ИЗ АККАУНТА УБИРАЕТ ЗА СОБОЙ ═════════════════════════════
+   Выход снимал местную сессию — и всё. В браузере оставались: ключ
+   серверной сессии прежнего человека (долговечная копия подписана его
+   почтой, а она стиралась уже после обнуления currentUser — то есть не
+   стиралась никогда), кэши подтверждённых каналов, память мастера
+   карточки и метка незаконченной проверки площадки.
+
+   Из-за этого следующий человек на том же устройстве видел в мастере
+   карточки чужой ник, а в профиле — чужие площадки. А при неудачной
+   привязке нового аккаунта запросы и вовсе уходили с ключом прежнего.
+
+   Откат: удалить script#bp-logout-clean.                             */
+(function(){
+'use strict';
+if(window.__bpLogoutClean) return; window.__bpLogoutClean = 1;
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'logout-clean'); }catch(_){} }
+
+var orig = window.doLogout;
+if(typeof orig !== 'function') return;
+
+window.doLogout = function(){
+  /* Почту снимаем ДО выхода: обработчик обнуляет currentUser, и после
+     него имя долговечной копии ключа уже не вычислить. */
+  var mail = '';
+  try{
+    mail = String((typeof currentUser !== 'undefined' && currentUser && currentUser.email) || '').toLowerCase();
+  }catch(e){ E(e); }
+
+  var r;
+  try{ r = orig.apply(this, arguments); }
+  finally{
+    try{
+      if(window.bpSrv && typeof window.bpSrv.setToken === 'function') window.bpSrv.setToken('', mail);
+    }catch(e){ E(e); }
+    try{ if(mail) localStorage.removeItem('bpSrvUid:' + mail); }catch(e){}
+    try{ localStorage.removeItem('bp_editing_card_id'); }catch(e){}
+    try{ localStorage.removeItem('bp_abc_state'); }catch(e){}   /* общий на устройство хвост */
+    try{ sessionStorage.removeItem('bpVfyPending'); }catch(e){}
+    try{ localStorage.removeItem('bpVfyClaim'); }catch(e){}
+    try{ if(typeof window.bpAbcDropCache === 'function') window.bpAbcDropCache(); }catch(e){ E(e); }
+    try{ if(typeof window.bpPf2DropChannels === 'function') window.bpPf2DropChannels(); }catch(e){ E(e); }
+    /* Память мастера карточки живёт до перезагрузки вкладки — чистим
+       поля площадок руками, иначе новый человек увидит чужие ссылки. */
+    try{
+      var ap = window.abcPlatforms;
+      if(ap && typeof ap === 'object'){
+        Object.keys(ap).forEach(function(k){
+          var p = ap[k]; if(!p || typeof p !== 'object') return;
+          p.url = ''; p.subs = 0; p.reach = 0; p.er = 0;
+          p.verified = false; p.selfReported = false;
+          p.enabled = false; p.open = false; p.panelOpen = false;
+        });
+      }
+    }catch(e){ E(e); }
+  }
+  return r;
+};
 })();
 </script>
 
