@@ -88,8 +88,12 @@ ok(ttU.origin + ttU.pathname === 'https://www.tiktok.com/v2/auth/authorize/',
 ok(ttU.searchParams.get('client_key') === 'ttkey123' && !ttU.searchParams.get('client_id'),
    'TikTok: ключ уходит как client_key (не client_id)');
 ok(ttU.searchParams.get('response_type') === 'code', 'TikTok: response_type=code');
-ok(ttU.searchParams.get('scope') === 'user.info.basic,user.info.profile,user.info.stats',
-   'TikTok: запрошены имя, профиль и счётчики', ttU.searchParams.get('scope'));
+ok(ttU.searchParams.get('scope') === 'user.info.basic,user.info.profile,user.info.stats,video.list',
+   'TikTok: запрошены имя, профиль, счётчики и ролики', ttU.searchParams.get('scope'));
+/* Без права на ролики нечем отличить живой канал от накрученного:
+   просмотры, лайки и комментарии приходят только со списком видео. */
+ok(/(^|,)video\.list(,|$)/.test(ttU.searchParams.get('scope') || ''),
+   'TikTok: право на список роликов запрошено', ttU.searchParams.get('scope'));
 ok(ttU.searchParams.get('redirect_uri') === PUB + '/api/verify/callback/tiktok',
    'TikTok: адрес возврата совпадает с тем, что ждёт сервер', ttU.searchParams.get('redirect_uri'));
 

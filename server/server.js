@@ -169,6 +169,7 @@ if (TEST_TOPUP && !TEST_TOPUP_OPEN) {
    client_key»: площадка получает ключ вместе с ними и не узнаёт его. */
 const cleanKey = (v) => String(v == null ? '' : v).trim().replace(/^["']+|["']+$/g, '').trim();
 /* Свои адреса площадки: сюда вписывают прокси, если напрямую не пускают. */
+const quality = require('./quality.js');
 const TT_AUTH_BASE = (cleanKey(ENV.TT_AUTH_BASE) || 'https://www.tiktok.com').replace(/\/+$/, '');
 const TT_API_BASE = (cleanKey(ENV.TT_API_BASE) || 'https://open.tiktokapis.com').replace(/\/+$/, '');
 /* Куда возвращать человека после площадки: обычно это сам сайт, который
@@ -288,7 +289,11 @@ const OAUTH = {
     /* Список прав задаётся настройкой: пока приложение не прошло проверку,
        TikTok выдаёт только user.info.basic, а запрос лишнего права —
        ещё одна стена после ключа. */
-    scope: cleanKey(ENV.TT_SCOPE) || 'user.info.basic,user.info.profile,user.info.stats',
+    /* video.list — то самое право, без которого не видно ни просмотров,
+       ни лайков, ни комментариев по роликам, а значит нечем отличить
+       живой канал от накрученного. */
+    scope: cleanKey(ENV.TT_SCOPE) || 'user.info.basic,user.info.profile,user.info.stats,video.list',
+    videos: TT_API_BASE + '/v2/video/list/',
     label: 'TikTok',
   },
 };
@@ -582,6 +587,56 @@ try {
   console.error('каналы: пересборка таблицы не удалась —', e && e.message);
 }
 
+/* Порядок важен: сначала пересборка таблицы каналов (она переливает
+   только известные ей колонки), и лишь потом новые колонки — иначе
+   пересборка их же и снесла бы, а подготовленные запросы упали бы. */
+/* Данные канала, которые площадка отдаёт вместе с именем (05.09.2026).
+   Раньше мы брали только имя, ссылку и число подписчиков — по трём числам
+   нельзя понять, живой канал или накрученный. Колонки добавляем по одной:
+   базы, созданные раньше, получают их здесь. */
+for (const col of ['username TEXT', 'verified INTEGER DEFAULT 0',
+  'following INTEGER', 'likes_total INTEGER', 'videos_total INTEGER',
+  'stats_at TEXT', 'risk INTEGER', 'risk_level TEXT', 'risk_at TEXT', 'risk_why TEXT']) {
+  try { db.exec('ALTER TABLE channels ADD COLUMN ' + col); }
+  catch (e) { /* уже есть */ }
+}
+
+/* Доступ к площадке храним ОТДЕЛЬНО от самого канала и никогда не отдаём
+   наружу: ни в одном ответе приложения этой таблицы нет. Без него нельзя
+   обновлять статистику — человек подтвердил канал один раз, а цифры нужны
+   свежие. Токен живёт у площадки недолго, поэтому рядом лежит refresh. */
+db.exec(`CREATE TABLE IF NOT EXISTS channel_tokens (
+  user_id     INTEGER NOT NULL REFERENCES users(id),
+  platform    TEXT NOT NULL,
+  external_id TEXT NOT NULL,
+  access      TEXT NOT NULL,
+  refresh     TEXT,
+  expires_at  TEXT,
+  updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, platform, external_id)
+)`);
+
+/* Снимки статистики: по ним видно динамику, а не одну точку. */
+db.exec(`CREATE TABLE IF NOT EXISTS channel_stats (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL,
+  platform    TEXT NOT NULL,
+  external_id TEXT NOT NULL,
+  at          TEXT NOT NULL DEFAULT (datetime('now')),
+  followers   INTEGER,
+  videos      INTEGER,
+  med_views   INTEGER,
+  avg_views   INTEGER,
+  er_likes    REAL,
+  er_comments REAL,
+  er_shares   REAL,
+  risk        INTEGER,
+  risk_level  TEXT,
+  data        TEXT
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS channel_stats_ch ON channel_stats(user_id, platform, external_id, at DESC)');
+
+
 /* Вход через Google (04.09.2026). Связь ведём по google_sub — это
    постоянный номер аккаунта у Google. По почте связывать нельзя: почту
    можно сменить или занять чужой обычной регистрацией, и человек
@@ -710,12 +765,36 @@ const q = {
   /* Порядок однозначный: у checked_at разрешение в секунду, и две
      привязки подряд давали ничью — клиент брал строку наугад и мог
      показать канал прошлой привязки. */
-  myChannels: db.prepare(`SELECT id, platform, external_id, title, url, subs, avatar, checked_at
+  myChannels: db.prepare(`SELECT id, platform, external_id, title, url, subs, avatar, checked_at,
+      username, verified, following, likes_total, videos_total, stats_at,
+      risk, risk_level, risk_at, risk_why
     FROM channels WHERE user_id = ? ORDER BY checked_at DESC, id DESC`),
+  /* Кого пора освежить: канал, у которого статистика старше суток. */
+  staleChannels: db.prepare(`SELECT user_id, platform, external_id FROM channels
+    WHERE platform = 'tiktok' AND (stats_at IS NULL OR stats_at < datetime('now', '-12 hours'))
+    ORDER BY (stats_at IS NULL) DESC, stats_at ASC LIMIT ?`),
   /* Канал ищем ВНУТРИ аккаунта: один и тот же канал может быть подтверждён
      у нескольких людей, и «найти канал вообще» больше не имеет смысла —
      непонятно, чью строку вернули бы. */
   channelOf: db.prepare('SELECT * FROM channels WHERE user_id = ? AND platform = ? AND external_id = ?'),
+  putToken: db.prepare(`INSERT INTO channel_tokens (user_id, platform, external_id, access, refresh, expires_at)
+    VALUES (?,?,?,?,?,?)
+    ON CONFLICT(user_id, platform, external_id) DO UPDATE SET
+      access = excluded.access, refresh = excluded.refresh,
+      expires_at = excluded.expires_at, updated_at = datetime('now')`),
+  getToken: db.prepare('SELECT * FROM channel_tokens WHERE user_id = ? AND platform = ? AND external_id = ?'),
+  delToken: db.prepare('DELETE FROM channel_tokens WHERE user_id = ? AND platform = ? AND external_id = ?'),
+  chanNums: db.prepare(`UPDATE channels SET username = ?, verified = ?, following = ?,
+      likes_total = ?, videos_total = ?, stats_at = datetime('now')
+    WHERE user_id = ? AND platform = ? AND external_id = ?`),
+  chanRisk: db.prepare(`UPDATE channels SET risk = ?, risk_level = ?, risk_why = ?, risk_at = datetime('now')
+    WHERE user_id = ? AND platform = ? AND external_id = ?`),
+  insStats: db.prepare(`INSERT INTO channel_stats
+      (user_id, platform, external_id, followers, videos, med_views, avg_views,
+       er_likes, er_comments, er_shares, risk, risk_level, data)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`),
+  statsOf: db.prepare(`SELECT * FROM channel_stats
+    WHERE user_id = ? AND platform = ? AND external_id = ? ORDER BY at DESC LIMIT ?`),
   channelsByExt: db.prepare('SELECT * FROM channels WHERE platform = ? AND external_id = ?'),
   delChannel: db.prepare('DELETE FROM channels WHERE user_id = ? AND platform = ? AND external_id = ?'),
   delChannelEverywhere: db.prepare('DELETE FROM channels WHERE platform = ? AND external_id = ?'),
@@ -2941,6 +3020,31 @@ const routes = {
        аккаунте просто обновляет строку (ON CONFLICT). */
     q.upsertChannel.run(u.id, rec.platform, String(rec.channel.id),
       rec.channel.title, rec.channel.url, rec.channel.subs, rec.channel.avatar || null);
+    /* Остальные числа площадки и доступ к ней — тому, кто подтвердил.
+       Доступ нужен, чтобы обновлять статистику потом: человек подтверждает
+       канал один раз, а цифры рекламодателю нужны свежие. */
+    try {
+      q.chanNums.run(rec.channel.username || null, rec.channel.verified ? 1 : 0,
+        rec.channel.following == null ? null : rec.channel.following,
+        rec.channel.likesTotal == null ? null : rec.channel.likesTotal,
+        rec.channel.videosTotal == null ? null : rec.channel.videosTotal,
+        u.id, rec.platform, String(rec.channel.id));
+    } catch (e) { /* колонки могли не появиться на старой базе */ }
+    try {
+      if (rec.access) {
+        const exp = rec.expires
+          ? new Date(Date.now() + rec.expires * 1000).toISOString()
+          : null;
+        q.putToken.run(u.id, rec.platform, String(rec.channel.id), rec.access, rec.refresh || null, exp);
+      }
+    } catch (e) { /* без доступа просто не будет обновлений */ }
+    /* Первый разбор — сразу, но в стороне: человек не должен ждать
+       площадку, а владелец получает картину в тот же момент. */
+    if (rec.platform === 'tiktok' && rec.access) {
+      setTimeout(() => {
+        syncTikTok(u.id, String(rec.channel.id), { first: true }).catch(() => {});
+      }, 50);
+    }
     vfy.delete(nonce);
     return {
       status: 200,
@@ -3003,6 +3107,24 @@ const routes = {
   /* Отвязать свой канал: человек убирает ошибочный или больше не свой.
      Удаляем строго свою строку — тот же канал может быть подтверждён и у
      других, и они тут ни при чём. */
+  /* «Обновить статистику» в приложении. Ходить к площадке на каждый
+     показ страницы незачем — только по нажатию и по фоновому кругу. */
+  'POST /api/verify/refresh': async (req, body) => {
+    const u = auth(req);
+    if (!u) return { status: 401, body: { error: 'Нужен вход' } };
+    if (!rateLimit(req, 'vfyrefresh:' + u.id, 10, 60000)) return tooOften;
+    const platform = String(body.platform || '');
+    const externalId = String(body.externalId || '');
+    if (platform !== 'tiktok') {
+      return { status: 400, body: { error: 'Пока обновляется только TikTok' } };
+    }
+    const row = q.channelOf.get(u.id, platform, externalId);
+    if (!row) return { status: 404, body: { error: 'Такой канал у вас не подтверждён' } };
+    const r = await syncTikTok(u.id, externalId, {});
+    if (!r.ok) return { status: 503, body: { error: 'Не вышло обновить: ' + (r.why || 'площадка не ответила') } };
+    return { status: 200, body: r };
+  },
+
   'POST /api/verify/unlink': async (req, body) => {
     const u = auth(req);
     if (!u) return { status: 401, body: { error: 'Нужен вход' } };
@@ -3013,6 +3135,8 @@ const routes = {
     const row = q.channelOf.get(u.id, platform, externalId);
     if (!row) return { status: 404, body: { error: 'Такой канал у вас не подтверждён' } };
     q.delChannel.run(u.id, platform, externalId);
+    /* Отвязали — доступ к площадке держать не за чем и незачем. */
+    try { q.delToken.run(u.id, platform, externalId); } catch (e) { /* мог не сохраниться */ }
     return { status: 200, body: { ok: true, platform, externalId } };
   },
 
@@ -3340,6 +3464,201 @@ function verifyPage(res, title, text, good, code, goto) {
   res.end(html);
 }
 
+/* ══ КАЧЕСТВО КАНАЛА TIKTOK ══════════════════════════════════════════
+   Площадка отдаёт список последних роликов с просмотрами, лайками,
+   комментариями и репостами. По ним видно то, чего не видно по числу
+   подписчиков: смотрят ли этого человека вообще.
+
+   Чего у площадки НЕТ и придумывать не будем: «избранного» в открытом
+   интерфейсе нет вовсе (оно есть только в исследовательском, куда
+   коммерческим сервисам вход закрыт), суммарных просмотров канала тоже
+   нет — их складываем из роликов сами.
+
+   Доступ живёт сутки, поэтому перед каждым обновлением при необходимости
+   меняем его на новый по refresh. Площадка иногда возвращает НОВЫЙ
+   refresh — тогда старый больше не годится, и надо сохранить новый. */
+
+async function ttAsk(url, opts) {
+  let last;
+  for (let i = 0; i < 2; i++) {
+    try {
+      const stop = AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined;
+      const r = await fetch(url, Object.assign({ signal: stop }, opts || {}));
+      const j = await r.json();
+      return { status: r.status, body: j };
+    } catch (e) { last = e; }
+  }
+  throw new Error('TikTok не ответил: ' + ((last && last.message) || 'нет связи'));
+}
+
+/* Свежий доступ. Возвращает строку токена или пусто, если обновить нечем. */
+async function ttAccess(row) {
+  const cfg = OAUTH.tiktok;
+  if (!row || !row.access) return '';
+  const alive = row.expires_at && new Date(row.expires_at).getTime() > Date.now() + 60000;
+  if (alive) return row.access;
+  if (!row.refresh || !cfg.id || !cfg.secret) return '';
+  const r = await ttAsk(cfg.token, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_key: cfg.id, client_secret: cfg.secret,
+      grant_type: 'refresh_token', refresh_token: row.refresh,
+    }),
+  });
+  const t = r.body || {};
+  if (!t.access_token) return '';
+  const exp = t.expires_in ? new Date(Date.now() + Number(t.expires_in) * 1000).toISOString() : null;
+  q.putToken.run(row.user_id, row.platform, row.external_id, t.access_token,
+    t.refresh_token || row.refresh, exp);
+  return t.access_token;
+}
+
+/* Последние ролики. Больше сорока не берём: для картины хватает, а
+   лимит площадки тратить незачем. */
+async function ttVideos(access, want) {
+  const cfg = OAUTH.tiktok;
+  const fields = 'id,create_time,title,like_count,comment_count,share_count,view_count';
+  const out = [];
+  let cursor = 0;
+  for (let page = 0; page < 2 && out.length < (want || 40); page++) {
+    const r = await ttAsk(cfg.videos + '?fields=' + fields, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + access },
+      body: JSON.stringify({ max_count: 20, cursor }),
+    });
+    const d = (r.body && r.body.data) || {};
+    const list = Array.isArray(d.videos) ? d.videos : [];
+    list.forEach((v) => out.push({
+      id: String(v.id || ''),
+      at: Number(v.create_time) || 0,
+      title: String(v.title || '').slice(0, 120),
+      views: Number(v.view_count) || 0,
+      likes: Number(v.like_count) || 0,
+      comments: Number(v.comment_count) || 0,
+      shares: Number(v.share_count) || 0,
+    }));
+    if (!d.has_more) break;
+    cursor = Number(d.cursor) || 0;
+    if (!cursor) break;
+  }
+  return out;
+}
+
+/* Свежие числа профиля. */
+async function ttProfile(access) {
+  const cfg = OAUTH.tiktok;
+  const fields = 'open_id,avatar_url,display_name,username,profile_deep_link,is_verified,'
+    + 'follower_count,following_count,likes_count,video_count';
+  const r = await ttAsk(cfg.userInfo + '?fields=' + fields, {
+    headers: { Authorization: 'Bearer ' + access },
+  });
+  return (r.body && r.body.data && r.body.data.user) || null;
+}
+
+/* Тексты для владельца: коротко и по-русски, без «anomaly score». */
+function riskWord(level) {
+  return quality.LEVEL_RU[level] || String(level || '');
+}
+
+/* Полный проход по одному каналу: доступ → цифры → оценка → запись.
+   Ничего не бросает наружу: обновление статистики не должно ронять то,
+   ради чего человек пришёл. */
+async function syncTikTok(userId, extId, opts) {
+  const o = opts || {};
+  const row = q.getToken.get(userId, 'tiktok', String(extId));
+  if (!row) return { ok: false, why: 'нет доступа к каналу' };
+  let access = '';
+  try { access = await ttAccess(row); }
+  catch (e) { return { ok: false, why: String((e && e.message) || e) }; }
+  if (!access) {
+    tgAlert('tt:token:' + userId + ':' + extId,
+      '🔑 TikTok: доступ к каналу больше не действует\n\n'
+      + 'Аккаунт #' + userId + ', канал ' + extId + '.\n'
+      + 'Статистику по нему обновить нечем — человеку нужно подтвердить канал заново.',
+      'server');
+    return { ok: false, why: 'доступ устарел' };
+  }
+
+  let prof = null, videos = [];
+  try { prof = await ttProfile(access); } catch (e) { /* профиль не обязателен */ }
+  try { videos = await ttVideos(access, 40); }
+  catch (e) {
+    tgAlert('tt:videos:' + userId + ':' + extId,
+      '⚠️ TikTok: не удалось получить список роликов\n\n'
+      + 'Аккаунт #' + userId + ', канал ' + extId + '.\n'
+      + String((e && e.message) || e).slice(0, 200),
+      'server');
+    return { ok: false, why: 'список роликов недоступен' };
+  }
+
+  const followers = prof ? (Number(prof.follower_count) || 0) : 0;
+  const res = quality.assess({ followers, videos, platform: 'tiktok' });
+
+  try {
+    if (prof) {
+      q.upsertChannel.run(userId, 'tiktok', String(extId),
+        prof.display_name || '', prof.profile_deep_link
+          || (prof.username ? 'https://www.tiktok.com/@' + prof.username : ''),
+        followers, prof.avatar_url || null);
+      q.chanNums.run(prof.username || null, prof.is_verified ? 1 : 0,
+        Number(prof.following_count) || null, Number(prof.likes_count) || null,
+        Number(prof.video_count) || null, userId, 'tiktok', String(extId));
+    }
+    q.chanRisk.run(res.risk, res.level, res.reasons.join(' • ').slice(0, 900),
+      userId, 'tiktok', String(extId));
+    q.insStats.run(userId, 'tiktok', String(extId), followers, res.stats.videos,
+      res.stats.medViews, res.stats.avgViews, res.stats.erLikes, res.stats.erComments,
+      res.stats.erShares, res.risk, res.level,
+      JSON.stringify({ stats: res.stats, reasons: res.reasons, confidence: res.confidence }).slice(0, 8000));
+  } catch (e) { console.error('[tiktok] не записалось: ' + ((e && e.message) || e)); }
+
+  /* Владельцу пишем только о том, что требует его внимания. */
+  const name = prof && (prof.username || prof.display_name) ? ('@' + (prof.username || prof.display_name)) : String(extId);
+  if (o.first) {
+    tgAlert('tt:new:' + userId + ':' + extId,
+      '🔗 Подключён TikTok\n\n'
+      + 'Аккаунт #' + userId + '\nКанал: ' + name + '\n'
+      + 'Подписчиков: ' + followers + ', роликов разобрано: ' + res.stats.videos + '\n'
+      + 'Оценка: ' + riskWord(res.level) + (res.risk == null ? '' : ' (' + res.risk + ' из 100)'),
+      'server');
+  }
+  if (res.level === 'risk' || res.level === 'bad') {
+    tgAlert('tt:risk:' + userId + ':' + extId + ':' + res.level,
+      '🚩 TikTok: цифры канала выбиваются\n\n'
+      + 'Аккаунт #' + userId + '\nКанал: ' + name + '\n'
+      + 'Оценка: ' + riskWord(res.level) + ' (' + res.risk + ' из 100), уверенность '
+      + res.confidence + '\n\n'
+      + 'Подписчиков: ' + followers + '\n'
+      + 'Роликов разобрано: ' + res.stats.videos + '\n'
+      + 'Медиана просмотров: ' + res.stats.medViews + '\n'
+      + 'Лайков к просмотрам: ' + (res.stats.erLikes * 100).toFixed(1) + '%\n'
+      + 'Комментариев к просмотрам: ' + (res.stats.erComments * 100).toFixed(2) + '%\n\n'
+      + 'Что именно выбилось:\n• ' + res.reasons.join('\n• ') + '\n\n'
+      + 'Это не доказательство накрутки — это повод посмотреть внимательнее.',
+      'server');
+  }
+  return { ok: true, risk: res.risk, level: res.level, confidence: res.confidence,
+    stats: res.stats, reasons: res.reasons };
+}
+
+/* Фоновое обновление: понемногу и редко, чтобы не упереться в лимит
+   площадки (600 запросов в минуту) и не будить владельца зря. */
+let ttSyncBusy = false;
+async function ttSyncRound() {
+  if (ttSyncBusy || !OAUTH.tiktok.id || !OAUTH.tiktok.secret) return;
+  ttSyncBusy = true;
+  try {
+    const rows = q.staleChannels.all(3);
+    for (const r of rows) {
+      try { await syncTikTok(r.user_id, r.external_id, {}); }
+      catch (e) { console.error('[tiktok] обновление упало: ' + ((e && e.message) || e)); }
+    }
+  } catch (e) { console.error('[tiktok] круг обновления упал: ' + ((e && e.message) || e)); }
+  finally { ttSyncBusy = false; }
+}
+setInterval(() => { ttSyncRound().catch(() => {}); }, 30 * 60 * 1000).unref();
+
 /* ── Возврат от Телеграма после входа ──
    Меняем код на id_token, проверяем подпись, находим или заводим аккаунт
    и кладём готовую сессию под метку. Дальше человека уводит обратно в
@@ -3589,7 +3908,13 @@ async function handleVerifyCallback(req, res, url) {
         /* картинку канала площадка отдаёт вместе с именем — по ней человек
            узнаёт свой канал в списке с одного взгляда */
         avatar: ((th.medium || th.default || {}).url) || '',
+        username: (it.snippet && it.snippet.customUrl) || '',
+        videosTotal: Number(it.statistics && it.statistics.videoCount) || 0,
+        viewsTotal: Number(it.statistics && it.statistics.viewCount) || 0,
       };
+      rec.access = tok.access_token || '';
+      rec.refresh = tok.refresh_token || '';
+      rec.expires = Number(tok.expires_in) || 0;
     } else {
       const tok = await ask(cfg.token, {
         method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -3600,9 +3925,14 @@ async function handleVerifyCallback(req, res, url) {
       });
       if (!tok.access_token) throw new Error((tok.error_description || tok.error) || 'TikTok не выдал доступ');
       const scope = String(cfg.scope || '');
-      const fields = ['open_id', 'display_name'];
-      if (/user\.info\.profile/.test(scope)) fields.push('username', 'profile_deep_link');
-      if (/user\.info\.stats/.test(scope)) fields.push('follower_count');
+      /* Просим ВСЁ, что даёт выданное право: по имени и числу подписчиков
+         нельзя отличить живой канал от накрученного, а по картине из
+         просмотров, лайков и комментариев — можно. */
+      const fields = ['open_id', 'union_id', 'avatar_url', 'display_name'];
+      if (/user\.info\.profile/.test(scope)) fields.push('username', 'profile_deep_link', 'is_verified');
+      if (/user\.info\.stats/.test(scope)) {
+        fields.push('follower_count', 'following_count', 'likes_count', 'video_count');
+      }
       const head = { headers: { Authorization: 'Bearer ' + tok.access_token } };
       let me = await ask(cfg.userInfo + '?fields=' + fields.join(','), head);
       let d = me.data && me.data.user;
@@ -3622,7 +3952,16 @@ async function handleVerifyCallback(req, res, url) {
            допишет сам блогер. */
         url: d.profile_deep_link || (d.username ? 'https://www.tiktok.com/@' + d.username : ''),
         subs: Number(d.follower_count) || 0,
+        avatar: d.avatar_url || '',
+        username: d.username || '',
+        verified: d.is_verified ? 1 : 0,
+        following: Number(d.following_count) || 0,
+        likesTotal: Number(d.likes_count) || 0,
+        videosTotal: Number(d.video_count) || 0,
       };
+      rec.access = tok.access_token || '';
+      rec.refresh = tok.refresh_token || '';
+      rec.expires = Number(tok.expires_in) || 0;
     }
 
     if (!channel.id) throw new Error('Площадка не назвала аккаунт');
