@@ -1994,17 +1994,34 @@ const routes = {
   },
 
   /* Возврат из другого браузера: человек видит код на странице возврата
-     и вводит его в приложении. Метка при этом не нужна. */
+     и вводит его в приложении.
+     Код сверяем ТОЛЬКО с той меткой, которую это же приложение получило
+     в начале входа. Раньше код искали по всем ожидающим входам сразу —
+     и шесть цифр можно было подбирать вслепую, без метки, получая чужую
+     готовую сессию: чем больше людей входит одновременно, тем выше шанс
+     попасть. Теперь без своей метки код бесполезен, а пять ошибок её
+     сжигают — тот же порядок, что и в подтверждении канала. */
   'POST /api/auth/google/claim': async (req, body) => {
     if (!rateLimit(req, 'glogclaim', 30, 60000)) return tooOften;
+    const nonce = String(body.nonce || '').slice(0, 64);
     const code = String(body.code || '').replace(/\D/g, '');
-    if (code.length !== 6) return { status: 400, body: { error: 'Код — шесть цифр' } };
-    for (const [k, rec] of glog) {
-      if (!rec.done || rec.code !== code) continue;
-      glog.delete(k);
-      return { status: 200, body: { token: rec.token, user: rec.user } };
+    const rec = glog.get(nonce);
+    if (!rec) return { status: 404, body: { error: 'Вход не найден — начните заново' } };
+    if (Date.now() - rec.at > GLOG_TTL) {
+      glog.delete(nonce);
+      return { status: 410, body: { error: 'Ссылка входа живёт 15 минут — начните заново' } };
     }
-    return { status: 404, body: { error: 'Код не подошёл или устарел' } };
+    if (rec.tries >= 5) {
+      glog.delete(nonce);
+      return { status: 429, body: { error: 'Слишком много попыток — начните вход заново' } };
+    }
+    if (code.length !== 6) return { status: 400, body: { error: 'Код — шесть цифр' } };
+    if (!rec.done || code !== rec.code) {
+      rec.tries++;
+      return { status: 400, body: { error: 'Код не подошёл', left: Math.max(0, 5 - rec.tries) } };
+    }
+    glog.delete(nonce);
+    return { status: 200, body: { token: rec.token, user: rec.user } };
   },
 
   'POST /api/auth/telegram': async (req, body) => {

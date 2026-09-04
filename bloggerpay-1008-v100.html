@@ -81950,11 +81950,31 @@ function letIn(token, who){
     localStorage.setItem('bp_role_u_' + rec.id, rec.role);
     sessionStorage.setItem('bp_role', rec.role);
   }catch(e){ E(e); }
+  forget();
   close();
   toast('Вы вошли через Google', 'ok');
   setTimeout(function(){ try{ enterApp(false); }catch(e){ E(e); } }, 600);
   return true;
 }
+
+/* ── Своя метка входа ──
+   Метку, с которой начали вход, помним на устройстве. Она нужна дважды:
+   чтобы принять возврат ТОЛЬКО от своего входа (иначе подсунутая ссылка
+   «?glogin=чужая метка» молча пустила бы человека в чужой аккаунт — и он
+   бы там платил и заводил карту, не заметив подмены), и чтобы код со
+   страницы возврата было с чем сверить, если приложение успели закрыть. */
+var NKEY = 'bp_glogin_n', NLIFE = 15 * 60 * 1000;
+function keep(n){
+  try{ localStorage.setItem(NKEY, JSON.stringify({ n: String(n || ''), at: Date.now() })); }catch(e){}
+}
+function mine(){
+  try{
+    var o = JSON.parse(localStorage.getItem(NKEY) || 'null');
+    if(!o || !o.n || (Date.now() - (o.at || 0)) > NLIFE) return '';
+    return String(o.n);
+  }catch(e){ return ''; }
+}
+function forget(){ try{ localStorage.removeItem(NKEY); }catch(e){} }
 
 /* ── Шторка ожидания ─────────────────────────────────────────────── */
 var _nonce = '', _timer = null, _tries = 0;
@@ -81964,7 +81984,7 @@ function close(){
   var ov = $('glgOv');
   if(ov) ov.remove();
 }
-window.bpGLoginClose = function(){ _nonce = ''; close(); };
+window.bpGLoginClose = function(){ _nonce = ''; forget(); close(); };
 
 function sheet(){
   close();
@@ -81999,10 +82019,12 @@ function byCode(){
   var i = $('glgCode');
   var code = String((i && i.value) || '').replace(/\D/g, '');
   if(code.length !== 6){ err('Код — шесть цифр со страницы возврата'); return; }
+  var n = _nonce || mine();
+  if(!n){ err('Приложение не помнит эту попытку входа — начните вход заново'); return; }
   err('');
   var go = $('glgGo');
   if(go) go.disabled = true;
-  srv().raw('POST', '/api/auth/google/claim', { code: code })
+  srv().raw('POST', '/api/auth/google/claim', { code: code, nonce: n })
     .then(function(j){
       if(j && j.token) letIn(j.token, j.user || {});
       else { err('Код не подошёл'); if(go) go.disabled = false; }
@@ -82061,6 +82083,7 @@ window.loginGoogle = function(){
     .then(function(j){
       if(!j || !j.url) throw new Error('Сервер не дал ссылку входа');
       _nonce = j.nonce || '';
+      keep(_nonce);
       sheet();
       watch();
       if(win && !win.closed){ win.location = j.url; }
@@ -82073,16 +82096,23 @@ window.loginGoogle = function(){
 };
 
 /* Возврат в ТОМ ЖЕ браузере: страница возврата уводит обратно в
-   приложение с меткой в адресе — забираем вход сразу. */
+   приложение с меткой в адресе — забираем вход сразу. Но только если
+   метка наша: чужую в адресе можно прислать кому угодно, и человек
+   оказался бы в чужом аккаунте, не нажав ничего, кроме ссылки. */
 try{
   var q = new URLSearchParams(location.search);
   var back = q.get('glogin');
+  var own = mine();
+  if(own) _nonce = own;                 /* приложение перезапустили — код ещё можно ввести */
   if(back && ready()){
-    _nonce = back;
-    srv().raw('GET', '/api/auth/google/pending?nonce=' + encodeURIComponent(back))
-      .then(function(j){ if(j && j.state === 'ok' && j.token) letIn(j.token, j.user || {}); })
-      .catch(function(){});
     try{ history.replaceState(null, '', location.pathname); }catch(e){}
+    if(back === own){
+      srv().raw('GET', '/api/auth/google/pending?nonce=' + encodeURIComponent(back))
+        .then(function(j){ if(j && j.state === 'ok' && j.token) letIn(j.token, j.user || {}); })
+        .catch(function(){});
+    } else {
+      toast('Этот вход начинали не здесь. Откройте приложение там, где нажимали «Войти через Google».', 'err');
+    }
   }
 }catch(e){ E(e); }
 })();

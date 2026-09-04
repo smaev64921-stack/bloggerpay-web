@@ -95,11 +95,26 @@ try {
   const byPass = await api('POST', '/api/login', { email: 'gtest@google.local', password: 'dead' });
   ok(byPass.status !== 200, 'паролем в такой аккаунт не войти', byPass.body);
 
-  /* ── код возврата ── */
-  const wrong = await api('POST', '/api/auth/google/claim', { code: '000000' });
-  ok(wrong.status === 404, 'неверный код не пускает', wrong.body);
-  const short = await api('POST', '/api/auth/google/claim', { code: '12' });
-  ok(short.status === 400, 'короткий код отбит', short.body);
+  /* ── код возврата ──
+        Код сверяется только со своей меткой: вслепую, без неё, подобрать
+        шесть цифр и получить чужую готовую сессию нельзя. ── */
+  const blind = await api('POST', '/api/auth/google/claim', { code: '000000' });
+  ok(blind.status === 404, 'код без метки не ищется по чужим входам', blind.body);
+
+  const st2 = await api('GET', '/api/auth/google/start');
+  const n2 = st2.body.nonce;
+  const short = await api('POST', '/api/auth/google/claim', { nonce: n2, code: '12' });
+  ok(short.status === 400 && /шесть/i.test(short.body.error || ''), 'короткий код отбит', short.body);
+
+  let last = null;
+  for (let i = 0; i < 5; i++) {
+    last = await api('POST', '/api/auth/google/claim', { nonce: n2, code: '000001' });
+  }
+  ok(last.status === 400 && last.body.left === 0, 'ошибки считаются, попытки кончаются', last.body);
+  const burnt = await api('POST', '/api/auth/google/claim', { nonce: n2, code: '000001' });
+  ok(burnt.status === 429, 'после пяти ошибок метка сгорает', burnt.body);
+  const gone = await api('GET', '/api/auth/google/pending?nonce=' + n2);
+  ok(gone.status === 404, 'сгоревшую метку больше не забрать', gone.body);
 
   /* ── без ключей Google вход честно отказывает ── */
   const PORT2 = 8099;
