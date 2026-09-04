@@ -80794,7 +80794,10 @@ setTimeout(function(){ try{ if(me()){ pushNow(); pull(true); } }catch(e){ E(e); 
        вкладках. Ни одной функции отрисовки здесь не продублировано.
 
    Что ездит: bp_pending_requests_v1 (заявки), bp_shared_deals_v1
-   (сделки), bp_deal_msgs_<dealId> (переписка по сделке).
+   (сделки), bp_deal_msgs_<dealId> (переписка по сделке), bp_campaigns
+   (задания — общим конвертом, их видят все), bp_task_joins (отклики на
+   задания), bp_reviews (отзывы — публичный рейтинг), bp_disputes_v2
+   (споры: их видят обе стороны, арбитр смотрит через пульт).
 
    Личности. Местный id пользователя свой на каждом устройстве, поэтому
    в конверте они заменены на серверные: '#srv:12'. На приёме свой
@@ -80829,6 +80832,10 @@ function mySrv(){
 var REQ_KEY = 'bp_pending_requests_v1';
 var DEAL_KEY = 'bp_shared_deals_v1';
 var MSG_PREFIX = 'bp_deal_msgs_';
+var CAMP_KEY = 'bp_campaigns';
+var JOIN_KEY = 'bp_task_joins';
+var REV_KEY = 'bp_reviews';
+var DISP_KEY = 'bp_disputes_v2';
 var VER_KEY = 'bpsync_ver';          /* без префикса bp_ — мимо перехвата bpData */
 
 /* Читаем и пишем в обход bpData: очередь и подписки нам здесь только
@@ -80839,12 +80846,18 @@ function arr(k){ try{ var a = JSON.parse(rawGet(k) || '[]'); return Array.isArra
 
 /* ── личности ───────────────────────────────────────────────────────
    Поля, в которых лежат идентификаторы людей. Всё остальное едет как есть. */
+/* Поля с МЕСТНЫМИ номерами людей — только они переводятся в серверные и
+   обратно. Поля, где уже лежит серверный номер (bloggerSrvId,
+   toBloggerSrvId, srvId), трогать нельзя: по ним касса ищет получателя
+   выплаты, и строка 'srv:7' вместо числа 7 увела бы деньги в никуда. */
 var ID_FIELDS = ['toBloggerId','fromAdvertiserId','advertiserId','bloggerId','senderId',
-                 'userId','ownerId','authorId','toUserId','bloggerSrvId','toBloggerSrvId'];
+                 'userId','ownerId','authorId','toUserId'];
 function srvOf(v){
   var m = /^srv:(\d+)$/.exec(String(v == null ? '' : v));
   return m ? Number(m[1]) : null;
 }
+function myLocal(){ var u = me(); return u ? u.id : null; }
+function sameId(a, b){ return a != null && b != null && String(a) === String(b); }
 function toWire(rec){
   var u = me(), my = mySrv();
   if(!u || my == null) return null;
@@ -80917,22 +80930,28 @@ var _reqPeer = {};           /* id заявки → серверный номе�
 var _fromServer = {};        /* kind:rid → подпись принятого (эхо не шлём) */
 var _pushT = null;
 
-function put(kind, rid, rec, peer){
+/* peer — кому адресован конверт; shared:true — конверт общий (без
+   адресата), его видят все вошедшие: так ездят задания и отзывы. */
+function put(kind, rid, rec, peer, shared){
   var w = toWire(rec);
   if(!w) return;
   var to = (peer != null) ? peer : w.peer;
-  if(to == null) return;                       /* второй стороны на сервере нет */
+  if(to == null && !shared) return;            /* второй стороны на сервере нет */
   var key = kind + ':' + rid, sig;
   try{ sig = JSON.stringify(w.data); }catch(e){ return; }
   if(_sent[key] === sig || _fromServer[key] === sig) return;
   _sent[key] = sig;
-  srv().raw('POST', '/api/sync/put', { kind: kind, rid: rid, to: to, data: w.data })
+  var body = { kind: kind, rid: rid, data: w.data };
+  if(to != null) body.to = to;
+  srv().raw('POST', '/api/sync/put', body)
     .catch(function(){ delete _sent[key]; });
 }
 
 function pushAll(){
   if(!ready() || mySrv() == null) return;
   try{
+    var deals = arr(DEAL_KEY);
+
     /* заявки */
     var live = {};
     arr(REQ_KEY).forEach(function(r){
@@ -80951,13 +80970,68 @@ function pushAll(){
       put('req', id, { id: id, _gone: true, at: Date.now() }, peer);
     });
     /* сделки */
-    var deals = arr(DEAL_KEY);
+    var dealsFixed = false;
     deals.forEach(function(d){
       if(!d || !d.dealId) return;
       var peer = peerOfRec(d);
       if(peer == null) return;
+      /* Получатель выплаты — серверный номер второй стороны. Запоминаем
+         его прямо в сделке: касса ищет именно там. */
+      var bn = srvOf(d.bloggerId);
+      if(bn != null && d.bloggerSrvId !== bn){ d.bloggerSrvId = bn; dealsFixed = true; }
       put('deal', String(d.dealId), d, peer);
     });
+    if(dealsFixed) rawSet(DEAL_KEY, JSON.stringify(deals));
+
+    /* ЗАДАНИЯ — общим конвертом: их витрину видят все вошедшие.
+       Черновики не публикуем: человек их ещё пишет. */
+    arr(CAMP_KEY).forEach(function(c){
+      if(!c || c.id == null) return;
+      if(!sameId(c.ownerId, myLocal())) return;
+      if(c.status === 'draft') return;
+      put('camp', String(c.id), c, null, true);
+    });
+
+    /* ОТКЛИКИ на задания. Отправляет и блогер (свой отклик), и владелец
+       задания (его решение по чужому отклику) — адресат в каждом случае
+       вторая сторона. */
+    var camps = arr(CAMP_KEY);
+    arr(JOIN_KEY).forEach(function(j){
+      if(!j || j.campId == null || j.userId == null) return;
+      var c = camps.find(function(x){ return x && String(x.id) === String(j.campId); });
+      var iAmBlogger = sameId(j.userId, myLocal());
+      var iAmOwner = c && sameId(c.ownerId, myLocal());
+      var peer = null;
+      if(iAmBlogger) peer = c ? srvOf(c.ownerId) : null;
+      else if(iAmOwner) peer = srvOf(j.userId);
+      else return;                              /* чужой отклик по чужому заданию */
+      if(peer == null) return;
+      put('join', String(j.campId) + ':' + String(j.userId).replace(/[^\w:-]/g, ''), j, peer);
+    });
+
+    /* ОТЗЫВЫ едут тому, О КОМ написаны: человек должен видеть свой
+       рейтинг на любом устройстве. Второй стороны в самой записи нет —
+       находим её по сделке, к которой отзыв привязан.
+       (Рейтинг ЧУЖОЙ карточки в каталоге пока считается по своим
+       отзывам; общий рейтинг для витрины — отдельная работа.) */
+    var uName = (me() || {}).name;
+    arr(REV_KEY).forEach(function(r){
+      if(!r || !r.id || !uName) return;
+      if(String(r.authorName || '') !== String(uName)) return;
+      var d = deals.find(function(x){ return x && r.dealId && String(x.dealId) === String(r.dealId); });
+      var peer = d ? peerOfRec(d) : null;
+      if(peer == null) return;
+      put('rev', String(r.id).replace(/[^\w.:+-]/g, ''), r, peer);
+    });
+
+    /* СПОРЫ — их обязаны видеть обе стороны. */
+    arr(DISP_KEY).forEach(function(d){
+      if(!d || !d.id) return;
+      var peer = peerOfRec(d);
+      if(peer == null) return;
+      put('disp', String(d.id).replace(/[^\w.:+-]/g, ''), d, peer);
+    });
+
     /* переписка по сделкам, у которых есть сторона на сервере */
     deals.forEach(function(d){
       if(!d || !d.dealId) return;
@@ -80985,8 +81059,6 @@ function saveVer(v){ if(v > 0) rawSet(verKey(), String(v)); }
 function applyReq(rid, data){
   var rec = fromWire(data);
   rec.id = rec.id || rid;
-  /* Метка «приехало по сети»: по такой записи деньги не двигаем. */
-  rec.__bpWire = 1;
   var list = arr(REQ_KEY), before = rawGet(REQ_KEY);
   var i = list.findIndex(function(x){ return x && String(x.id) === String(rec.id); });
   /* Заявку приняли или отклонили на другом устройстве — она должна уйти
@@ -81059,7 +81131,17 @@ function applyDeal(rid, data){
   var next = JSON.stringify(list);
   rawSet(DEAL_KEY, next);
   tellApp(DEAL_KEY, next, before);
-  ensureChatForDeal(list[i >= 0 ? i : list.length - 1]);
+  var saved = list[i >= 0 ? i : list.length - 1];
+  /* Выплата ищет получателя по bloggerSrvId — проставляем, пока знаем. */
+  try{
+    var n = srvOf(saved.bloggerId);
+    if(n != null && saved.bloggerSrvId !== n){
+      saved.bloggerSrvId = n;
+      var fixed = JSON.stringify(list);
+      rawSet(DEAL_KEY, fixed);
+    }
+  }catch(e){ E(e); }
+  ensureChatForDeal(saved);
   return true;
 }
 function applyMsg(rid, data){
@@ -81084,6 +81166,32 @@ function applyMsg(rid, data){
   return true;
 }
 
+/* Общая укладка записи в массив по ключу-полю. Возвращает true, если
+   что-то изменилось: только тогда подаём событие и тревожим экраны. */
+function applyList(key, idField, rid, data, after){
+  var rec = fromWire(data);
+  if(idField !== '_rid' && rec[idField] == null) rec[idField] = rid;
+  var list = arr(key), before = rawGet(key);
+  /* У отклика своего номера нет — он опознаётся парой «задание + человек». */
+  var i = (idField === '_rid')
+    ? list.findIndex(function(x){ return x && String(x.campId) === String(rec.campId)
+        && String(x.userId) === String(rec.userId); })
+    : list.findIndex(function(x){ return x && String(x[idField]) === String(rec[idField]); });
+  var next;
+  if(i >= 0){
+    next = Object.assign({}, list[i], rec);
+    if(JSON.stringify(list[i]) === JSON.stringify(next)) return false;
+    list[i] = next;
+  } else {
+    next = rec; list.push(rec);
+  }
+  if(typeof after === 'function'){ try{ after(next); }catch(e){ E(e); } }
+  var txt = JSON.stringify(list);
+  rawSet(key, txt);
+  tellApp(key, txt, before);
+  return true;
+}
+
 var _pull = { busy: false, at: 0 };
 function pull(force){
   if(!ready() || mySrv() == null) return;
@@ -81105,23 +81213,46 @@ function pull(force){
           if(row.kind === 'req' && applyReq(row.rid, row.data)) touched++;
           else if(row.kind === 'deal' && applyDeal(row.rid, row.data)) touched++;
           else if(row.kind === 'msg' && applyMsg(row.rid, row.data)) touched++;
+          else if(row.kind === 'camp' && applyList(CAMP_KEY, 'id', row.rid, row.data)) touched++;
+          else if(row.kind === 'join' && applyList(JOIN_KEY, '_rid', row.rid, row.data, function(j){
+            /* Выплата по заданию ищет получателя по srvId отклика —
+               проставляем его, пока знаем серверный номер человека. */
+            var n = srvOf(j.userId);
+            if(n != null) j.srvId = n;
+            delete j._rid;
+          })) touched++;
+          else if(row.kind === 'rev' && applyList(REV_KEY, 'id', row.rid, row.data)) touched++;
+          else if(row.kind === 'disp' && applyList(DISP_KEY, 'id', row.rid, row.data)) touched++;
         }
       }catch(e){ E(e); }
     });
     saveVer(Number(j.ver) || lastVer());
-    if(touched) try{ if(typeof window.bpSyncIncomingOffers === 'function') window.bpSyncIncomingOffers(); }catch(e){ E(e); }
+    if(touched){
+      try{ if(typeof window.bpSyncIncomingOffers === 'function') window.bpSyncIncomingOffers(); }catch(e){ E(e); }
+      /* Списки заданий слушают событие storage, но своя перерисовка
+         надёжнее: у них есть внутренние кэши. */
+      try{ if(typeof window.bpTasksRender === 'function') window.bpTasksRender(); }catch(e){ E(e); }
+      try{ if(typeof window.bpRenderMyTasks === 'function') window.bpRenderMyTasks(); }catch(e){ E(e); }
+    }
     if(j.more) setTimeout(function(){ pull(true); }, 300);
   }).catch(function(){ _pull.busy = false; });
 }
 window.bpDealSyncPull = function(){ pull(true); };
 window.bpDealSyncPush = function(){ pushAll(); };
 
+function watched(key){
+  key = String(key || '');
+  return key === REQ_KEY || key === DEAL_KEY || key === CAMP_KEY
+      || key === JOIN_KEY || key === REV_KEY || key === DISP_KEY
+      || key.indexOf(MSG_PREFIX) === 0;
+}
+
 /* ── подключение ────────────────────────────────────────────────────── */
 function hook(){
   try{
     if(window.bpData && typeof window.bpData.onChange === 'function'){
       window.bpData.onChange(function(key){
-        if(key === REQ_KEY || key === DEAL_KEY || String(key).indexOf(MSG_PREFIX) === 0) schedulePush();
+        if(watched(key)) schedulePush();
       });
     }
   }catch(e){ E(e); }
@@ -81131,7 +81262,7 @@ function hook(){
   try{
     window.addEventListener('storage', function(e){
       if(!e || !e.key) return;
-      if(e.key === REQ_KEY || e.key === DEAL_KEY || e.key.indexOf(MSG_PREFIX) === 0) schedulePush();
+      if(watched(e.key)) schedulePush();
     });
   }catch(e){ E(e); }
 
@@ -81153,7 +81284,10 @@ function hook(){
     if(typeof g === 'function'){
       window.goTo = function(page){
         var r = g.apply(this, arguments);
-        try{ if(page === 'chats' || page === 'home' || page === 'campaigns') pull(false); }catch(e){ E(e); }
+        try{
+          if(page === 'chats' || page === 'home' || page === 'campaigns'
+             || page === 'tasks' || page === 'mytasks') pull(false);
+        }catch(e){ E(e); }
         return r;
       };
     }
