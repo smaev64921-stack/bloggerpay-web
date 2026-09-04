@@ -39202,7 +39202,7 @@ else setTimeout(boot, 0);
       +   '<div class="ocs-acts" style="margin-top:14px">'
       +     '<button class="ocs-b ocs-b-main" onclick="document.getElementById(\'bpGateSheet\').remove();bpLeaveGuest(\'register\')">Создать аккаунт</button>'
       +     '<button class="ocs-b" onclick="document.getElementById(\'bpGateSheet\').remove();bpLeaveGuest(\'login\')">У меня уже есть аккаунт</button>'
-      +     '<button class="ocs-b" onclick="document.getElementById(\'bpGateSheet\').remove()">Продолжить просмотр</button>'
+      +     '<button class="ocs-b ocs-b-quiet" onclick="document.getElementById(\'bpGateSheet\').remove()">Продолжить просмотр</button>'
       +   '</div>'
       + '</div>';
     document.body.appendChild(ov);
@@ -83422,6 +83422,16 @@ html #bpGuestBar{
   font-size:12.5px; color:var(--t1,#fff);
 }
 html #bpGuestBar span{ flex:1; line-height:1.4 }
+/* «Продолжить просмотр» — не третий равный выбор, а отказ. Одинаковые по
+   весу кнопки заставляют выбирать там, где выбирать не из чего, поэтому
+   эта меньше и тише двух первых. */
+html .own-card-sheet .ocs-b-quiet{
+  width:auto; align-self:center; padding:7px 14px; margin-top:1px;
+  font-size:12.5px; font-weight:600;
+  background:none; border:none; color:var(--t3,#7d818c);
+}
+html .own-card-sheet .ocs-b-quiet:hover{ background:none; color:var(--t2,#b9bcc4) }
+
 html #bpGuestBar button{
   flex-shrink:0; border:none; border-radius:10px; padding:8px 12px;
   background:var(--acc,#2f6ce0); color:#fff; font:inherit; font-size:12px;
