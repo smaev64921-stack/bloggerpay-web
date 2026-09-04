@@ -154,12 +154,27 @@ if (MAIL_DEBUG && /^https?:\/\//i.test(PUBLIC_URL) && reachableOutside(PUBLIC_UR
     + ' снаружи (' + PUBLIC_URL + '). В этом режиме код восстановления и код'
     + ' вывода возвращаются прямо в ответе. Для тестов запускайте локально.');
 }
+/* Сервер виден из интернета — значит его открывает кто угодно. */
+const SERVER_IS_PUBLIC = /^https?:/i.test(PUBLIC_URL) && reachableOutside(PUBLIC_URL);
+/* Кому доступно тестовое пополнение. На своей машине — всем, кто вошёл;
+   на публичном сервере — только владельцу, если не сказано иначе. */
+const TEST_TOPUP_OPEN = String(ENV.TEST_TOPUP_OPEN || '') === '1' || !SERVER_IS_PUBLIC;
+if (TEST_TOPUP && !TEST_TOPUP_OPEN) {
+  console.error('[BloggerPay] Тестовое пополнение оставлено только владельцу:'
+    + ' сервер виден снаружи (' + PUBLIC_URL + '). Остальным пополнение отвечает,'
+    + ' что оплата идёт через кассу. Открыть всем — TEST_TOPUP_OPEN=1.');
+}
+
 /* Кавычки и пробелы вокруг значения — самая частая причина «неизвестный
    client_key»: площадка получает ключ вместе с ними и не узнаёт его. */
 const cleanKey = (v) => String(v == null ? '' : v).trim().replace(/^["']+|["']+$/g, '').trim();
 /* Свои адреса площадки: сюда вписывают прокси, если напрямую не пускают. */
 const TT_AUTH_BASE = (cleanKey(ENV.TT_AUTH_BASE) || 'https://www.tiktok.com').replace(/\/+$/, '');
 const TT_API_BASE = (cleanKey(ENV.TT_API_BASE) || 'https://open.tiktokapis.com').replace(/\/+$/, '');
+/* Куда возвращать человека после площадки: обычно это сам сайт, который
+   раздаёт этот же сервер. APP_URL нужен, только если сайт живёт отдельно. */
+const APP_BASE = (String(ENV.APP_URL || '').trim().replace(/\/+$/, '') || PUBLIC_URL) + '/';
+
 const OAUTH = {
   youtube: {
     id: cleanKey(ENV.YT_CLIENT_ID), secret: cleanKey(ENV.YT_CLIENT_SECRET),
@@ -296,6 +311,32 @@ CREATE TABLE IF NOT EXISTS cards (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS cards_user ON cards(user_id);
+
+/* Конверты — почта между устройствами.
+   Заявки, сделки и переписка жили в браузере: рекламодатель на одном
+   телефоне отправлял заявку, а блогер на другом её не видел. Теперь
+   каждая такая запись кладётся сюда «в конверт» с двумя участниками
+   (a_id, b_id — серверные id), и каждый забирает свои конверты по
+   номеру (ver): что появилось после последнего визита.
+   Сервер НЕ разбирает содержимое (data — как прислали): он только
+   следит, кто участник и кто может читать и переписывать. b_id пуст —
+   конверт общий, его видят все вошедшие (объявления кампаний).
+   Повторная запись того же (kind, rid) получает НОВЫЙ ver — так
+   «забрать всё новее N» отдаёт и правки, а не только новые записи. */
+CREATE TABLE IF NOT EXISTS sync (
+  ver        INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind       TEXT NOT NULL,
+  rid        TEXT NOT NULL,
+  a_id       INTEGER NOT NULL REFERENCES users(id),
+  b_id       INTEGER REFERENCES users(id),
+  from_id    INTEGER NOT NULL,
+  data       TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(kind, rid)
+);
+CREATE INDEX IF NOT EXISTS sync_a ON sync(a_id, ver);
+CREATE INDEX IF NOT EXISTS sync_b ON sync(b_id, ver);
 
 /* Ошибки у пользователей. Раньше они жили в памяти вкладки и стирались
    при перезагрузке: у человека белый экран, а владелец об этом никогда
@@ -451,6 +492,15 @@ const q = {
       WHERE l.kind IN ('payout','settle-payout') AND l.bucket = 'available' AND l.amount > 0 AND u.is_blocked = 0
       GROUP BY l.user_id HAVING deals > ?
         OR (deals = ? AND (last_at < ? OR (last_at = ? AND l.user_id < ?))))`),
+  syncGet: db.prepare('SELECT * FROM sync WHERE kind = ? AND rid = ?'),
+  syncDel: db.prepare('DELETE FROM sync WHERE kind = ? AND rid = ?'),
+  syncIns: db.prepare(`INSERT INTO sync (kind, rid, a_id, b_id, from_id, data, created_at)
+    VALUES (?,?,?,?,?,?,?)`),
+  /* свои конверты + общие, новее ver; порядок по ver — это и есть лента */
+  syncPull: db.prepare(`SELECT ver, kind, rid, a_id, b_id, from_id, data, created_at, updated_at
+    FROM sync WHERE ver > ? AND (a_id = ? OR b_id = ? OR b_id IS NULL)
+    ORDER BY ver ASC LIMIT ?`),
+  syncMax: db.prepare('SELECT COALESCE(MAX(ver), 0) AS v FROM sync'),
   cardGet: db.prepare('SELECT * FROM cards WHERE id = ?'),
   cardsMine: db.prepare('SELECT id FROM cards WHERE user_id = ?'),
   cardIns: db.prepare('INSERT INTO cards (id, user_id, data) VALUES (?,?,?)'),
@@ -1540,6 +1590,70 @@ const routes = {
     return { status: 200, body: { rows: cardsCache.rows } };
   },
 
+  /* ── Конверты: положить и забрать ──
+     Кладёт только участник. Новый конверт: отправитель — a, адресат —
+     b (to). Без адресата — общий (видят все вошедшие). Чужой конверт
+     переписать нельзя, даже зная его номер. */
+  'POST /api/sync/put': async (req, body) => {
+    const u = auth(req);
+    if (!u) return { status: 401, body: { error: 'Нужен вход' } };
+    if (!rateLimit(req, 'sync:put:' + u.id, 240, 60000)) return tooOften;
+    const kind = String(body.kind || '');
+    const rid = String(body.rid || '');
+    if (!/^[a-z]{2,16}$/.test(kind)) return { status: 400, body: { error: 'Неверный вид записи' } };
+    if (!/^[\w.:+-]{3,80}$/.test(rid)) return { status: 400, body: { error: 'Неверный номер записи' } };
+    if (body.data == null || typeof body.data !== 'object') return { status: 400, body: { error: 'Нет содержимого' } };
+    const data = JSON.stringify(body.data);
+    if (data.length > 400 * 1024) return { status: 413, body: { error: 'Запись слишком большая' } };
+    const ex = q.syncGet.get(kind, rid);
+    let a = u.id, b = null, created = null;
+    if (ex) {
+      if (ex.a_id !== u.id && ex.b_id !== u.id) return { status: 403, body: { error: 'Это чужая запись' } };
+      a = ex.a_id; b = ex.b_id; created = ex.created_at;
+      /* адресата можно назначить позже, но не сменить */
+      if (b == null && body.to != null && String(body.to) !== '') {
+        const to = Number(body.to);
+        if (!Number.isInteger(to) || !q.userById.get(to)) return { status: 400, body: { error: 'Адресат не найден' } };
+        b = to;
+      }
+    } else if (body.to != null && String(body.to) !== '') {
+      const to = Number(body.to);
+      if (!Number.isInteger(to) || to === u.id || !q.userById.get(to)) return { status: 400, body: { error: 'Адресат не найден' } };
+      b = to;
+    }
+    let ver = 0;
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      if (ex) q.syncDel.run(kind, rid);
+      q.syncIns.run(kind, rid, a, b, u.id, data, created || new Date().toISOString().slice(0, 19).replace('T', ' '));
+      ver = Number(q.syncMax.get().v) || 0;
+      db.exec('COMMIT');
+    } catch (e) {
+      try { db.exec('ROLLBACK'); } catch (_) {}
+      throw e;
+    }
+    return { status: 200, body: { ok: true, ver, a, b } };
+  },
+
+  /* since — последний виденный номер; отдаём до 200 конвертов новее.
+     Если их больше, more:true — клиент придёт ещё раз. */
+  'GET /api/sync/pull': async (req, body, url) => {
+    const u = auth(req);
+    if (!u) return { status: 401, body: { error: 'Нужен вход' } };
+    if (!rateLimit(req, 'sync:pull:' + u.id, 240, 60000)) return tooOften;
+    const since = Math.max(0, Number(url.searchParams.get('since')) || 0);
+    const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit')) || 200));
+    const rows = q.syncPull.all(since, u.id, u.id, limit + 1);
+    const more = rows.length > limit;
+    const out = rows.slice(0, limit).map((r) => {
+      let data = null;
+      try { data = JSON.parse(r.data); } catch (e) { data = null; }
+      return { ver: r.ver, kind: r.kind, rid: r.rid, a: r.a_id, b: r.b_id, from: r.from_id, data, updatedAt: r.updated_at };
+    });
+    const ver = out.length ? out[out.length - 1].ver : since;
+    return { status: 200, body: { rows: out, ver, more, me: u.id } };
+  },
+
   'POST /api/cards': async (req, body) => {
     const u = auth(req);
     if (!u) return { status: 401, body: { error: 'Нужен вход' } };
@@ -1885,6 +1999,10 @@ const routes = {
     if (!TEST_TOPUP) {
       return { status: 503, body: { error: 'Тестовое пополнение выключено — оплата идёт через кассу' } };
     }
+    /* На публичном сервере деньги из воздуха доступны только владельцу. */
+    if (!TEST_TOPUP_OPEN && !u.is_admin) {
+      return { status: 403, body: { error: 'Пополнение пока недоступно — касса ещё не подключена' } };
+    }
     const amount = body.amount;
     if (!amountOk(amount)) return { status: 400, body: { error: 'Сумма — целое число от 1 до 100 000 000' } };
     if (!userKey(body.opKey)) return badKey;
@@ -1899,10 +2017,14 @@ const routes = {
      бьёт вебхуком ИЛИ приложение само спрашивает статус → зачисление
      через журнал. Обе дороги идемпотентны (op_key = yk:<id>). */
 
-  'GET /api/pay/config': async () => ({
-    status: 200,
-    body: { mode: YK_ON ? 'yookassa' : (TEST_TOPUP ? 'test' : 'off'), min: 1000 },
-  }),
+  'GET /api/pay/config': async (req) => {
+    const u = auth(req);
+    const test = TEST_TOPUP && (TEST_TOPUP_OPEN || !!(u && u.is_admin));
+    return {
+      status: 200,
+      body: { mode: YK_ON ? 'yookassa' : (test ? 'test' : 'off'), min: 1000 },
+    };
+  },
 
   'POST /api/pay/create': async (req, body) => {
     if (!rateLimit(req, 'pay', 10, 60000)) return tooOften;
@@ -2444,6 +2566,7 @@ const routes = {
     if (!u) return { status: 401, body: { error: 'Нужен вход' } };
     const nonce = String(body.nonce || '').slice(0, 64);
     const code = String(body.code || '').replace(/\D/g, '');
+    const claim = String(body.claim || '').slice(0, 64);
     const rec = vfy.get(nonce);
     if (!rec || !rec.channel) {
       return { status: 404, body: { error: 'Проверка не найдена — начните заново из приложения' } };
@@ -2456,7 +2579,19 @@ const routes = {
       vfy.delete(nonce);
       return { status: 429, body: { error: 'Слишком много попыток — начните проверку заново' } };
     }
-    if (code.length !== 6 || code !== rec.code) {
+    /* Канал получает ТОТ аккаунт, из которого начали проверку. Иначе
+       подсунутая ссылка возврата (с чужим пропуском) привязала бы чужой
+       канал к тому, кто по ней прошёл: он-то в приложении вошёл, и
+       сервер записал бы канал на него. */
+    if (rec.userId && rec.userId !== u.id) {
+      return { status: 403, body: { error: 'Проверку начинал другой аккаунт — начните заново из приложения' } };
+    }
+    /* Пропуск из адреса возврата равносилен верно введённому коду:
+       и то и другое доказывает, что человек в приложении — тот самый,
+       кто только что вошёл на площадке. */
+    const byClaim = !!(claim && rec.claim && claim.length === rec.claim.length
+      && crypto.timingSafeEqual(Buffer.from(claim), Buffer.from(rec.claim)));
+    if (!byClaim && (code.length !== 6 || code !== rec.code)) {
       rec.tries++;
       return { status: 400, body: { error: 'Код не подходит', left: Math.max(0, 5 - rec.tries) } };
     }
@@ -2938,9 +3073,12 @@ async function handleVerifyCallback(req, res, url) {
        Так подсунутая кем-то ссылка авторизации не запишет ваш канал на него. */
     rec.channel = channel;
     rec.code = String(crypto.randomInt(100000, 1000000));
-    return verifyPage(res, 'Канал подтверждён: ' + channel.title,
-      'Вернитесь в приложение и введите этот код — он привяжет канал к вашему аккаунту.',
-      true, rec.code);
+    rec.claim = crypto.randomBytes(24).toString('hex');
+    /* Возвращаем человека прямо в приложение. Пропуск живёт в адресе —
+       его получает только этот браузер. */
+    const back = APP_BASE + '?vfy=' + encodeURIComponent(state) + '&claim=' + rec.claim;
+    res.writeHead(302, { Location: back, 'Cache-Control': 'no-store' });
+    return res.end();
   } catch (e) {
     console.error('[verify]', e);
     return verifyPage(res, 'Проверка не прошла', String(e.message || e), false);
@@ -3064,12 +3202,20 @@ const handler = async (req, res) => {
   }
   const handler = routes[req.method + ' ' + url.pathname];
   if (!handler) return send(res, 404, { error: 'Нет такого пути' });
+  /* Отпор перебору ключа владельца отвечал «Нужен X-Admin-Key» — и человек
+     с ВЕРНЫМ ключом видел, будто ключ не тот, вместо «подождите».
+     Только когда ключ ДЕЙСТВИТЕЛЬНО прислан: запрос вообще без ключа —
+     это не перебор, ему по-прежнему отвечаем «нужен ключ». */
+  if (url.pathname.startsWith('/api/admin/') && req.headers['x-admin-key']
+      && !auth(req) && adminBlocked(req)) {
+    return send(res, 429, { error: 'Слишком много попыток с ключом — подождите десять минут' });
+  }
   try {
     /* Фото паспорта и селфи в /api/kyc/submit в общий лимит 64 КБ не влезают.
        Но большой буфер — только для вошедших: токен проверяем ДО чтения
        тела, чтобы аноним не заставлял сервер глотать по полтора мегабайта. */
     const isBig = req.method === 'POST'
-      && (url.pathname === '/api/kyc/submit' || url.pathname === '/api/cards');
+      && (url.pathname === '/api/kyc/submit' || url.pathname === '/api/cards' || url.pathname === '/api/sync/put');
     if (isBig && !auth(req)) return send(res, 401, { error: 'Нужен вход' });
     const maxBody = isBig ? 1500 * 1024 : undefined;
     const body = req.method === 'POST' ? await readBody(req, maxBody) : {};
@@ -3121,6 +3267,29 @@ function listenOn(port, first) {
     if (first) boot();
   });
 }
+
+/* Отпечаток выложенной версии: короткий хеш файла сайта. */
+function siteFingerprint() {
+  try {
+    const file = path.join(SITE_DIR, 'bloggerpay-1008-v100.html');
+    return crypto.createHash('md5').update(fs.readFileSync(file)).digest('hex').slice(0, 8);
+  } catch (e) { return ''; }
+}
+function announceUpdate() {
+  const fp = siteFingerprint();
+  if (!fp) return;
+  const mark = path.join(path.dirname(DB_PATH), 'last-version.txt');
+  let was = '';
+  try { was = fs.readFileSync(mark, 'utf8').trim(); } catch (e) { /* первого запуска нет */ }
+  if (was === fp) return;                       /* тот же файл — просто перезапуск */
+  try { fs.writeFileSync(mark, fp); } catch (e) { /* не смогли запомнить — не беда */ }
+  if (!was) return;                             /* самый первый запуск: обновлением не считаем */
+  const when = new Date().toLocaleString('ru', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  tgSendRaw('🔄 Бот обновлён\n\n' + APP_BASE + '\n\nВерсия ' + fp + ' · ' + when
+    + '\nОткройте ссылку заново — старая страница осталась на прежней версии.')
+    .catch(() => {});
+}
+setTimeout(announceUpdate, 2500).unref();
 
 PORTS.slice(1).forEach((p) => listenOn(p, false));
 listenOn(PORTS[0], true);

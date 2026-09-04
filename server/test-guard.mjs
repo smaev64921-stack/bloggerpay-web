@@ -165,11 +165,14 @@ ok(other.status === 400 && other.body.dead === true, 'код не подходи
 let blocked = 0;
 for (let i = 0; i < 12; i++) {
   const r = await api('GET', '/api/admin/overview', null, null, 'x'.repeat(ADMIN_KEY.length));
-  if (r.status === 403) blocked++;
+  /* 403 — ключ не подошёл, 429 — попытки кончились: и то и другое отказ */
+  if (r.status === 403 || r.status === 429) blocked++;
 }
 ok(blocked === 12, 'неверный ключ всегда отклоняется', { отказов: blocked });
 const afterBrute = await api('GET', '/api/admin/overview', null, null, ADMIN_KEY);
-ok(afterBrute.status === 403, 'после перебора адрес отрезан даже с верным ключом', afterBrute.body);
+ok(afterBrute.status === 429, 'после перебора адрес отрезан даже с верным ключом', afterBrute.body);
+ok(/подождите/i.test(String((afterBrute.body && afterBrute.body.error) || '')),
+  'и говорит человеку, что дело в попытках, а не в ключе', afterBrute.body);
 
 console.log(`\nИтого: ${passed} ok, ${failed} fail\n`);
 process.exit(failed ? 1 : 0);

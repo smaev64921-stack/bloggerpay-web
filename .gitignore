@@ -19,6 +19,7 @@ server/.env
 
 # База данных: там аккаунты, деньги и фотографии документов
 server/data/
+data/
 *.db
 *.db-journal
 *.db-wal

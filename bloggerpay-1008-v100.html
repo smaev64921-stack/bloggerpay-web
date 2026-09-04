@@ -292,6 +292,10 @@ body{
 /* ── PAGE SYSTEM ── */
 .pg{display:none;padding:18px 13px 8px}
 .pg.on{display:block}
+/* Экран «Профиль компании» убран из приложения: данные компании нужны
+   для счетов, а не для витрины. Разметка осталась, но недостижима —
+   пункт меню убран, переход ведёт в профиль. */
+#pg-company{ display:none !important }
 #pg-balance.on,#pg-topup.on,#pg-auth.on,#pg-withdraw.on,#pg-withdraw-history.on,#pg-withdraw-only-history.on{display:flex !important}
 
 /* ════════════════════════════════
@@ -10703,7 +10707,12 @@ html.bp-tg #tabLogin,html.bp-tg #tabReg{opacity:.9}
      initTelegram/tgUser/stash/offerExit, и все на DOMContentLoaded и
      позже, каждый через «if(!tg) return». Поведение внутри Telegram
      не меняется. -->
-<script defer src="https://telegram.org/js/telegram-web-app.js"></script>
+<!-- Мини-аппа у сайта нет. Скрипт telegram-web-app.js убран: он включал
+     режим приложения внутри Телеграма и тянулся с telegram.org при каждом
+     открытии — лишняя внешняя зависимость на старте. Всё, что его
+     спрашивало, написано через `window.Telegram && window.Telegram.WebApp`
+     и без него просто не делает ничего: отклик уходит в navigator.vibrate,
+     кнопка «назад» — в обычную историю браузера. -->
 
 <script id="bp-core">
 /* ══ BP CORE — ошибки, экранирование, диагностика ══════════════════════
@@ -11816,11 +11825,6 @@ window.BP_LOGO="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAcFBQYFB
     <div class="pf-mi"  onclick="goTo('add-blogger-card')" role="button" tabindex="0">
       <div class="pf-mi-ico" style="background:rgba(255,255,255,0.072);border-color:rgba(255,255,255,0.14)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--acc2)" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="M15 8h3M15 12h3M6 16h12"/></svg></div>
       <div><div class="pf-mi-t">Карточка блогера</div><div class="pf-mi-s">Разместить или изменить в каталоге</div></div>
-      <svg class="pf-mi-arr" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" stroke-width="2.4" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
-    </div>
-    <div class="pf-mi"  onclick="goTo('company')" role="button" tabindex="0">
-      <div class="pf-mi-ico" style="background:rgba(56,189,248,.12);border-color:rgba(56,189,248,.26)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/><path d="M9 9h.01M9 13h.01M9 17h.01"/></svg></div>
-      <div><div class="pf-mi-t">Моя компания</div><div class="pf-mi-s">Данные и верификация компании</div></div>
       <svg class="pf-mi-arr" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" stroke-width="2.4" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
     </div>
     <div class="pf-mi"  onclick="showVerifyPicker()" role="button" tabindex="0">
@@ -64047,7 +64051,7 @@ function prefs(){
 }
 
 window.st2OpenProfile = function(){
-  try{ if(typeof goTo === 'function') goTo(isAdv() ? 'company' : 'profile'); }catch(e){ E(e); }
+  try{ if(typeof goTo === 'function') goTo('profile'); }catch(e){ E(e); }
 };
 window.st2Toggle = function(key){
   var sw = document.querySelector('.st2-sw[data-pref="' + key + '"]');
@@ -70584,7 +70588,6 @@ var SEC=[
   ['Каталог блогеров','home'],['Кампании','campaigns'],['Чаты','chats'],
   ['Профиль','profile'],['Баланс и история','balance'],['Пополнение','topup'],
   ['Вывод средств','withdraw'],['Избранное','favorites'],['Мои задания','mytasks'],
-  ['Моя компания','company']
 ];
 var ICO={
   sec:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
@@ -73271,6 +73274,53 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
     document.getElementById('bpVfyX').onclick = close;
   }
   window.bpVfyCodeSheet = vfyCodeSheet;
+
+  /* ── Возврат с площадки ── */
+  function claimFromUrl(){
+    try{
+      var q = new URLSearchParams(location.search);
+      var n = q.get('vfy'), c = q.get('claim');
+      if(!n || !c) return null;
+      return { n: n, c: c };
+    }catch(e){ return null; }
+  }
+  function cleanUrl(){
+    try{
+      var u = new URL(location.href);
+      u.searchParams.delete('vfy'); u.searchParams.delete('claim');
+      history.replaceState(null, '', u.pathname + (u.search === '?' ? '' : u.search) + u.hash);
+    }catch(e){}
+  }
+  function finishReturn(tries){
+    var got = claimFromUrl();
+    if(!got) return;
+    if(!online()){ cleanUrl(); return; }
+    /* Сессия сервера могла не успеть подняться — ждём её недолго. */
+    if(!srv().token()){
+      if((tries || 0) > 20){ toast('Войдите в аккаунт — и канал привяжется', 'err'); return; }
+      setTimeout(function(){ finishReturn((tries || 0) + 1); }, 500);
+      return;
+    }
+    cleanUrl();
+    var pend = readPending();
+    var platform = (pend && pend.n === got.n && pend.p) || 'tiktok';
+    var name = platform === 'youtube' ? 'YouTube' : 'TikTok';
+    srv().raw('POST', '/api/verify/confirm', { nonce: got.n, claim: got.c }).then(function(j){
+      clearPending();
+      var ov = document.getElementById('bpVfyCode'); if(ov) ov.remove();
+      toast((j && j.title ? j.title + ' — ' : '') + name + ' подтверждён', 'ok');
+      paintVerified();
+      try{ if(typeof window.bpAbcAfterVerify === 'function') window.bpAbcAfterVerify(platform); }catch(e){}
+    }).catch(function(e){
+      /* Пропуск не подошёл (устарел, другой браузер) — предлагаем код. */
+      var m = String((e && e.message) || '');
+      if(/не найдена|15 минут/i.test(m)){ clearPending(); toast('Проверка устарела — начните заново', 'err'); return; }
+      toast(m || 'Не удалось привязать канал', 'err');
+      if(pend && pend.n === got.n) vfyCodeSheet(platform, name, got.n, null, pend.u || '', true);
+    });
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(finishReturn, 600); });
+  else setTimeout(finishReturn, 600);
 })();
 </script>
 
@@ -75258,6 +75308,43 @@ function link(email, password, name, role){
   }catch(e){ E(e); }
 }
 
+/* Регистрация: заводим адрес на сервере, а не входим под ним. Если
+   сервер говорит «занято» — местный аккаунт убираем и зовём войти:
+   деньги и карточки лежат на сервере, забрать их можно только входом. */
+function claimEmail(localUser, email, password, name, role){
+  try{
+    var s = window.bpSrv;
+    if(!s || !s.configured || !s.configured()) return;
+    if(typeof window.bpSrvClaimEmail !== 'function'){ link(email, password, name, role); return; }
+    window.bpSrvClaimEmail(email, password, name, role).then(function(verdict){
+      if(verdict === 'taken') undoLocal(localUser, email);
+    }).catch(function(e){ E(e); });
+  }catch(e){ E(e); }
+}
+
+/* Аккаунт создан секунду назад и пуст — убрать его честнее, чем оставить
+   двойника, который не сходится с сервером. Из хранилища запись уходит
+   сразу, а из экрана — после того, как отработает вход в приложение
+   (doRegister открывает его отложенно, и выкинуть человека раньше
+   значит впустить его обратно через мгновение). */
+function undoLocal(u, email){
+  try{
+    if(u && typeof users !== 'undefined' && Array.isArray(users)){
+      var i = users.indexOf(u);
+      if(i >= 0) users.splice(i, 1);
+      if(typeof saveUsers === 'function') saveUsers();
+    }
+  }catch(e){ E(e); }
+  setTimeout(function(){
+    try{
+      if(typeof doLogout === 'function') doLogout();
+      var f = document.getElementById('loginEmail'); if(f) f.value = email;
+      if(typeof showAuthToast === 'function')
+        showAuthToast('Этот email уже зарегистрирован — войдите, и данные вернутся', 'err');
+    }catch(e){ E(e); }
+  }, 1200);
+}
+
 /* ── Регистрация ── */
 var origRegister = window.doRegister;
 if(typeof origRegister === 'function' && !origRegister.__bpLinked){
@@ -75279,12 +75366,75 @@ if(typeof origRegister === 'function' && !origRegister.__bpLinked){
       if(after > before && email && pass){
         var u = users[users.length - 1];
         role = (u && u.role) || 'blogger';
-        link(email, pass, name || (u && u.name) || 'Без имени', role);
+        claimEmail(u, email, pass, name || (u && u.name) || 'Без имени', role);
       }
     }catch(e){ E(e); }
     return r;
   };
   window.doRegister.__bpLinked = true;
+}
+
+/* Знает ли этот браузер такой адрес или телефон. */
+function localKnows(val){
+  try{
+    if(typeof users === 'undefined' || !Array.isArray(users)) return false;
+    return users.some(function(u){
+      return u && (String(u.email || '').toLowerCase() === val || String(u.phone || '') === val);
+    });
+  }catch(e){ E(e); return false; }
+}
+
+function askServer(s, email, password){
+  return s.login(email, password).then(function(j){
+    return (j && j.user && j.user.id) ? j.user : null;
+  }).catch(function(){ return null; });
+}
+
+/* Возвращает true, если аккаунт восстановлен и вход выполнен. */
+async function restoreFromServer(email, pass){
+  try{
+    var s = window.bpSrv;
+    if(!s || !s.configured || !s.configured()) return false;
+    var who = null;
+    if(typeof window.bpSrvPass === 'function'){
+      who = await askServer(s, email, await window.bpSrvPass(email, pass));
+    }
+    if(!who) who = await askServer(s, email, pass);
+    if(!who) return false;
+
+    var salt = _bpRandSalt();
+    var hash = await _bpHashPass(pass, salt);
+    var role = who.role === 'advertiser' ? 'advertiser' : 'blogger';
+    var rec = {
+      id: Date.now(),
+      accountId: bpNextAccountId(),
+      email: email,
+      phone: '',
+      passSalt: salt,
+      passHash: hash,
+      name: who.name || 'Без имени',
+      role: role,
+      registeredAt: new Date().toISOString(),
+      restoredAt: new Date().toISOString(),
+      balance: 0, hold: 0, totalTopup: 0, topupHistory: [],
+      stats: {
+        theme: '—', audience: '0', reach: '0', chatTime: '—', rating: 0,
+        campaigns: '0', campaignsDelta: '—', views: '0', viewsDelta: '—',
+        reachTotal: '0', reachDelta: '—', earned: '0', earnedDelta: '—'
+      }
+    };
+    users.push(rec);
+    if(typeof saveUsers === 'function') saveUsers();
+    currentUser = rec;
+    try{ if(window.bpMoney && typeof bpMoney.setMySrvId === 'function') bpMoney.setMySrvId(who.id); }catch(e){ E(e); }
+    try{ localStorage.setItem('bp_role_u_' + rec.id, role); }catch(e){ E(e); }
+    try{ sessionStorage.setItem('bp_role', role); }catch(e){ E(e); }
+    try{ if(typeof rememberMe === 'undefined' || rememberMe) saveSession(rec); }catch(e){ E(e); }
+    try{ bpNotify('success', 'С возвращением, ' + rec.name + '!', 'Аккаунт восстановлен — данные и баланс на месте'); }
+    catch(e){ try{ showAuthToast('Аккаунт восстановлен', 'ok'); }catch(_){} }
+    setTimeout(function(){ try{ enterApp(false); }catch(e){ E(e); } }, 900);
+    return true;
+  }catch(e){ E(e); return false; }
 }
 
 /* ── Вход ──
@@ -75298,6 +75448,15 @@ if(typeof origLogin === 'function' && !origLogin.__bpLinked){
     try{
       val  = String((document.getElementById('loginEmail')||{}).value || '').trim().toLowerCase();
       pass = String((document.getElementById('loginPass')||{}).value || '');
+    }catch(e){ E(e); }
+    /* Этого адреса в браузере нет — возможно, аккаунт с другого
+       устройства. Спрашиваем сервер ДО местной проверки, иначе человек
+       получит «неверный пароль» на своём же аккаунте. */
+    try{
+      if(val && pass && /@/.test(val) && !localKnows(val)
+         && window.bpSrv && window.bpSrv.configured && window.bpSrv.configured()){
+        if(await restoreFromServer(val, pass)) return true;
+      }
     }catch(e){ E(e); }
     var wasUser = (typeof currentUser !== 'undefined') ? currentUser : null;
     var r = await origLogin.apply(this, arguments);
@@ -76674,6 +76833,40 @@ async function linkNow(email, password, name, role){
   if(lastErr) lastErr.__bpLink = true;
   throw (lastErr || new Error('Не удалось подключить аккаунт'));
 }
+/* Регистрация — не вход. Здесь у сервера ровно одна попытка: ЗАВЕСТИ
+   адрес. Входить под ним нельзя, даже если пароль подходит.
+
+   Почему это важно. Местная проверка «этот email уже зарегистрирован»
+   видит только текущий браузер. Человек, стерший данные или пришедший
+   с другого устройства, заводил «новый» аккаунт, а мост молча входил
+   под старым серверным — и на пустом аккаунте появлялся прежний
+   баланс. Так и вышли 10 000 ₽ на только что созданном аккаунте.
+
+   Ответы: 'free' — адрес был свободен, аккаунт заведён;
+           'taken' — адрес занят, регистрировать нельзя;
+           'unknown' — сервер не ответил, решает приложение. */
+window.bpSrvClaimEmail = async function(email, password, name, role){
+  var s = srv();
+  if(!s || !s.configured()) return 'unknown';
+  email = String(email || '').trim().toLowerCase();
+  var dp = await window.bpSrvPass(email, password);
+  try{
+    var j = await s.register({ email: email, password: dp,
+      name: name || 'Без имени', role: role === 'advertiser' ? 'advertiser' : 'blogger' });
+    if(j && j.user && j.user.id){
+      try{ if(window.bpMoney && typeof bpMoney.setMySrvId === 'function') bpMoney.setMySrvId(j.user.id); }catch(e){}
+    }
+    return 'free';
+  }catch(e){
+    if(e && e.status === 409) return 'taken';
+    /* Прочие отказы сервера (кривое имя, лимит попыток) — не повод
+       рушить местную регистрацию: связь наладится при первом входе. */
+    if(e && e.status >= 400 && e.status < 500) return 'unknown';
+    E(e);
+    return 'unknown';
+  }
+};
+
 /* Прежний мост звал window.bpLinkServer — оставляем то же имя, но с
    новой начинкой и молчаливым отказом (его зовут в фоне при входе). */
 window.bpLinkServer = function(email, password, name, role){
@@ -79778,7 +79971,7 @@ window.bpPf2Go = function(what){
       return;
     }
     if(what === 'card'){ if(typeof goTo === 'function') goTo('add-blogger-card'); return; }
-    if(what === 'company'){ if(typeof goTo === 'function') goTo('company'); return; }
+    if(what === 'company'){ if(typeof goTo === 'function') goTo('profile'); return; }
     if(what === 'kyc'){ if(typeof window.bpKycIdent === 'function') window.bpKycIdent(); else if(typeof goTo === 'function') goTo('settings'); return; }
     if(what === 'payout'){ if(typeof window.bpKycPayout === 'function') window.bpKycPayout(); else if(typeof goTo === 'function') goTo('withdraw'); return; }
     if(what === 'deals'){
@@ -79883,8 +80076,13 @@ function animStats(){
 }
 
 function renderDone(){
+  /* Блок «Заполнить профиль» удалён: он перечислял недоделки и ничего
+     не давал взамен. Функция оставлена пустой — её зовут из нескольких
+     мест, и убирать вызовы значит трогать пол-экрана. */
+  var el = $('pf2Done'); if(el) el.remove();
+  if(true) return;
   var u = me(), host = $('pfPromoBanner'), page = $('pg-profile'); if(!u || !page) return;
-  var T = todo(), el = $('pf2Done');
+  var T = todo();
   if(!T.total || T.done === T.total){ if(el) el.remove(); return; }
   if(!el){ el = document.createElement('div'); el.id = 'pf2Done'; el.className = 'pf2-sec'; (host || page).parentNode === page && host ? page.insertBefore(el, host) : page.appendChild(el); }
   var pct = Math.round(T.done / T.total * 100), miss = T.items.filter(function(i){ return !i.ok; });
@@ -79924,6 +80122,12 @@ function renderPlat(){
   var u = me(), page = $('pg-profile'), host = $('pfPromoBanner'); if(!u || !page) return;
   var el = $('pf2Plat');
   if(isAdv()){
+    /* Блок «Компания» убран по просьбе владельца: данные компании нужны
+       для счетов, а не для витрины, и на экране профиля только мешали. */
+    if(el) el.remove();
+    return;
+  }
+  if(false){
     var c = company();
     if(!el){ el = sec('pf2Plat'); page.insertBefore(el, host || null); }
     var head = sec('pf2Plat', 'Компания', 'Так вас видят блогеры', 'Изменить', 'company');
@@ -80190,8 +80394,8 @@ setTimeout(function(){ try{ var pg = $('pg-profile'); if(pg && pg.classList.cont
      не должен ни при каких обстоятельствах.
    · Значки площадок для чужой карточки рисуем САМИ по списку платформ:
      чужую разметку (socsHtml) сервер не хранит и мы не принимаем.
-   · Сделки и переписка через сервер ещё не ходят. Поэтому заявка на
-     карточку человека с другого устройства не отправляется молча в
+   · Заявки, сделки и переписка ездят отдельным слоем bp-dealsync. Пока
+     связи с кассой нет, заказ по чужой карточке не отправляется молча в
      никуда (и не морозит деньги), а честно объясняет положение дел.
 
    Откат: удалить script#bp-cardsync.                                   */
@@ -80431,12 +80635,12 @@ function tellForeign(c){
   ov.addEventListener('click', function(e){ if(e.target === ov) ov.remove(); });
   var esc = (typeof bpEsc === 'function') ? bpEsc : function(s){ return String(s == null ? '' : s); };
   ov.innerHTML = '<div class="pf2-sheet" role="dialog" aria-label="Заявка блогеру"><div class="h"></div>'
-    + '<div class="hd"><div><b>' + esc(c.name) + ' — на другом устройстве</b>'
-    + '<span>Карточку видно уже сейчас, а заявки и переписка между устройствами появятся в ближайшем обновлении.</span></div>'
+    + '<div class="hd"><div><b>' + esc(c.name) + ' — пока не доставить</b>'
+    + '<span>Этот блогер зарегистрирован на другом устройстве, а связи с кассой сейчас нет. Заявка уйдёт, как только связь появится.</span></div>'
     + '<button type="button" class="x" onclick="document.getElementById(\'bpCsSheet\').remove()" aria-label="Закрыть">'
     + '<svg viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>'
     + '<div class="bd"><div class="pf2-hint"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>'
-    + '<span>Деньги не заморожены — заявка не отправлена. Так и задумано: получатель её сейчас не увидит, а деньги висели бы в эскроу зря.</span></div>'
+    + '<span>Деньги не заморожены — заявка не отправлена. Без связи получатель её не увидит, а деньги висели бы в эскроу зря.</span></div>'
     + (link ? '<button type="button" class="pf2-add" style="margin-top:12px" onclick="bpCsOpenLink()">Открыть канал блогера</button>' : '')
     + '</div></div>';
   window.__bpCsLink = link;
@@ -80495,7 +80699,11 @@ function hook(){
         try{
           var el = btn && btn.closest ? btn.closest('.blc') : null;
           var f = foreignOf(el && el.getAttribute('data-cardid'));
-          if(f){ tellForeign(f); return; }
+          /* Заявки и переписка теперь ездят через сервер (слой bp-dealsync),
+             поэтому заказ по чужой карточке идёт обычным путём. Объясняем
+             положение дел только когда доставить действительно нечем: нет
+             связи с кассой или у карточки нет серверного владельца. */
+          if(f && !(ready() && f.srvId != null)){ tellForeign(f); return; }
         }catch(e){ E(e); }
         return atc.apply(this, arguments);
       };
@@ -80506,6 +80714,520 @@ function hook(){
 if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', hook);
 else hook();
 setTimeout(function(){ try{ if(me()){ pushNow(); pull(true); } }catch(e){ E(e); } }, 2500);
+})();
+</script>
+
+<script id="bp-dealsync">
+/* ══ v105 · СДЕЛКИ И ПЕРЕПИСКА МЕЖДУ УСТРОЙСТВАМИ ═══════════════════════
+   Было: заявки, сделки и сообщения лежали в браузере. Внутри одного
+   браузера две стороны видели друг друга (общие ключи + событие storage),
+   а на разных телефонах — нет: рекламодатель отправлял заявку в пустоту.
+
+   Стало: те же записи ездят через сервер «конвертами» (/api/sync).
+   Слой ничего не переписывает в приложении — он только:
+     · кладёт на сервер запись, которая изменилась у нас;
+     · забирает чужие и пишет их в ТЕ ЖЕ ключи localStorage;
+     · подаёт событие storage — и весь прежний код обновления экранов
+       (список сделок, чат, значки) срабатывает сам, как при двух
+       вкладках. Ни одной функции отрисовки здесь не продублировано.
+
+   Что ездит: bp_pending_requests_v1 (заявки), bp_shared_deals_v1
+   (сделки), bp_deal_msgs_<dealId> (переписка по сделке).
+
+   Личности. Местный id пользователя свой на каждом устройстве, поэтому
+   в конверте они заменены на серверные: '#srv:12'. На приёме свой
+   серверный превращается в местный id этого устройства, чужой — в
+   'srv:12' (та же запись, что у чужих карточек в каталоге). Поэтому
+   сравнения вида _idEq(d.bloggerId, currentUser.id) продолжают работать,
+   а чужой человек не может случайно совпасть со своим.
+
+   Деньги слой не трогает: они и так идут через кассу (/api/deals/*).
+
+   Откат: удалить script#bp-dealsync.                                   */
+(function(){
+'use strict';
+if(window.__bpDealSync) return; window.__bpDealSync = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'dealsync'); }catch(_){} }
+function me(){ try{ return (typeof currentUser !== 'undefined') ? currentUser : null; }catch(e){ return null; } }
+function srv(){ return window.bpSrv; }
+function ready(){
+  try{ var S = srv(); return !!(S && S.configured && S.configured() && S.token && S.token() && me()); }
+  catch(e){ return false; }
+}
+function mySrv(){
+  try{
+    if(window.bpMoney && typeof window.bpMoney.mySrvId === 'function'){
+      var v = window.bpMoney.mySrvId(); if(v != null) return Number(v);
+    }
+  }catch(e){}
+  var u = me(); return (u && u.srvId != null) ? Number(u.srvId) : null;
+}
+
+var REQ_KEY = 'bp_pending_requests_v1';
+var DEAL_KEY = 'bp_shared_deals_v1';
+var MSG_PREFIX = 'bp_deal_msgs_';
+var VER_KEY = 'bpsync_ver';          /* без префикса bp_ — мимо перехвата bpData */
+
+/* Читаем и пишем в обход bpData: очередь и подписки нам здесь только
+   мешают (иначе принятая с сервера запись тут же поехала бы обратно). */
+function rawGet(k){ try{ return window.localStorage.getItem(k); }catch(e){ return null; } }
+function rawSet(k, v){ try{ window.localStorage.setItem(k, v); }catch(e){ E(e); } }
+function arr(k){ try{ var a = JSON.parse(rawGet(k) || '[]'); return Array.isArray(a) ? a : []; }catch(e){ return []; } }
+
+/* ── личности ───────────────────────────────────────────────────────
+   Поля, в которых лежат идентификаторы людей. Всё остальное едет как есть. */
+var ID_FIELDS = ['toBloggerId','fromAdvertiserId','advertiserId','bloggerId','senderId',
+                 'userId','ownerId','authorId','toUserId','bloggerSrvId','toBloggerSrvId'];
+function srvOf(v){
+  var m = /^srv:(\d+)$/.exec(String(v == null ? '' : v));
+  return m ? Number(m[1]) : null;
+}
+function toWire(rec){
+  var u = me(), my = mySrv();
+  if(!u || my == null) return null;
+  var out = JSON.parse(JSON.stringify(rec));
+  var seenPeer = null;
+  (function walk(o){
+    if(!o || typeof o !== 'object') return;
+    Object.keys(o).forEach(function(k){
+      var v = o[k];
+      if(v && typeof v === 'object'){ walk(v); return; }
+      if(ID_FIELDS.indexOf(k) < 0 || v == null || v === '') return;
+      var peer = srvOf(v);
+      if(peer != null){ o[k] = '#srv:' + peer; if(seenPeer == null) seenPeer = peer; return; }
+      if(String(v) === String(u.id)) o[k] = '#srv:' + my;
+    });
+  })(out);
+  return { data: out, peer: seenPeer };
+}
+function fromWire(rec){
+  var u = me(), my = mySrv();
+  if(!u) return rec;
+  var out = JSON.parse(JSON.stringify(rec));
+  (function walk(o){
+    if(!o || typeof o !== 'object') return;
+    Object.keys(o).forEach(function(k){
+      var v = o[k];
+      if(v && typeof v === 'object'){ walk(v); return; }
+      var m = /^#srv:(\d+)$/.exec(String(v == null ? '' : v));
+      if(!m) return;
+      var n = Number(m[1]);
+      o[k] = (my != null && n === my) ? u.id : ('srv:' + n);
+    });
+  })(out);
+  return out;
+}
+/* Собеседник записи: единственный, кого мы знаем по серверному номеру. */
+function peerOfRec(rec){
+  var found = null;
+  (function walk(o){
+    if(!o || typeof o !== 'object' || found != null) return;
+    Object.keys(o).forEach(function(k){
+      if(found != null) return;
+      var v = o[k];
+      if(v && typeof v === 'object'){ walk(v); return; }
+      if(ID_FIELDS.indexOf(k) < 0) return;
+      var n = srvOf(v); if(n != null) found = n;
+    });
+  })(rec);
+  return found;
+}
+
+/* ── событие storage: тем же путём, что и вторая вкладка ──────────── */
+function tellApp(key, newValue, oldValue){
+  try{
+    var ev;
+    try{
+      ev = new StorageEvent('storage', { key: key, newValue: newValue, oldValue: oldValue == null ? null : oldValue,
+        storageArea: window.localStorage, url: location.href });
+    }catch(e){
+      ev = document.createEvent('Event'); ev.initEvent('storage', false, false);
+      ev.key = key; ev.newValue = newValue; ev.oldValue = oldValue == null ? null : oldValue;
+    }
+    window.dispatchEvent(ev);
+  }catch(e){ E(e); }
+}
+
+/* ── отправка ───────────────────────────────────────────────────────── */
+var _sent = {};              /* kind:rid → подпись отправленного */
+var _reqPeer = {};           /* id заявки → серверный номер второй стороны */
+var _fromServer = {};        /* kind:rid → подпись принятого (эхо не шлём) */
+var _pushT = null;
+
+function put(kind, rid, rec, peer){
+  var w = toWire(rec);
+  if(!w) return;
+  var to = (peer != null) ? peer : w.peer;
+  if(to == null) return;                       /* второй стороны на сервере нет */
+  var key = kind + ':' + rid, sig;
+  try{ sig = JSON.stringify(w.data); }catch(e){ return; }
+  if(_sent[key] === sig || _fromServer[key] === sig) return;
+  _sent[key] = sig;
+  srv().raw('POST', '/api/sync/put', { kind: kind, rid: rid, to: to, data: w.data })
+    .catch(function(){ delete _sent[key]; });
+}
+
+function pushAll(){
+  if(!ready() || mySrv() == null) return;
+  try{
+    /* заявки */
+    var live = {};
+    arr(REQ_KEY).forEach(function(r){
+      if(!r || !r.id) return;
+      var peer = peerOfRec(r);
+      if(peer == null) return;
+      live[String(r.id)] = peer;
+      _reqPeer[String(r.id)] = peer;
+      put('req', String(r.id), r, peer);
+    });
+    /* исчезла у нас — сообщаем второй стороне, что заявки больше нет */
+    Object.keys(_reqPeer).forEach(function(id){
+      if(live[id]) return;
+      var peer = _reqPeer[id];
+      delete _reqPeer[id];
+      put('req', id, { id: id, _gone: true, at: Date.now() }, peer);
+    });
+    /* сделки */
+    var deals = arr(DEAL_KEY);
+    deals.forEach(function(d){
+      if(!d || !d.dealId) return;
+      var peer = peerOfRec(d);
+      if(peer == null) return;
+      put('deal', String(d.dealId), d, peer);
+    });
+    /* переписка по сделкам, у которых есть сторона на сервере */
+    deals.forEach(function(d){
+      if(!d || !d.dealId) return;
+      var peer = peerOfRec(d);
+      if(peer == null) return;
+      var list = arr(MSG_PREFIX + d.dealId);
+      list.forEach(function(m, i){
+        if(!m) return;
+        var mid = String(m.id || (m.time || '') + '_' + i).replace(/[^\w.:+-]/g, '');
+        put('msg', String(d.dealId) + '.' + mid, { dealId: d.dealId, i: i, m: m }, peer);
+      });
+    });
+  }catch(e){ E(e); }
+}
+function schedulePush(){
+  if(_pushT) return;
+  _pushT = setTimeout(function(){ _pushT = null; try{ pushAll(); }catch(e){ E(e); } }, 700);
+}
+
+/* ── приём ──────────────────────────────────────────────────────────── */
+function verKey(){ var my = mySrv(); return VER_KEY + (my == null ? '' : '_' + my); }
+function lastVer(){ var v = Number(rawGet(verKey())); return isFinite(v) && v > 0 ? v : 0; }
+function saveVer(v){ if(v > 0) rawSet(verKey(), String(v)); }
+
+function applyReq(rid, data){
+  var rec = fromWire(data);
+  rec.id = rec.id || rid;
+  var list = arr(REQ_KEY), before = rawGet(REQ_KEY);
+  var i = list.findIndex(function(x){ return x && String(x.id) === String(rec.id); });
+  /* Заявку приняли или отклонили на другом устройстве — она должна уйти
+     и отсюда, иначе висела бы вечно «новой». */
+  if(rec._gone){
+    if(i < 0) return false;
+    list.splice(i, 1);
+    var gone = JSON.stringify(list);
+    rawSet(REQ_KEY, gone);
+    tellApp(REQ_KEY, gone, before);
+    return true;
+  }
+  if(i >= 0){
+    if(JSON.stringify(list[i]) === JSON.stringify(rec)) return false;
+    list[i] = rec;
+  } else list.push(rec);
+  var next = JSON.stringify(list);
+  rawSet(REQ_KEY, next);
+  tellApp(REQ_KEY, next, before);
+  /* второй канал доставки, которым пользуется само приложение */
+  try{ rawSet('bp_pending_notify_req', String(rec.id)); tellApp('bp_pending_notify_req', String(rec.id), null); }catch(e){}
+  return true;
+}
+/* Сделка приехала, а переписки по ней на этом устройстве нет (второй
+   телефон, или заявку принимали не здесь). Заводим контакт той же
+   функцией, что и обычный поток, — из полей сделки собираем то, что она
+   ждёт от заявки. */
+function ensureChatForDeal(d){
+  try{
+    if(!d || !d.dealId) return;
+    if(typeof CHAT_CONTACTS === 'undefined') return;
+    var have = CHAT_CONTACTS.some(function(c){ return c && String(c._dealId) === String(d.dealId); });
+    if(have) return;
+    if(typeof window.bpEnsureReqChat !== 'function') return;
+    var u = me(); if(!u) return;
+    var iAmAdv = String(d.advertiserId) === String(u.id);
+    window.bpEnsureReqChat({
+      id: 'deal:' + d.dealId,
+      dealId: d.dealId,
+      companyName: d.advertiserName || 'Рекламодатель',
+      toBloggerName: d.bloggerName || 'Блогер',
+      toBloggerId: d.bloggerId,
+      fromAdvertiserId: d.advertiserId,
+      budget: Number(String(d.price == null ? 0 : d.price).replace(/[^\d.]/g, '')) || 0,
+      format: d.format || 'Реклама',
+      deadline: d.deadline || '—',
+      color: d.bloggerColor || null,
+      tz: d.tz || null,
+      videoPreview: !!d.videoPreview
+    });
+    var c = CHAT_CONTACTS.find(function(x){ return x && String(x._dealId) === String(d.dealId); });
+    if(c && typeof _syncContactFromSharedMsgs === 'function') _syncContactFromSharedMsgs(c);
+    if(typeof saveChats === 'function') saveChats();
+    if(typeof updateChatsBadge === 'function') updateChatsBadge();
+  }catch(e){ E(e); }
+}
+
+function applyDeal(rid, data){
+  var rec = fromWire(data);
+  rec.dealId = rec.dealId || rid;
+  var list = arr(DEAL_KEY), before = rawGet(DEAL_KEY);
+  var i = list.findIndex(function(x){ return x && String(x.dealId) === String(rec.dealId); });
+  if(i >= 0){
+    /* Своё поверх чужого не роняем: сливаем, чужая версия сверху —
+       она новее (её только что прислали). */
+    var merged = Object.assign({}, list[i], rec);
+    if(JSON.stringify(list[i]) === JSON.stringify(merged)) return false;
+    list[i] = merged;
+  } else list.push(rec);
+  var next = JSON.stringify(list);
+  rawSet(DEAL_KEY, next);
+  tellApp(DEAL_KEY, next, before);
+  ensureChatForDeal(list[i >= 0 ? i : list.length - 1]);
+  return true;
+}
+function applyMsg(rid, data){
+  var d = fromWire(data);
+  var dealId = String(d.dealId || rid.split('.')[0] || '');
+  var m = d.m;
+  if(!dealId || !m) return false;
+  var key = MSG_PREFIX + dealId;
+  var list = arr(key), before = rawGet(key);
+  /* Дедуп: тот же отправитель + текст + время + файл — это то же сообщение. */
+  var same = function(a, b){
+    return String(a.senderId) === String(b.senderId)
+      && String(a.text || '') === String(b.text || '')
+      && String(a.time || '') === String(b.time || '')
+      && String((a.file && a.file.name) || '') === String((b.file && b.file.name) || '');
+  };
+  if(list.some(function(x){ return x && same(x, m); })) return false;
+  list.push(m);
+  var next = JSON.stringify(list);
+  rawSet(key, next);
+  tellApp(key, next, before);
+  return true;
+}
+
+var _pull = { busy: false, at: 0 };
+function pull(force){
+  if(!ready() || mySrv() == null) return;
+  if(_pull.busy) return;
+  if(!force && Date.now() - _pull.at < 8000) return;
+  _pull.busy = true; _pull.at = Date.now();
+  srv().raw('GET', '/api/sync/pull?since=' + lastVer()).then(function(j){
+    _pull.busy = false;
+    if(!j || !Array.isArray(j.rows)) return;
+    var touched = 0;
+    j.rows.forEach(function(row){
+      if(!row || !row.data) return;
+      try{
+        /* своё же эхо не применяем и обратно не шлём */
+        var k = row.kind + ':' + row.rid;
+        try{ _fromServer[k] = JSON.stringify(row.data); }catch(e){}
+        var mine = mySrv() != null && Number(row.from) === mySrv();
+        if(!mine){
+          if(row.kind === 'req' && applyReq(row.rid, row.data)) touched++;
+          else if(row.kind === 'deal' && applyDeal(row.rid, row.data)) touched++;
+          else if(row.kind === 'msg' && applyMsg(row.rid, row.data)) touched++;
+        }
+      }catch(e){ E(e); }
+    });
+    saveVer(Number(j.ver) || lastVer());
+    if(touched) try{ if(typeof window.bpSyncIncomingOffers === 'function') window.bpSyncIncomingOffers(); }catch(e){ E(e); }
+    if(j.more) setTimeout(function(){ pull(true); }, 300);
+  }).catch(function(){ _pull.busy = false; });
+}
+window.bpDealSyncPull = function(){ pull(true); };
+window.bpDealSyncPush = function(){ pushAll(); };
+
+/* ── подключение ────────────────────────────────────────────────────── */
+function hook(){
+  try{
+    if(window.bpData && typeof window.bpData.onChange === 'function'){
+      window.bpData.onChange(function(key){
+        if(key === REQ_KEY || key === DEAL_KEY || String(key).indexOf(MSG_PREFIX) === 0) schedulePush();
+      });
+    }
+  }catch(e){ E(e); }
+  /* сообщения пишутся мимо bpData (прямой localStorage.setItem по ключу
+     сделки перехвачен, но подписки хватает не всегда) — подстрахуемся
+     тем же событием, что слушает само приложение */
+  try{
+    window.addEventListener('storage', function(e){
+      if(!e || !e.key) return;
+      if(e.key === REQ_KEY || e.key === DEAL_KEY || e.key.indexOf(MSG_PREFIX) === 0) schedulePush();
+    });
+  }catch(e){ E(e); }
+
+  /* вход в приложение: сначала забрать чужое, потом отдать своё */
+  try{
+    var enter = window.enterApp;
+    if(typeof enter === 'function'){
+      window.enterApp = function(){
+        var r = enter.apply(this, arguments);
+        setTimeout(function(){ try{ pull(true); pushAll(); }catch(e){ E(e); } }, 2000);
+        return r;
+      };
+    }
+  }catch(e){ E(e); }
+
+  /* переходы по разделам, где важна свежесть */
+  try{
+    var g = window.goTo;
+    if(typeof g === 'function'){
+      window.goTo = function(page){
+        var r = g.apply(this, arguments);
+        try{ if(page === 'chats' || page === 'home' || page === 'campaigns') pull(false); }catch(e){ E(e); }
+        return r;
+      };
+    }
+  }catch(e){ E(e); }
+
+  /* вернулись в приложение — проверяем почту */
+  try{
+    document.addEventListener('visibilitychange', function(){ if(!document.hidden) pull(false); });
+  }catch(e){ E(e); }
+
+  /* фоновая проверка: раз в 15 секунд, пока приложение на экране */
+  setInterval(function(){ if(!document.hidden) pull(false); }, 15000);
+}
+
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', hook);
+else hook();
+setTimeout(function(){ try{ if(ready()){ pull(true); pushAll(); } }catch(e){ E(e); } }, 3000);
+})();
+</script>
+
+<script id="bp-holdfix">
+/* ══ ЗАМОРОЗКА БЮДЖЕТА: ПО ФАКТУ ЗАЯВКИ, А НЕ ПО СЕКУНДОМЕРУ ══════════
+   Было: после «Оплатить и запустить» слой кассы искал новую заявку
+   двенадцатью попытками по 400 мс — всего около пяти секунд. Но перед
+   созданием заявки приложение спрашивает маркировку (ИНН, ОРД, erid), и
+   заполнить её за пять секунд невозможно. Попытки кончались, заявка
+   рождалась позже — и уходила блогеру БЕЗ денег в эскроу. Рекламодатель
+   при этом видел «Оплата прошла успешно».
+
+   Стало: заморозку просим тогда, когда заявка действительно появилась —
+   по изменению самого списка заявок. Замораживает прежняя функция
+   (bpEnsureHold), здесь только правильный момент вызова и отзыв заявки,
+   если денег не хватило.
+
+   Откат: удалить script#bp-holdfix.                                    */
+(function(){
+'use strict';
+if(window.__bpHoldFix) return; window.__bpHoldFix = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'holdfix'); }catch(_){} }
+function toast(m, k){ try{ showAuthToast(m, k || 'info'); }catch(e){} }
+var KEY = 'bp_pending_requests_v1';
+function reqs(){
+  try{ var a = JSON.parse(localStorage.getItem(KEY) || '[]'); return Array.isArray(a) ? a : []; }
+  catch(e){ return []; }
+}
+function serverMode(){
+  try{ return typeof window.bpMoneyServerMode === 'function' && window.bpMoneyServerMode(); }
+  catch(e){ return false; }
+}
+function myId(){ try{ return (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null; }catch(e){ return null; } }
+
+var _seen = null;        /* заявки, которые уже были при загрузке */
+var _busy = {};
+
+function check(){
+  try{
+    if(!serverMode() || typeof window.bpEnsureHold !== 'function') return;
+    var me = myId(); if(me == null) return;
+    var list = reqs();
+    if(_seen === null){
+      /* первый проход: запоминаем, что уже лежало — старые заявки
+         замораживать заново не нужно */
+      _seen = {}; list.forEach(function(r){ if(r && r.id) _seen[r.id] = 1; });
+      return;
+    }
+    list.forEach(function(r){
+      if(!r || !r.id || _seen[r.id]) return;
+      _seen[r.id] = 1;
+      /* только свои исходящие: замораживает тот, кто платит */
+      if(String(r.fromAdvertiserId) !== String(me)) return;
+      if(r.__bpHeld || _busy[r.id]) return;
+      _busy[r.id] = 1;
+      r.__bpHeld = 1;
+      window.bpEnsureHold(r).then(function(){
+        delete _busy[r.id];
+        try{ if(typeof savePendingRequests === 'function') savePendingRequests(); }catch(e){}
+      }).catch(function(e){
+        delete _busy[r.id];
+        r.__bpHeld = 0;
+        toast(String((e && e.message) || 'Не удалось заморозить бюджет'), 'err');
+        /* Заявку без денег блогер видеть не должен. */
+        try{ if(typeof window.bpWithdrawRequest === 'function') window.bpWithdrawRequest(r.id, true); }catch(_){ E(_); }
+      });
+    });
+  }catch(e){ E(e); }
+}
+
+function hook(){
+  try{
+    if(window.bpData && typeof window.bpData.onChange === 'function'){
+      window.bpData.onChange(function(key){ if(key === KEY) setTimeout(check, 60); });
+    }
+  }catch(e){ E(e); }
+  try{
+    window.addEventListener('storage', function(e){ if(e && e.key === KEY) setTimeout(check, 60); });
+  }catch(e){ E(e); }
+  /* страховка: заявка могла родиться в обход перехватов */
+  setInterval(function(){ if(!document.hidden) check(); }, 5000);
+  setTimeout(check, 1500);
+}
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', hook);
+else hook();
+})();
+</script>
+
+<script id="bp-nocompany">
+/* ══ Экран компании убран ═══════════════════════════════════════════
+   Данные компании нужны для счетов, а не для витрины, и владелец
+   попросил убрать этот экран. Сама страница осталась в разметке (её
+   поля читает выставление счетов), но открывать её больше нельзя:
+   она спрятана стилем, и человек, попавший туда, видел бы пустоту
+   без кнопки назад.
+
+   Перекрываем переход в одном месте — так не остаётся забытых дорог:
+   поиск по разделам, старые кнопки, чужие слои.
+
+   Откат: удалить script#bp-nocompany.                              */
+(function(){
+'use strict';
+if(window.__bpNoCompany) return; window.__bpNoCompany = 1;
+function wrap(name){
+  var orig = window[name];
+  if(typeof orig !== 'function' || orig.__bpNoComp) return;
+  var w = function(id){
+    if(id === 'company') arguments[0] = id = 'profile';
+    return orig.apply(this, arguments);
+  };
+  w.__bpNoComp = 1; w.__orig = orig;
+  window[name] = w;
+}
+function install(){ wrap('goTo'); wrap('showPage'); }
+install();
+/* Слои ниже могли переопределить переход уже после нас — накрываем ещё
+   раз, когда страница собрана. */
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install);
+else setTimeout(install, 0);
+setTimeout(install, 1200);
 })();
 </script>
 

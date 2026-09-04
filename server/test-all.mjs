@@ -1,6 +1,12 @@
 /* Прогон всех проверок по порядку. Порядок важен: test-guard проверяет
    отпор перебору ключа владельца и в конце отрезает свой адрес от
    админских ручек на десять минут — поэтому он идёт последним.
+
+   ВАЖНО про повторный прогон: счётчик неудачных попыток живёт в памяти
+   сервера, и сразу после предыдущего прогона половина наборов упадёт с
+   «Слишком много попыток» — это не поломка кода. Перед повторным
+   прогоном перезапустите сервер на 8090 (или подождите десять минут).
+
    Запуск: npm test (сервер должен работать на 8090). */
 
 import { spawnSync } from 'node:child_process';
@@ -11,7 +17,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const SUITES = [
   'test-scenario.mjs', 'test-kyc.mjs', 'test-verify.mjs', 'test-pay.mjs',
   'test-partial.mjs', 'test-disputes.mjs', 'test-alerts.mjs', 'test-bot.mjs',
-  'test-telegram.mjs', 'test-mail.mjs', 'test-leaderboard.mjs', 'test-cards.mjs', 'test-admin-session.mjs',
+  'test-telegram.mjs', 'test-mail.mjs', 'test-leaderboard.mjs', 'test-cards.mjs', 'test-admin-session.mjs', 'test-sync.mjs',
   'test-guard.mjs',                       /* последним: блокирует адрес */
 ];
 
