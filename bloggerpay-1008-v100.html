@@ -82649,5 +82649,283 @@ try{
 })();
 </script>
 
+<style id="bp-auth3-css">
+/* ══ ЭКРАН ВХОДА И РЕГИСТРАЦИИ ══════════════════════════════════════
+   Было: пустая шапка, кнопка «назад», которая ничего не делает, вечно
+   пульсирующее свечение вокруг логотипа и зелёный ореол вокруг названия,
+   побуквенная волна без конца, три плавающих пятна фона, лесенка полей
+   длиной полторы секунды и переключатель «Вход / Регистрация», который
+   просто перекрашивал две кнопки.
+
+   Стало: сверху иллюстрация про сам сервис (вшитый SVG, не растр — так
+   же сделаны промо-баннеры), у переключателя скользящая подложка, формы
+   меняются сдвигом в сторону движения, всё появление укладывается в
+   полсекунды. Бесконечных петель на экране больше нет — кроме одного
+   очень медленного дыхания света в иллюстрации.
+
+   Длительности взяты по общей шпаргалке: появление 220-260 мс, движение
+   подложки 240 мс, смена формы 260 мс; кривая появления
+   cubic-bezier(.05,.7,.1,1), кривая движения cubic-bezier(.2,0,0,1).
+   Отскок (значение больше 1) на экране входа не применяется.
+
+   Откат: удалить style#bp-auth3-css и script#bp-auth3.               */
+
+/* ── 1. Тишина вместо мельтешения ─────────────────────────────────── */
+/* Пульсацию логотипа задают два места: база и слой bp-onb-tail с
+   !important. Перебиваем оба, оставляя только появление. */
+html #pg-auth.on .auth-logo,
+html.bp-onb #pg-auth.on .auth-logo{
+  animation:bpaLogoIn .42s cubic-bezier(.05,.7,.1,1) backwards!important;
+}
+@keyframes bpaLogoIn{ from{ opacity:0; transform:translateY(8px) scale(.94) } to{ opacity:1; transform:none } }
+/* Зелёный ореол вокруг названия остался с прежней палитры. */
+html #pg-auth .auth-title{ text-shadow:none }
+/* Побуквенная волна без конца заменена одним появлением всей надписи. */
+html #pg-auth.on .auth-ch{
+  animation:bpaCh .34s cubic-bezier(.05,.7,.1,1) calc(.10s + var(--i) * .022s) backwards!important;
+}
+@keyframes bpaCh{ from{ opacity:0; transform:translateY(9px) } to{ opacity:1; transform:none } }
+/* Три плавающих пятна грели телефон и ничего не сообщали. Оставляем их
+   как неподвижный свет. */
+html #pg-auth .auth-bg-fx span{ animation:none!important }
+
+/* Кнопка «назад» до входа не делает ничего: обработчик уводит в
+   приложение, только если человек уже вошёл. Прятать честнее, чем
+   оставлять мёртвую. Внутри аккаунта (перезаход на экран входа) она
+   возвращается — класс ставит скрипт. */
+html #pg-auth .auth-back{ display:none!important }
+html #pg-auth.bpa-canback .auth-back{ display:flex!important }
+
+/* ── 2. Иллюстрация ───────────────────────────────────────────────── */
+html #pg-auth > .bpa-art{
+  position:relative; z-index:10;                 /* иначе уйдёт под .auth-bg-fx */
+  width:calc(100% + 40px); margin:-14px -20px 10px;
+  height:min(24vh, 194px);
+  overflow:hidden; pointer-events:none;
+  animation:bpaArt .42s cubic-bezier(.05,.7,.1,1) backwards;
+}
+@keyframes bpaArt{ from{ opacity:0; transform:translateY(-10px) } to{ opacity:1; transform:none } }
+html #pg-auth > .bpa-art svg{ display:block; width:100%; height:100% }
+/* На вкладке «Регистрация» полей много — шапка ужимается. */
+html #pg-auth.bpa-reg > .bpa-art{ height:min(15vh, 118px) }
+@media (max-height:700px){
+  html #pg-auth > .bpa-art{ height:min(17vh, 132px) }
+  html #pg-auth.bpa-reg > .bpa-art{ height:min(11vh, 86px) }
+}
+/* Единственное оставшееся бесконечное движение: очень медленное и
+   слабое дыхание света. Амплитуда в пределах четырёх процентов. */
+@keyframes bpaGlow{ 0%,100%{ opacity:.55 } 50%{ opacity:.78 } }
+html .bpa-glow{ animation:bpaGlow 7s ease-in-out infinite }
+@media (prefers-reduced-motion:reduce){
+  html .bpa-glow{ animation:none }
+  html #pg-auth > .bpa-art{ animation:none }
+}
+
+/* ── 3. Переключатель со скользящей подложкой ─────────────────────── */
+/* Отдельный элемент внутрь .auth-tabs вставить нельзя: слой bp-compliance
+   прячет там всё, кроме самих вкладок. Поэтому подложка — псевдоэлемент. */
+html #pg-auth .auth-tabs{
+  position:relative; isolation:isolate;
+  backdrop-filter:none!important; -webkit-backdrop-filter:none!important;
+}
+html #pg-auth .auth-tabs::before{
+  content:''; position:absolute; z-index:0;
+  /* Ширина ровно как у вкладки: у контейнера отступ 4 и просвет 4,
+     значит вкладка = (100% - 12px) / 2. Подложка шире хотя бы на пиксель
+     сразу видна как перекос. */
+  top:4px; left:4px; width:calc(50% - 6px); height:calc(100% - 8px);
+  border-radius:var(--r3,10px);
+  background:var(--acc,#2f6ce0);
+  box-shadow:0 2px 10px rgba(47,108,224,.35);
+  transition:transform .24s cubic-bezier(.2,0,0,1);
+}
+html #pg-auth .auth-tabs.bpa-reg::before{ transform:translateX(calc(100% + 4px)) }
+html #pg-auth .auth-tab{
+  position:relative; z-index:1;
+  background:transparent!important; box-shadow:none!important;
+  transition:color .15s var(--ease,cubic-bezier(.4,0,.2,1))!important;
+}
+html #pg-auth .auth-tab.on{
+  background:transparent!important; box-shadow:none!important;
+  color:var(--acc-fg,#fff)!important;
+}
+@media (prefers-reduced-motion:reduce){
+  html #pg-auth .auth-tabs::before{ transition:none }
+}
+
+/* ── 4. Смена формы: сдвиг в сторону движения ─────────────────────── */
+/* fill-mode именно backwards: both навсегда оставляет transform на форме,
+   а форма с transform становится опорой для fixed-потомков (шторки). */
+@keyframes bpaSwapR{ from{ opacity:0; transform:translateX(12px) } to{ opacity:1; transform:none } }
+@keyframes bpaSwapL{ from{ opacity:0; transform:translateX(-12px) } to{ opacity:1; transform:none } }
+html #pg-auth .auth-form.auth-swap{ animation:bpaSwapR .22s cubic-bezier(.05,.7,.1,1) backwards!important }
+html #pg-auth .auth-form.bpa-left.auth-swap{ animation-name:bpaSwapL!important }
+
+/* ── 5. Появление: полсекунды на весь экран ───────────────────────── */
+html #pg-auth.on .auth-tabs{
+  animation:clRiseSoft .24s cubic-bezier(.05,.7,.1,1) .10s backwards!important;
+}
+html #pg-auth.on #formLogin > *,
+html #pg-auth.on #formRegister > *{
+  animation-duration:.24s!important;
+  animation-timing-function:cubic-bezier(.05,.7,.1,1)!important;
+}
+html #pg-auth.on #formLogin > *:nth-child(1),
+html #pg-auth.on #formRegister > *:nth-child(1){ animation-delay:.15s!important }
+html #pg-auth.on #formLogin > *:nth-child(2),
+html #pg-auth.on #formRegister > *:nth-child(2){ animation-delay:.19s!important }
+html #pg-auth.on #formLogin > *:nth-child(3),
+html #pg-auth.on #formRegister > *:nth-child(3){ animation-delay:.23s!important }
+html #pg-auth.on #formLogin > *:nth-child(4),
+html #pg-auth.on #formRegister > *:nth-child(4){ animation-delay:.27s!important }
+html #pg-auth.on #formLogin > *:nth-child(5),
+html #pg-auth.on #formRegister > *:nth-child(5){ animation-delay:.30s!important }
+html #pg-auth.on #formLogin > *:nth-child(n+6),
+html #pg-auth.on #formRegister > *:nth-child(n+6){ animation-delay:.33s!important }
+html #pg-auth.on .auth-foot{ animation:clRiseSoft .24s cubic-bezier(.05,.7,.1,1) .36s backwards!important }
+
+/* ── 6. Нажатие кнопки ────────────────────────────────────────────── */
+html #pg-auth .auth-btn{ transition:transform .1s cubic-bezier(.2,0,0,1) }
+html #pg-auth .auth-btn:active{ transform:scale(.985) }
+</style>
+<script id="bp-auth3">
+(function(){
+'use strict';
+if(window.__bpAuth3) return; window.__bpAuth3 = 1;
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'auth3'); }catch(_){} }
+
+/* ── Иллюстрация ──
+   Вшитый SVG, а не картинка: растр в base64 раздул бы единственный файл
+   на сотни килобайт, а SVG чёткий на любом экране и весит килобайты.
+   Смысл сцены — то же, что делает сервис: ролик блогера, отклик и
+   деньги, которые лежат в эскроу, пока работа не сдана. */
+/* meet, а не slice: на вкладке «Регистрация» полоса становится ниже, и
+   при slice сцену обрезало сверху — монета уезжала за край. */
+var ART = '<svg viewBox="0 0 420 200" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">'
+  + '<defs>'
+  +   '<radialGradient id="bpaG" cx="50%" cy="18%" r="72%">'
+  +     '<stop offset="0" stop-color="#2f6ce0" stop-opacity=".30"/>'
+  +     '<stop offset="1" stop-color="#2f6ce0" stop-opacity="0"/>'
+  +   '</radialGradient>'
+  +   '<linearGradient id="bpaP" x1="0" y1="0" x2="1" y2="1">'
+  +     '<stop offset="0" stop-color="#3f7ef2"/><stop offset="1" stop-color="#1b49a8"/>'
+  +   '</linearGradient>'
+  + '</defs>'
+  + '<rect width="420" height="200" fill="url(#bpaG)" class="bpa-glow"/>'
+  /* дуга: путь от блогера к рекламодателю */
+  + '<path d="M96 118 C 150 62, 270 62, 324 118" fill="none" stroke="#5b93f5" stroke-opacity=".38"'
+  +   ' stroke-width="2" stroke-linecap="round" stroke-dasharray="5 9"/>'
+  /* карточка блогера */
+  + '<g>'
+  +   '<rect x="52" y="86" width="88" height="66" rx="16" fill="#141a2b" stroke="rgba(255,255,255,.10)"/>'
+  +   '<circle cx="76" cy="110" r="11" fill="url(#bpaP)"/>'
+  +   '<rect x="93" y="104" width="34" height="5" rx="2.5" fill="rgba(255,255,255,.30)"/>'
+  +   '<rect x="93" y="114" width="22" height="5" rx="2.5" fill="rgba(255,255,255,.16)"/>'
+  +   '<rect x="64" y="132" width="64" height="6" rx="3" fill="rgba(255,255,255,.10)"/>'
+  + '</g>'
+  /* центр: ролик */
+  + '<g>'
+  +   '<rect x="168" y="70" width="84" height="84" rx="24" fill="url(#bpaP)"/>'
+  +   '<path d="M200 100 l20 12 -20 12 z" fill="#fff"/>'
+  + '</g>'
+  /* карточка рекламодателя */
+  + '<g>'
+  +   '<rect x="280" y="86" width="88" height="66" rx="16" fill="#141a2b" stroke="rgba(255,255,255,.10)"/>'
+  +   '<rect x="294" y="102" width="32" height="6" rx="3" fill="rgba(255,255,255,.28)"/>'
+  +   '<rect x="294" y="114" width="48" height="6" rx="3" fill="rgba(255,255,255,.14)"/>'
+  +   '<rect x="294" y="130" width="26" height="10" rx="5" fill="#2f6ce0" fill-opacity=".55"/>'
+  + '</g>'
+  /* монета в эскроу */
+  + '<g>'
+  +   '<circle cx="210" cy="44" r="17" fill="#0f1420" stroke="rgba(91,147,245,.55)"/>'
+  +   '<text x="210" y="50" text-anchor="middle" font-family="Manrope,system-ui,sans-serif"'
+  +     ' font-size="16" font-weight="800" fill="#5b93f5">\u20BD</text>'
+  + '</g>'
+  + '</svg>';
+
+function host(){ return document.getElementById('pg-auth'); }
+
+function mountArt(){
+  try{
+    var h = host();
+    if(!h || h.querySelector(':scope > .bpa-art')) return;
+    var art = document.createElement('div');
+    art.className = 'bpa-art';
+    art.setAttribute('aria-hidden', 'true');
+    art.innerHTML = ART;
+    /* Строго после фонового слоя и до шапки: иначе иллюстрация окажется
+       либо под пятнами фона, либо ниже названия. */
+    var before = h.querySelector(':scope > .auth-back') || h.querySelector(':scope > .auth-logo-wrap');
+    if(before) h.insertBefore(art, before); else h.insertBefore(art, h.firstChild);
+  }catch(e){ E(e); }
+}
+
+/* ── Переключатель и смена формы ──
+   Обёртка, а не замена: над switchTab уже висит чужая (перерисовка
+   галочки согласия), и переписывание функции сломало бы её. */
+function paintTabs(tab){
+  try{
+    var h = host(); if(!h) return;
+    var reg = tab !== 'login';
+    var tabs = h.querySelector('.auth-tabs');
+    if(tabs) tabs.classList.toggle('bpa-reg', reg);
+    h.classList.toggle('bpa-reg', reg);
+    /* Направление сдвига: на регистрацию едем вправо, обратно — влево. */
+    var shown = document.getElementById(reg ? 'formRegister' : 'formLogin');
+    var other = document.getElementById(reg ? 'formLogin' : 'formRegister');
+    if(shown) shown.classList.toggle('bpa-left', !reg);
+    if(other) other.classList.remove('bpa-left');
+  }catch(e){ E(e); }
+}
+
+function hookSwitch(){
+  var orig = window.switchTab;
+  if(typeof orig !== 'function' || orig.__bpAuth3) return;
+  var wrapped = function(tab){
+    var r = orig.apply(this, arguments);
+    paintTabs(tab);
+    return r;
+  };
+  wrapped.__bpAuth3 = 1;
+  window.switchTab = wrapped;
+}
+
+/* Кнопка «назад» имеет смысл, только когда человек уже вошёл и открыл
+   экран входа сам. В остальное время она мёртвая — и скрыта стилем. */
+function paintBack(){
+  try{
+    var h = host(); if(!h) return;
+    var on = false;
+    try{ on = !!(typeof isLoggedIn !== 'undefined' && isLoggedIn); }catch(e){}
+    h.classList.toggle('bpa-canback', on);
+  }catch(e){ E(e); }
+}
+
+function boot(){
+  mountArt();
+  hookSwitch();
+  paintBack();
+  try{
+    var t = document.getElementById('tabReg');
+    paintTabs(t && t.classList.contains('on') ? 'register' : 'login');
+  }catch(e){ E(e); }
+}
+
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+else boot();
+/* Экран входа появляется и позже — после выхода из аккаунта. */
+setTimeout(boot, 900);
+setTimeout(boot, 2400);
+try{
+  var g = window.goTo;
+  if(typeof g === 'function' && !g.__bpAuth3){
+    var wrap = function(){ var r = g.apply(this, arguments); try{ boot(); }catch(e){ E(e); } return r; };
+    wrap.__bpAuth3 = 1;
+    window.goTo = wrap;
+  }
+}catch(e){ E(e); }
+})();
+</script>
+
 </body>
 </html>
