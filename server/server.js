@@ -496,9 +496,14 @@ const q = {
   syncDel: db.prepare('DELETE FROM sync WHERE kind = ? AND rid = ?'),
   syncIns: db.prepare(`INSERT INTO sync (kind, rid, a_id, b_id, from_id, data, created_at)
     VALUES (?,?,?,?,?,?,?)`),
-  /* свои конверты + общие, новее ver; порядок по ver — это и есть лента */
+  /* Свои конверты + общие, новее ver; порядок по ver — это и есть лента.
+
+     Общим (без адресата) может быть ТОЛЬКО кампания: её и правда видят
+     все. Раньше без адресата раздавалось что угодно, и любой вошедший
+     мог положить конверт вида «сообщение в чужой сделке» — оно доезжало
+     до всех приложений и вклеивалось в переписку от чужого имени. */
   syncPull: db.prepare(`SELECT ver, kind, rid, a_id, b_id, from_id, data, created_at, updated_at
-    FROM sync WHERE ver > ? AND (a_id = ? OR b_id = ? OR b_id IS NULL)
+    FROM sync WHERE ver > ? AND (a_id = ? OR b_id = ? OR (b_id IS NULL AND kind = 'camp'))
     ORDER BY ver ASC LIMIT ?`),
   syncMax: db.prepare('SELECT COALESCE(MAX(ver), 0) AS v FROM sync'),
   cardGet: db.prepare('SELECT * FROM cards WHERE id = ?'),
@@ -2589,8 +2594,14 @@ const routes = {
     /* Пропуск из адреса возврата равносилен верно введённому коду:
        и то и другое доказывает, что человек в приложении — тот самый,
        кто только что вошёл на площадке. */
-    const byClaim = !!(claim && rec.claim && claim.length === rec.claim.length
-      && crypto.timingSafeEqual(Buffer.from(claim), Buffer.from(rec.claim)));
+    /* Сравниваем БАЙТЫ, а не символы: в кириллице один символ — два
+       байта, и «одинаковая длина строк» давала буферы разной длины.
+       timingSafeEqual на таких падает, и запрос отвечал 500 вместо
+       «код не подходит». */
+    const claimBytes = Buffer.from(claim, 'utf8');
+    const recBytes = Buffer.from(String(rec.claim || ''), 'utf8');
+    const byClaim = !!(claimBytes.length && claimBytes.length === recBytes.length
+      && crypto.timingSafeEqual(claimBytes, recBytes));
     if (!byClaim && (code.length !== 6 || code !== rec.code)) {
       rec.tries++;
       return { status: 400, body: { error: 'Код не подходит', left: Math.max(0, 5 - rec.tries) } };

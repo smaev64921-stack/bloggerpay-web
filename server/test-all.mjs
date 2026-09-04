@@ -12,14 +12,40 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { readFileSync } from 'node:fs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SUITES = [
   'test-scenario.mjs', 'test-kyc.mjs', 'test-verify.mjs', 'test-pay.mjs',
   'test-partial.mjs', 'test-disputes.mjs', 'test-alerts.mjs', 'test-bot.mjs',
-  'test-telegram.mjs', 'test-mail.mjs', 'test-leaderboard.mjs', 'test-cards.mjs', 'test-admin-session.mjs', 'test-sync.mjs',
+  'test-telegram.mjs', 'test-mail.mjs', 'test-return.mjs', 'test-forge.mjs', 'test-leaderboard.mjs', 'test-cards.mjs', 'test-admin-session.mjs', 'test-sync.mjs',
   'test-guard.mjs',                       /* последним: блокирует адрес */
 ];
+
+/* Перед стартом: не заперт ли ключ владельца.
+   test-guard в конце прошлого прогона нарочно перебирает ключ, и сервер
+   отрезает наш адрес от админских ручек на десять минут. Следующий
+   прогон в это окно валит половину наборов — и выглядит это как поломка
+   кода, хотя сломан только сторож. Проверяем это сразу и говорим прямо. */
+const KEY = /ADMIN_KEY=(\S+)/.exec(readFileSync(join(here, '.env'), 'utf8'))[1];
+try {
+  const BASE = process.env.BP_TEST_BASE || 'http://127.0.0.1:8090';
+  const r = await fetch(BASE + '/api/admin/overview', { headers: { 'X-Admin-Key': KEY } });
+  if (r.status !== 200) {
+    console.log('');
+    console.log('Ключ владельца сейчас не работает (ответ ' + r.status + ').');
+    console.log('Скорее всего он заперт сторожем после прошлого прогона test-guard.');
+    console.log('Перезапустите сервер и повторите — иначе половина наборов упадёт зря.');
+    console.log('');
+    process.exit(1);
+  }
+} catch (e) {
+  console.log('');
+  console.log('Сервер не отвечает по адресу '
+    + (process.env.BP_TEST_BASE || 'http://127.0.0.1:8090') + ' — запустите его и повторите.');
+  console.log('');
+  process.exit(1);
+}
 
 let bad = 0;
 const lines = [];

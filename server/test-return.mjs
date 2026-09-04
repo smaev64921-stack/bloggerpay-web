@@ -30,14 +30,17 @@ function ok(c, name, extra) {
    Отдаёт токен на любой код и один и тот же аккаунт. Этого хватает: нас
    интересует не разбор ответа площадки, а что делает наш сервер после. */
 const fake = createServer((req, res) => {
+  if (process.env.BP_DEBUG) console.log('    [площадка] ' + req.method + ' ' + req.url);
   res.setHeader('Content-Type', 'application/json');
   if (req.url.startsWith('/v2/oauth/token')) {
-    res.end(JSON.stringify({ access_token: 'токен', scope: 'user.info.basic' }));
+    /* Токен уезжает в заголовок Authorization: там кириллице не место,
+       fetch на такой заголовок ругается ещё до отправки. */
+    res.end(JSON.stringify({ access_token: 'token-dlya-proverki', scope: 'user.info.basic' }));
     return;
   }
   if (req.url.startsWith('/v2/user/info')) {
     res.end(JSON.stringify({ data: { user: {
-      open_id: 'канал-1', display_name: 'Канал для проверки',
+      open_id: 'kanal-1', display_name: 'Канал для проверки',
       username: 'proverka', follower_count: 1234,
     } } }));
     return;
@@ -136,6 +139,12 @@ try {
     { nonce, claim: 'f'.repeat(claim.length) }, blogger.token);
   ok(wrongClaim.status === 400, 'неверный пропуск отклонён', wrongClaim.body);
 
+  /* Кириллица: столько же символов, вдвое больше байт. Сравнение байтов
+     на таком падало с 500 — теперь это обычный отказ. */
+  const wideClaim = await api('POST', '/api/verify/confirm',
+    { nonce, claim: 'я'.repeat(claim.length) }, blogger.token);
+  ok(wideClaim.status === 400, 'многобайтный пропуск отклонён, а не роняет сервер', wideClaim.status);
+
   const wrongCode = await api('POST', '/api/verify/confirm', { nonce, code: '000000' }, blogger.token);
   ok(wrongCode.status === 400, 'неверный код по-прежнему отклоняется', wrongCode.body);
 
@@ -147,9 +156,9 @@ try {
   const again = await api('POST', '/api/verify/confirm', { nonce, claim }, blogger.token);
   ok(again.status === 404, 'повтор того же пропуска не проходит', again.body);
 
-  const mine = await api('GET', '/api/channels', null, blogger.token);
-  const list = (mine.body && (mine.body.channels || mine.body.rows)) || [];
-  ok(list.length === 1 && String(list[0].ext_id || list[0].extId) === 'канал-1',
+  const mine = await api('GET', '/api/verify/list', null, blogger.token);
+  const list = (mine.body && mine.body.rows) || [];
+  ok(list.length === 1 && String(list[0].external_id) === 'kanal-1',
     'канал виден в аккаунте блогера', mine.body);
 
   /* ── Тот же канал во второй аккаунт ── */
@@ -160,7 +169,8 @@ try {
   ok(back2.status !== 302 || !loc2.startsWith(APP),
     'занятый канал во второй аккаунт не возвращают с пропуском',
     { status: back2.status, loc: loc2.slice(0, 60) });
-  ok(/уже подтверждён|занят/i.test(body2 + loc2), 'человеку сказали, что канал уже занят');
+  ok(/уже привязан|подтверждён в аккаунте/i.test(body2 + loc2),
+    'человеку сказали, что канал уже привязан к другому аккаунту');
 
   /* ── Просроченная и выдуманная метка ── */
   const junk = await api('POST', '/api/verify/confirm', { nonce: 'нет-такой', claim }, blogger.token);

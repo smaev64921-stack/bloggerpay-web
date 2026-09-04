@@ -5,7 +5,10 @@
 import { readFileSync } from 'node:fs';
 import crypto from 'node:crypto';
 
-const BASE = 'http://127.0.0.1:8090';
+/* Адрес сервера можно подменить: BP_TEST_BASE=http://127.0.0.1:8091 npm test.
+   Нужно, когда над проектом работают в две руки и порт 8090 занят чужим
+   сервером — иначе проверки идут не по тому коду. */
+const BASE = process.env.BP_TEST_BASE || 'http://127.0.0.1:8090';
 const env = readFileSync(new URL('./.env', import.meta.url), 'utf8');
 const BOT_TOKEN = (/BOT_TOKEN=(\S+)/.exec(env) || [])[1] || '';
 

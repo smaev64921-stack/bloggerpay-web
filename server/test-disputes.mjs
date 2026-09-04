@@ -5,7 +5,10 @@
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 
-const BASE = 'http://127.0.0.1:8090';
+/* Адрес сервера можно подменить: BP_TEST_BASE=http://127.0.0.1:8091 npm test.
+   Нужно, когда над проектом работают в две руки и порт 8090 занят чужим
+   сервером — иначе проверки идут не по тому коду. */
+const BASE = process.env.BP_TEST_BASE || 'http://127.0.0.1:8090';
 const ADMIN_KEY = /ADMIN_KEY=(\S+)/.exec(readFileSync(new URL('./.env', import.meta.url), 'utf8'))[1];
 
 let passed = 0, failed = 0;

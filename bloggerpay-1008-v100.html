@@ -73291,14 +73291,43 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
       history.replaceState(null, '', u.pathname + (u.search === '?' ? '' : u.search) + u.hash);
     }catch(e){}
   }
+  /* Пропуск переживает перезагрузку и вход: столько же, сколько живёт
+     сама проверка на сервере. */
+  var CLAIM_KEY = 'bpVfyClaim', CLAIM_TTL = 15 * 60 * 1000;
+  function saveClaim(g){
+    try{ localStorage.setItem(CLAIM_KEY, JSON.stringify({ n: g.n, c: g.c, at: Date.now() })); }catch(e){}
+  }
+  function readClaim(){
+    try{
+      var v = JSON.parse(localStorage.getItem(CLAIM_KEY) || 'null');
+      if(!v || !v.n || !v.c) return null;
+      if(Date.now() - (v.at || 0) > CLAIM_TTL){ dropClaim(); return null; }
+      return { n: v.n, c: v.c };
+    }catch(e){ return null; }
+  }
+  function dropClaim(){ try{ localStorage.removeItem(CLAIM_KEY); }catch(e){} }
+
+  var _waitT = null;
+  function waitForLogin(){
+    if(_waitT) return;
+    /* Тихо, без надписей: человек сейчас вводит пароль, и ругаться на
+       него не за что. Как войдёт — канал привяжется сам. */
+    _waitT = setInterval(function(){
+      if(!readClaim()){ clearInterval(_waitT); _waitT = null; return; }
+      if(online() && srv().token()){ clearInterval(_waitT); _waitT = null; finishReturn(); }
+    }, 1500);
+  }
+
   function finishReturn(tries){
     var got = claimFromUrl();
+    if(got){ saveClaim(got); cleanUrl(); }
+    else got = readClaim();
     if(!got) return;
-    if(!online()){ cleanUrl(); return; }
-    /* Сессия сервера могла не успеть подняться — ждём её недолго. */
-    if(!srv().token()){
-      if((tries || 0) > 20){ toast('Войдите в аккаунт — и канал привяжется', 'err'); return; }
-      setTimeout(function(){ finishReturn((tries || 0) + 1); }, 500);
+    /* Сессии ещё нет: сервер мог не ответить, а человек — не войти.
+       Ждём столько, сколько живёт проверка, и не теряем пропуск. */
+    if(!online() || !srv().token()){
+      if((tries || 0) < 6){ setTimeout(function(){ finishReturn((tries || 0) + 1); }, 500); return; }
+      waitForLogin();
       return;
     }
     cleanUrl();
@@ -73306,6 +73335,7 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
     var platform = (pend && pend.n === got.n && pend.p) || 'tiktok';
     var name = platform === 'youtube' ? 'YouTube' : 'TikTok';
     srv().raw('POST', '/api/verify/confirm', { nonce: got.n, claim: got.c }).then(function(j){
+      dropClaim();
       clearPending();
       var ov = document.getElementById('bpVfyCode'); if(ov) ov.remove();
       toast((j && j.title ? j.title + ' — ' : '') + name + ' подтверждён', 'ok');
@@ -73314,6 +73344,7 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
     }).catch(function(e){
       /* Пропуск не подошёл (устарел, другой браузер) — предлагаем код. */
       var m = String((e && e.message) || '');
+      dropClaim();
       if(/не найдена|15 минут/i.test(m)){ clearPending(); toast('Проверка устарела — начните заново', 'err'); return; }
       toast(m || 'Не удалось привязать канал', 'err');
       if(pend && pend.n === got.n) vfyCodeSheet(platform, name, got.n, null, pend.u || '', true);
@@ -75329,8 +75360,13 @@ function claimEmail(localUser, email, password, name, role){
    значит впустить его обратно через мгновение). */
 function undoLocal(u, email){
   try{
-    if(u && typeof users !== 'undefined' && Array.isArray(users)){
-      var i = users.indexOf(u);
+    var mail = String(email || '').trim().toLowerCase();
+    if(typeof users !== 'undefined' && Array.isArray(users)){
+      var i = users.findIndex(function(x){
+        if(!x) return false;
+        if(u && u.id != null && String(x.id) === String(u.id)) return true;
+        return mail && String(x.email || '').toLowerCase() === mail;
+      });
       if(i >= 0) users.splice(i, 1);
       if(typeof saveUsers === 'function') saveUsers();
     }
@@ -75364,7 +75400,11 @@ if(typeof origRegister === 'function' && !origRegister.__bpLinked){
     try{
       var after = (typeof users !== 'undefined' && Array.isArray(users)) ? users.length : -1;
       if(after > before && email && pass){
-        var u = users[users.length - 1];
+        /* Именно ЭТУ запись, а не последнюю в массиве: в конец могла
+           приехать запись из соседней вкладки. */
+        var u = users.find(function(x){
+          return x && String(x.email || '').toLowerCase() === email;
+        }) || users[users.length - 1];
         role = (u && u.role) || 'blogger';
         claimEmail(u, email, pass, name || (u && u.name) || 'Без имени', role);
       }
@@ -75373,6 +75413,8 @@ if(typeof origRegister === 'function' && !origRegister.__bpLinked){
   };
   window.doRegister.__bpLinked = true;
 }
+
+var _loginBusy = false;    /* вход уже идёт — второй тап пропускаем */
 
 /* Знает ли этот браузер такой адрес или телефон. */
 function localKnows(val){
@@ -75401,6 +75443,19 @@ async function restoreFromServer(email, pass){
     }
     if(!who) who = await askServer(s, email, pass);
     if(!who) return false;
+
+    /* Пока ходили на сервер, запись могла появиться: второй тап, соседняя
+       вкладка, восстановление в другом окне. Двойников не заводим. */
+    var dup = users.find(function(x){
+      return x && String(x.email || '').toLowerCase() === email;
+    });
+    if(dup){
+      currentUser = dup;
+      try{ if(window.bpMoney && typeof bpMoney.setMySrvId === 'function') bpMoney.setMySrvId(who.id); }catch(e){ E(e); }
+      try{ if(typeof rememberMe === 'undefined' || rememberMe) saveSession(dup); }catch(e){ E(e); }
+      setTimeout(function(){ try{ enterApp(false); }catch(e){ E(e); } }, 900);
+      return true;
+    }
 
     var salt = _bpRandSalt();
     var hash = await _bpHashPass(pass, salt);
@@ -75444,30 +75499,37 @@ async function restoreFromServer(email, pass){
 var origLogin = window.doLogin;
 if(typeof origLogin === 'function' && !origLogin.__bpLinked){
   window.doLogin = async function(){
-    var val = '', pass = '';
+    /* Пока идёт запрос к серверу, кнопка остаётся нажимаемой. Второй тап
+       по «Войти» не должен начинать вход заново: так заводился двойник
+       того же аккаунта, и человек попадал в пустой профиль. */
+    if(_loginBusy) return false;
+    _loginBusy = true;
     try{
-      val  = String((document.getElementById('loginEmail')||{}).value || '').trim().toLowerCase();
-      pass = String((document.getElementById('loginPass')||{}).value || '');
-    }catch(e){ E(e); }
-    /* Этого адреса в браузере нет — возможно, аккаунт с другого
-       устройства. Спрашиваем сервер ДО местной проверки, иначе человек
-       получит «неверный пароль» на своём же аккаунте. */
-    try{
-      if(val && pass && /@/.test(val) && !localKnows(val)
-         && window.bpSrv && window.bpSrv.configured && window.bpSrv.configured()){
-        if(await restoreFromServer(val, pass)) return true;
-      }
-    }catch(e){ E(e); }
-    var wasUser = (typeof currentUser !== 'undefined') ? currentUser : null;
-    var r = await origLogin.apply(this, arguments);
-    try{
-      var now = (typeof currentUser !== 'undefined') ? currentUser : null;
-      /* Вошли только что и по email (по телефону серверу нечего сказать). */
-      if(now && now !== wasUser && pass && /@/.test(val)){
-        link(now.email || val, pass, now.name || 'Без имени', now.role || 'blogger');
-      }
-    }catch(e){ E(e); }
-    return r;
+      var val = '', pass = '';
+      try{
+        val  = String((document.getElementById('loginEmail')||{}).value || '').trim().toLowerCase();
+        pass = String((document.getElementById('loginPass')||{}).value || '');
+      }catch(e){ E(e); }
+      /* Этого адреса в браузере нет — возможно, аккаунт с другого
+         устройства. Спрашиваем сервер ДО местной проверки, иначе человек
+         получит «неверный пароль» на своём же аккаунте. */
+      try{
+        if(val && pass && /@/.test(val) && !localKnows(val)
+           && window.bpSrv && window.bpSrv.configured && window.bpSrv.configured()){
+          if(await restoreFromServer(val, pass)) return true;
+        }
+      }catch(e){ E(e); }
+      var wasUser = (typeof currentUser !== 'undefined') ? currentUser : null;
+      var r = await origLogin.apply(this, arguments);
+      try{
+        var now = (typeof currentUser !== 'undefined') ? currentUser : null;
+        /* Вошли только что и по email (по телефону серверу нечего сказать). */
+        if(now && now !== wasUser && pass && /@/.test(val)){
+          link(now.email || val, pass, now.name || 'Без имени', now.role || 'blogger');
+        }
+      }catch(e){ E(e); }
+      return r;
+    } finally { _loginBusy = false; }
   };
   window.doLogin.__bpLinked = true;
 }
@@ -80923,6 +80985,8 @@ function saveVer(v){ if(v > 0) rawSet(verKey(), String(v)); }
 function applyReq(rid, data){
   var rec = fromWire(data);
   rec.id = rec.id || rid;
+  /* Метка «приехало по сети»: по такой записи деньги не двигаем. */
+  rec.__bpWire = 1;
   var list = arr(REQ_KEY), before = rawGet(REQ_KEY);
   var i = list.findIndex(function(x){ return x && String(x.id) === String(rec.id); });
   /* Заявку приняли или отклонили на другом устройстве — она должна уйти
@@ -81161,6 +81225,10 @@ function check(){
       _seen[r.id] = 1;
       /* только свои исходящие: замораживает тот, кто платит */
       if(String(r.fromAdvertiserId) !== String(me)) return;
+      /* Заявка приехала по сети (со своего второго устройства — или её
+         подложили): заморозку начинает только нажатие «Отправить» здесь.
+         На устройстве, где заявку создали, деньги уже заморожены. */
+      if(r.__bpWire) return;
       if(r.__bpHeld || _busy[r.id]) return;
       _busy[r.id] = 1;
       r.__bpHeld = 1;

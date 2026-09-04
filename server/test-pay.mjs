@@ -10,7 +10,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const MAIN = 'http://127.0.0.1:8090';
+/* Адрес сервера можно подменить: BP_TEST_BASE=http://127.0.0.1:8091 npm test.
+   Нужно, когда над проектом работают в две руки и порт 8090 занят чужим
+   сервером — иначе проверки идут не по тому коду. */
+const MAIN = process.env.BP_TEST_BASE || 'http://127.0.0.1:8090';
 let passed = 0, failed = 0;
 function ok(c, name, extra) {
   if (c) { passed++; console.log('  ok  ' + name); }
