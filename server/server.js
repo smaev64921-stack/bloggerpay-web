@@ -621,8 +621,11 @@ const q = {
   userLedger: db.prepare(`SELECT id, bucket, amount, kind, ref, created_at
     FROM ledger WHERE user_id = ? ORDER BY id DESC LIMIT 60`),
   insError: db.prepare('INSERT INTO errors (user_id, message, where_at, version, ua) VALUES (?,?,?,?,?)'),
-  myChannels: db.prepare(`SELECT platform, external_id, title, url, subs, avatar, checked_at
-    FROM channels WHERE user_id = ? ORDER BY checked_at DESC`),
+  /* Порядок однозначный: у checked_at разрешение в секунду, и две
+     привязки подряд давали ничью — клиент брал строку наугад и мог
+     показать канал прошлой привязки. */
+  myChannels: db.prepare(`SELECT id, platform, external_id, title, url, subs, avatar, checked_at
+    FROM channels WHERE user_id = ? ORDER BY checked_at DESC, id DESC`),
   /* Канал ищем ВНУТРИ аккаунта: один и тот же канал может быть подтверждён
      у нескольких людей, и «найти канал вообще» больше не имеет смысла —
      непонятно, чью строку вернули бы. */

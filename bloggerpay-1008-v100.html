@@ -54469,9 +54469,13 @@ else boot();
         var pd = card.platData || {};
         Object.keys(pd).forEach(function(pid){
           var p = pd[pid];
-          if(!p || !p.url) return;
-          if(out.some(function(x){ return x.pid === pid && x.url === p.url; })) return;
-          out.push({ pid: pid, url: String(p.url), subs: p.subs, er: p.er, verified: !!p.verified });
+          /* Подтверждённую площадку показываем и без ссылки: TikTok при
+             узком доступе её не отдаёт, и раньше он молча пропадал из
+             профиля, хотя вход был подтверждён. */
+          if(!p || (!p.url && !p.verified)) return;
+          var u = String(p.url || '');
+          if(out.some(function(x){ return x.pid === pid && x.url === u; })) return;
+          out.push({ pid: pid, url: u, subs: p.subs, er: p.er, verified: !!p.verified });
         });
       });
     }catch(e){ BPERR(e, 63020); }
@@ -79038,6 +79042,9 @@ var LABEL = { tiktok:'TikTok', youtube:'YouTube' };
 
 /* подтверждённые каналы этого аккаунта: { tiktok:{url,subs,title}, … } */
 var CH = null, chAt = 0, chBusy = false;
+/* Кэш живёт 15 секунд. После привязки ждать их незачем — и, что важнее,
+   после выхода из аккаунта в кэше не должно остаться чужих каналов. */
+window.bpAbcDropCache = function(){ CH = null; chAt = 0; };
 function pullChannels(force){
   if(!online() || !signedIn()) return Promise.resolve(null);
   if(chBusy) return Promise.resolve(CH);
@@ -79045,7 +79052,15 @@ function pullChannels(force){
   chBusy = true;
   return srv().raw('GET', '/api/verify/list').then(function(j){
     chBusy = false; chAt = Date.now(); CH = {};
-    ((j && j.rows) || []).forEach(function(r){ if(r && r.platform) CH[r.platform] = r; });
+    /* Сервер отдаёт каналы свежими сверху. Раньше здесь стояло
+       CH[r.platform] = r без проверки — и цикл оставлял в словаре
+       ПОСЛЕДНЮЮ, то есть самую старую строку. Пока один канал можно было
+       подтвердить только в одном аккаунте, второй строки не бывало и это
+       не замечали. Теперь строк у площадки может быть несколько — и в
+       карточку подставлялся ник прошлой привязки. Берём первую. */
+    ((j && j.rows) || []).forEach(function(r){
+      if(r && r.platform && !CH[r.platform]) CH[r.platform] = r;
+    });
     return CH;
   }).catch(function(){ chBusy = false; return CH; });
 }
@@ -79066,19 +79081,29 @@ function pullCfg(){
 }
 
 function chanOf(pid){ return CH && CH[pid] ? CH[pid] : null; }
-/* канал в карточке пришёл от самой площадки, а не набран руками */
+/* канал в карточке пришёл от самой площадки, а не набран руками.
+   TikTok при узком доступе (только user.info.basic) НЕ отдаёт ссылку на
+   профиль — сервер кладёт пустой url. Раньше это значило «не подтверждён»,
+   и TikTok не оседал ни в карточке, ни в профиле, тогда как YouTube
+   оседал. Считаем подтверждением сам факт строки с сервера; если ссылка
+   есть у обоих — по-прежнему сверяем её. */
 function byLogin(pid){
   var p = P(pid), c = chanOf(pid);
-  if(!p || !c || !p.url) return false;
-  var a = String(p.url).replace(/\/+$/, '').toLowerCase();
+  if(!p || !c) return false;
   var b = String(c.url || '').replace(/\/+$/, '').toLowerCase();
-  return !!b && a === b;
+  if(!b) return true;
+  var a = String(p.url || '').replace(/\/+$/, '').toLowerCase();
+  return a === b;
 }
 
 /* ── Подставить в карточку канал, который подтвердила площадка ── */
 function apply(pid, ch){
-  var p = P(pid); if(!p || !ch || !ch.url) return false;
-  p.url = String(ch.url);
+  var p = P(pid); if(!p || !ch) return false;
+  /* Ссылку ставим ту, что дала площадка. Если площадка ссылку не дала
+     (TikTok при узком доступе), СТАРУЮ не оставляем: она могла остаться
+     от прошлой привязки, и человек видел бы в карточке чужой ник.
+     Поле остаётся пустым — блогер впишет ссылку сам. */
+  p.url = ch.url ? String(ch.url) : '';
   p.subs = Number(ch.subs) || p.subs || 0;
   p.verified = true;
   p.selfReported = false;
@@ -79106,7 +79131,7 @@ function watch(pid, tries){
     pullChannels(true).then(function(map){
       if(!waiting[pid]) return;
       var ch = map && map[pid];
-      if(ch && ch.url){
+      if(ch){
         waiting[pid] = 0;
         apply(pid, ch);
         toast(LABEL[pid] + ' подключён: ' + (ch.title || 'канал') + (ch.subs ? ' · ' + Number(ch.subs).toLocaleString('ru') + ' подписчиков' : ''), 'ok');
@@ -79151,7 +79176,7 @@ window.bpAbcAfterVerify = function(pid){
   waiting[pid] = 0;
   pullChannels(true).then(function(map){
     var ch = map && map[pid];
-    if(ch && ch.url) apply(pid, ch); else paint(pid);
+    if(ch) apply(pid, ch); else paint(pid);
   }).catch(function(){ paint(pid); });
 };
 
@@ -79322,7 +79347,7 @@ function sync(){
     if(!map) return;
     ['tiktok', 'youtube'].forEach(function(pid){
       var p = P(pid), ch = map[pid];
-      if(!p || !ch || !ch.url) return;
+      if(!p || !ch) return;
       if(p.verified && byLogin(pid)) return;
       if(pid === 'youtube' && p.verified && p.url) return;   /* свою ссылку у YouTube не перетираем */
       apply(pid, ch);
@@ -80737,12 +80762,18 @@ function pull(force){
     if(!S || typeof S.raw !== 'function' || !S.configured || !S.configured()) return;
     if(!me()) return;
     if(_pull.busy) return;
-    if(!force && Date.now() - _pull.at < 30000) return;
+    if(!force && Date.now() - _pull.at < 10000) return;
     _pull.busy = true; _pull.at = Date.now();
     S.raw('GET', '/api/cards').then(function(j){
       _pull.busy = false;
       try{ apply((j && j.rows) || []); }catch(e){ E(e); }
-    }).catch(function(){ _pull.busy = false; });
+    }).catch(function(){
+      _pull.busy = false;
+      /* Метку времени ставим ДО запроса — значит неудачная попытка
+         запирала следующую на полминуты. Сбрасываем, чтобы повтор
+         случился сразу, а не после того, как человек уйдёт и вернётся. */
+      _pull.at = 0;
+    });
   }catch(e){ _pull.busy = false; E(e); }
 }
 window.bpCardsPull = function(){ pull(true); };
@@ -80822,6 +80853,19 @@ function hook(){
       };
     }
   }catch(e){ E(e); }
+
+  /* Вернулись в приложение — проверяем каталог. Этого не было вовсе:
+     каталог обновлялся только при входе и при заходе на «Главную», и
+     человек, стоящий на каталоге, не видел ничего нового, сколько бы ни
+     ждал. Рядом, в обмене сделками, такой таймер есть — здесь забыли. */
+  try{
+    document.addEventListener('visibilitychange', function(){ if(!document.hidden) pull(false); });
+  }catch(e){ E(e); }
+  setInterval(function(){
+    if(document.hidden) return;
+    pull(false);
+    try{ pushNow(); }catch(e){ E(e); }
+  }, 15000);
 
   /* заказ по чужой карточке — честный отказ вместо тихой заморозки */
   try{
@@ -80906,7 +80950,11 @@ var CAMP_KEY = 'bp_campaigns';
 var JOIN_KEY = 'bp_task_joins';
 var REV_KEY = 'bp_reviews';
 var DISP_KEY = 'bp_disputes_v2';
-var VER_KEY = 'bpsync_ver';          /* без префикса bp_ — мимо перехвата bpData */
+/* Ключ намеренно СМЕНЁН (было bpsync_ver): прежний курсор ушёл вперёд
+   по строкам, которые старый код выбросил как «эхо». Со старым ключом
+   они не вернулись бы — сервер отдаёт только ver больше запрошенного.
+   Новый ключ = один разовый проход ленты с начала. */
+var VER_KEY = 'bpsync_ver2';         /* без префикса bp_ — мимо перехвата bpData */
 
 /* Читаем и пишем в обход bpData: очередь и подписки нам здесь только
    мешают (иначе принятая с сервера запись тут же поехала бы обратно). */
@@ -81275,11 +81323,26 @@ function pull(force){
     j.rows.forEach(function(row){
       if(!row || !row.data) return;
       try{
-        /* своё же эхо не применяем и обратно не шлём */
+        /* Эхо — это то, что отправил ИМЕННО ЭТОТ браузер, а не всё, что
+           отправлено моим аккаунтом.
+
+           Здесь и была причина «опубликовал на одном телефоне, на втором
+           пусто»: у одного человека на обоих устройствах ОДИН серверный
+           номер, а проверка стояла `row.from === mySrv()` — и всё своё,
+           созданное на другом своём телефоне, молча выбрасывалось.
+           Доезжала только карточка блогера: она ездит отдельным путём
+           (/api/cards) мимо этого кода. Курсор ленты при этом двигался,
+           поэтому пропущенное не возвращалось никогда.
+
+           Сравниваем с подписью собственной отправки: совпало — это наше
+           же эхо, применять нечего. Не совпало — запись изменил кто-то
+           другой (или мы сами на втором устройстве), и её надо принять. */
         var k = row.kind + ':' + row.rid;
-        try{ _fromServer[k] = JSON.stringify(row.data); }catch(e){}
-        var mine = mySrv() != null && Number(row.from) === mySrv();
-        if(!mine){
+        var sig = '';
+        try{ sig = JSON.stringify(row.data); }catch(e){}
+        _fromServer[k] = sig;
+        var echo = !!sig && _sent[k] === sig;
+        if(!echo){
           if(row.kind === 'req' && applyReq(row.rid, row.data)) touched++;
           else if(row.kind === 'deal' && applyDeal(row.rid, row.data)) touched++;
           else if(row.kind === 'msg' && applyMsg(row.rid, row.data)) touched++;
@@ -81368,8 +81431,16 @@ function hook(){
     document.addEventListener('visibilitychange', function(){ if(!document.hidden) pull(false); });
   }catch(e){ E(e); }
 
-  /* фоновая проверка: раз в 15 секунд, пока приложение на экране */
-  setInterval(function(){ if(!document.hidden) pull(false); }, 15000);
+  /* Фоновая проверка: раз в 15 секунд, пока приложение на экране.
+     Отправку повторяем тем же тактом: раньше push случался только по
+     изменению записи и при входе — и если в тот момент связи с сервером
+     не было, запись оставалась лежать в браузере до перезапуска.
+     Лишнего трафика нет: put() молчит, пока подпись записи не менялась. */
+  setInterval(function(){
+    if(document.hidden) return;
+    pull(false);
+    try{ if(ready() && mySrv() != null) pushAll(); }catch(e){ E(e); }
+  }, 15000);
 }
 
 if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', hook);
@@ -82144,7 +82215,10 @@ try{
        и вход после перезапуска висел бы вечно. */
     setTimeout(function(){
       try{
-        if(window.currentUser) return;
+        /* currentUser объявлен через let — в объекте окна его НЕТ.
+           window.currentUser здесь всегда undefined, и проверка молча не
+           работала бы: шторка всплывала бы поверх вошедшего человека. */
+        if(typeof currentUser !== 'undefined' && currentUser) return;
         if(document.getElementById('glgOv')) return;
         _nonce = own;
         sheet(); watch();
