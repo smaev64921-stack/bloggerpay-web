@@ -73110,6 +73110,24 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
     document.getElementById('bpVfyLinkX').onclick = function(){ ov.remove(); };
   }
 
+  /* ── Незаконченная проверка переживает перезагрузку ──
+     Мини-апп в Телеграме перезапускается сам: свернул, вернулся — вкладка
+     новая. Раньше вместе с ней терялась метка проверки, и код со страницы
+     возврата вводить было некуда. Держим метку в sessionStorage. */
+  var VKEY = 'bpVfyPending';
+  function savePending(platform, nonce, url){
+    try{ sessionStorage.setItem(VKEY, JSON.stringify({ p: platform, n: nonce, u: url || '', at: Date.now() })); }catch(e){}
+  }
+  function readPending(){
+    try{
+      var r = JSON.parse(sessionStorage.getItem(VKEY) || 'null');
+      if(!r || !r.n || Date.now() - (r.at || 0) > 15 * 60000) return null;   /* метка живёт 15 минут, как на сервере */
+      return r;
+    }catch(e){ return null; }
+  }
+  function clearPending(){ try{ sessionStorage.removeItem(VKEY); }catch(e){} }
+  window.bpVfyPending = readPending;
+
   window.bpVerifyOwn = function(platform){
     var name = platform === 'youtube' ? 'YouTube' : 'TikTok';
     if(!online()){ toast('Подтверждение работает, когда подключён сервер', 'err'); return; }
@@ -73130,8 +73148,13 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
     srv().raw('GET', '/api/verify/start?platform=' + encodeURIComponent(platform))
       .then(function(j){
         if(!j || !j.url || !j.nonce) throw new Error('Площадка не ответила');
-        if(!holderGo(holder, j.url)) vfyLinkFallback(j.url, name);
-        vfyWait(platform, name, j.nonce, btn, 0);
+        savePending(platform, j.nonce, j.url);
+        var opened = holderGo(holder, j.url);
+        /* Поле для кода показываем СРАЗУ, не дожидаясь опроса сервера.
+           Раньше человек возвращался с кодом в руках и смотрел на «ждём
+           входа…»: опрос ходит раз в три секунды, а в свёрнутой вкладке
+           таймеры вообще замирают — отсюда ощущение вечной загрузки. */
+        vfyCodeSheet(platform, name, j.nonce, btn, j.url, opened);
       })
       .catch(function(e){
         holderFail(holder);
@@ -73143,70 +73166,111 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
       });
   };
 
-  /* Ждём, пока человек войдёт на площадке и получит код на странице
-     возврата. Как только сервер говорит «код готов» — показываем поле. */
-  function vfyWait(platform, name, nonce, btn, tries){
-    if(btn){ btn.textContent = 'Ждём входа…'; }
-    if(tries > 100){                       /* ~5 минут */
-      if(btn){ btn.disabled = false; btn.textContent = 'Подтвердить'; }
-      return;
-    }
-    setTimeout(function(){
-      srv().raw('GET', '/api/verify/pending?nonce=' + encodeURIComponent(nonce)).then(function(j){
-        if(j && j.state === 'awaiting_code'){ vfyCodeSheet(platform, name, nonce, j.title, j.subs, btn); return; }
-        if(j && j.state === 'none'){ if(btn){ btn.disabled = false; btn.textContent = 'Подтвердить'; } return; }
-        vfyWait(platform, name, nonce, btn, tries + 1);
-      }).catch(function(){ vfyWait(platform, name, nonce, btn, tries + 1); });
-    }, 3000);
-  }
+  /* Продолжить прерванную проверку: код на руках, а вкладка новая. */
+  window.bpVfyResume = function(){
+    var r = readPending();
+    if(!r) return false;
+    var name = r.p === 'youtube' ? 'YouTube' : 'TikTok';
+    /* Адрес входа держим вместе с меткой: после перезапуска мини-аппа
+       кнопка «открыть ещё раз» должна работать так же, как в первый раз. */
+    vfyCodeSheet(r.p, name, r.n, $(BTN[r.p]) || null, r.u || '', true);
+    return true;
+  };
 
-  /* Шторка ввода кода: код показан на странице возврата у площадки,
-     человек переносит его сюда. Канал привяжется к ЭТОМУ аккаунту. */
-  function vfyCodeSheet(platform, name, nonce, title, subs, btn){
-    if(btn){ btn.textContent = 'Введите код'; }
+  /* ── Шторка ввода кода ──
+     Код показывает страница, куда площадка вернула человека. Здесь он его
+     переносит. Канал привяжется к ТОМУ аккаунту, который вводит код, —
+     подсунутая кем-то ссылка авторизации бесполезна.
+
+     Опрос состояния идёт фоном и ничего не блокирует: как только сервер
+     узнает канал, подпись сменится на его название и число подписчиков. */
+  function vfyCodeSheet(platform, name, nonce, btn, authUrl, opened){
+    if(btn){ btn.disabled = true; btn.textContent = 'Введите код'; }
     var old = document.getElementById('bpVfyCode'); if(old) old.remove();
     var ov = document.createElement('div'); ov.id = 'bpVfyCode';
     ov.style.cssText = 'position:fixed;inset:0;z-index:640;background:rgba(4,4,8,.78);display:flex;align-items:flex-end;justify-content:center;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)';
-    ov.onclick = function(e){ if(e.target === ov) ov.remove(); };
+    ov.onclick = function(e){ if(e.target === ov) close(); };
     ov.innerHTML = '<div style="width:100%;max-width:420px;box-sizing:border-box;background:var(--card,#141416);border:1px solid rgba(255,255,255,.1);border-radius:22px 22px 0 0;padding:22px 18px calc(env(safe-area-inset-bottom,0px) + 20px);font-family:inherit">'
-      + '<div style="font-size:16px;font-weight:800;color:var(--t1);text-align:center">' + esc(name) + ' подтверждён</div>'
-      + '<div style="font-size:12px;color:var(--t2);line-height:1.6;margin:8px 0 4px;text-align:center">Канал <b style="color:var(--t1)">' + esc(title || '') + '</b>'
-      + (subs ? ' · ' + Number(subs).toLocaleString('ru') + ' подписчиков' : '') + '</div>'
-      + '<div style="font-size:12px;color:var(--t2);line-height:1.6;text-align:center;margin-bottom:14px">Введите код, который показала страница входа:</div>'
+      + '<div style="font-size:16px;font-weight:800;color:var(--t1);text-align:center">Код из ' + esc(name) + '</div>'
+      + '<div id="bpVfySub" style="font-size:12px;color:var(--t2);line-height:1.6;margin:8px 0 14px;text-align:center">'
+      +   (opened ? 'Войдите в аккаунт в открывшемся окне. ' + esc(name) + ' покажет шесть цифр — введите их здесь.'
+                  : 'Откройте ' + esc(name) + ' кнопкой ниже, войдите в аккаунт и перенесите сюда шесть цифр со страницы возврата.')
+      + '</div>'
       + '<input id="bpVfyInp" inputmode="numeric" maxlength="6" placeholder="______" autocomplete="one-time-code" '
       + 'style="width:100%;box-sizing:border-box;text-align:center;letter-spacing:14px;font:800 30px/1 ui-monospace,Menlo,monospace;'
       + 'background:rgba(255,255,255,.05);border:1.5px solid rgba(255,255,255,.14);border-radius:14px;padding:16px 10px;color:var(--t1);outline:none">'
       + '<div id="bpVfyErr" style="min-height:16px;font-size:11px;color:#fb7185;text-align:center;margin-top:7px"></div>'
       + '<button id="bpVfyGo" type="button" style="width:100%;margin-top:6px;border:none;border-radius:14px;padding:15px;background:linear-gradient(160deg,#2f6ce0,#1b49a8);color:#fff;font-family:inherit;font-size:15px;font-weight:800;cursor:pointer">Подтвердить канал</button>'
-      + '<button id="bpVfyX" type="button" style="width:100%;margin-top:8px;border:none;background:none;color:var(--t3);font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;padding:8px">Отмена</button>'
+      + (authUrl ? '<a id="bpVfyAgain" href="#" target="_blank" rel="noopener" style="display:block;text-align:center;width:100%;margin-top:8px;padding:12px;color:var(--acc2,#5b93f5);font-size:12.5px;font-weight:700;text-decoration:none">Открыть ' + esc(name) + ' ещё раз</a>' : '')
+      + '<button id="bpVfyX" type="button" style="width:100%;margin-top:4px;border:none;background:none;color:var(--t3);font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;padding:8px">Отмена</button>'
       + '</div>';
     document.body.appendChild(ov);
     var inp = document.getElementById('bpVfyInp');
     var err = document.getElementById('bpVfyErr');
-    setTimeout(function(){ try{ inp.focus(); }catch(e){} }, 100);
-    inp.addEventListener('input', function(){ inp.value = inp.value.replace(/\D/g, '').slice(0, 6); err.textContent = ''; });
+    var sub = document.getElementById('bpVfySub');
+    var again = document.getElementById('bpVfyAgain');
+    if(again && authUrl){
+      again.href = authUrl;                       /* адрес свойством, не в разметку */
+      again.onclick = function(ev){ ev.preventDefault(); var h = openHolder(); if(!holderGo(h, authUrl)) vfyLinkFallback(authUrl, name); };
+    }
+    /* На телефоне поле сразу не фокусируем: всплывшая клавиатура закрывает
+       окно площадки, из которого человек ещё копирует код. */
+    if(!/Android|iPhone|iPad/i.test(navigator.userAgent || '')){
+      setTimeout(function(){ try{ inp.focus(); }catch(e){} }, 120);
+    }
+
+    var alive = true;
+    function close(){ alive = false; ov.remove(); if(btn){ btn.disabled = false; btn.textContent = 'Подтвердить'; } }
+
+    /* Фоновый опрос: только чтобы показать название канала. Ничего не
+       ждёт и ничего не блокирует — код можно ввести в любой момент. */
+    (function watch(tries){
+      if(!alive || tries > 90) return;
+      setTimeout(function(){
+        if(!alive) return;
+        srv().raw('GET', '/api/verify/pending?nonce=' + encodeURIComponent(nonce)).then(function(j){
+          if(!alive) return;
+          if(j && j.state === 'awaiting_code'){
+            sub.innerHTML = 'Канал <b style="color:var(--t1)">' + esc(j.title || '') + '</b>'
+              + (j.subs ? ' · ' + Number(j.subs).toLocaleString('ru') + ' подписчиков' : '')
+              + '<br>Введите шесть цифр со страницы возврата.';
+            return;                                  /* дальше опрашивать нечего */
+          }
+          watch(tries + 1);
+        }).catch(function(){ watch(tries + 1); });
+      }, tries < 5 ? 1500 : 4000);
+    })(0);
+
+    inp.addEventListener('input', function(){
+      inp.value = inp.value.replace(/\D/g, '').slice(0, 6);
+      err.textContent = '';
+      if(inp.value.length === 6) submit();          /* шесть цифр — не заставляем жать кнопку */
+    });
     function submit(){
       var code = inp.value.replace(/\D/g, '');
-      if(code.length !== 6){ err.textContent = 'Нужно 6 цифр'; return; }
+      if(code.length !== 6){ err.textContent = 'Нужно шесть цифр'; return; }
       var go = document.getElementById('bpVfyGo'); if(go){ go.disabled = true; go.textContent = 'Проверяем…'; }
       srv().raw('POST', '/api/verify/confirm', { nonce: nonce, code: code }).then(function(j){
-        ov.remove();
+        alive = false; clearPending(); ov.remove();
         if(btn){ btn.classList.add('done'); btn.textContent = 'Подтверждён'; btn.disabled = true; }
         toast(name + ' подтверждён', 'ok');
         paintVerified();
+        try{ if(typeof window.bpAbcAfterVerify === 'function') window.bpAbcAfterVerify(platform); }catch(e){}
       }).catch(function(e){
         if(go){ go.disabled = false; go.textContent = 'Подтвердить канал'; }
         var m = String((e && e.message) || 'Код не подходит');
         err.textContent = m;
         if(/начните.*заново|15 минут|много попыток/i.test(m)){
-          setTimeout(function(){ ov.remove(); if(btn){ btn.disabled = false; btn.textContent = 'Подтвердить'; } }, 2200);
+          clearPending();
+          setTimeout(function(){ close(); }, 2200);
         }
       });
     }
     document.getElementById('bpVfyGo').onclick = submit;
     inp.addEventListener('keydown', function(e){ if(e.key === 'Enter') submit(); });
-    document.getElementById('bpVfyX').onclick = function(){ ov.remove(); if(btn){ btn.disabled = false; btn.textContent = 'Подтвердить'; } };
+    document.getElementById('bpVfyX').onclick = close;
   }
+  window.bpVfyCodeSheet = vfyCodeSheet;
 })();
 </script>
 
@@ -78741,6 +78805,25 @@ window.bpAbcVerify = function(pid){
 };
 window.bpAbcVerifyCancel = function(pid){ waiting[pid] = 0; paint(pid); };
 
+/* Открыть поле ввода кода заново: человек закрыл шторку, свернул
+   приложение, вкладка перезапустилась — метка проверки живёт отдельно. */
+window.bpAbcCode = function(){
+  try{
+    if(typeof window.bpVfyResume === 'function' && window.bpVfyResume()) return;
+    toast('Проверка не найдена — начните заново', 'err');
+    ['tiktok', 'youtube'].forEach(function(p){ waiting[p] = 0; paint(p); });
+  }catch(e){ E(e); }
+};
+
+/* Код принят — не ждём следующего круга опроса, забираем канал сразу. */
+window.bpAbcAfterVerify = function(pid){
+  waiting[pid] = 0;
+  pullChannels(true).then(function(map){
+    var ch = map && map[pid];
+    if(ch && ch.url) apply(pid, ch); else paint(pid);
+  }).catch(function(){ paint(pid); });
+};
+
 function paint(pid){ try{ abcRenderUrlArea(pid); }catch(e){ E(e); } }
 
 /* ── Своя отрисовка области ссылки ── */
@@ -78748,9 +78831,9 @@ function blockTikTok(){
   var off = CFG && CFG.tiktok && CFG.tiktok.configured === false;
   if(waiting.tiktok){
     return '<div class="attv">' +
-      '<div class="attv-t">Ждём вход в TikTok</div>' +
-      '<div class="attv-s">Войдите в свой аккаунт в открывшемся окне и введите код, который там покажут. Как только TikTok подтвердит аккаунт, ссылка и подписчики появятся здесь сами.</div>' +
-      '<div class="attv-wait"><span class="attv-spin"></span><span>Проверяем каждые несколько секунд…</span></div>' +
+      '<div class="attv-t">Введите код из TikTok</div>' +
+      '<div class="attv-s">Войдите в аккаунт в открывшемся окне. TikTok покажет шесть цифр — перенесите их в поле, и канал привяжется к вашей карточке.</div>' +
+      '<button type="button" class="attv-go" onclick="bpAbcCode()">Ввести код</button>' +
       '<button type="button" class="attv-cancel" onclick="bpAbcVerifyCancel(\'tiktok\')">Отменить</button>' +
     '</div>';
   }
@@ -78766,7 +78849,8 @@ function blockYouTubeExtra(){
   if(CFG && CFG.youtube && CFG.youtube.configured === false) return '';
   if(waiting.youtube){
     return '<div class="attv" style="margin-top:9px">' +
-      '<div class="attv-wait"><span class="attv-spin"></span><span>Ждём вход в YouTube…</span></div>' +
+      '<div class="attv-s">YouTube показал шесть цифр — введите их, и канал привяжется.</div>' +
+      '<button type="button" class="attv-go yt" onclick="bpAbcCode()">Ввести код</button>' +
       '<button type="button" class="attv-cancel" onclick="bpAbcVerifyCancel(\'youtube\')">Отменить</button></div>';
   }
   return '<div class="attv-yt-or">или</div>' +
@@ -78884,6 +78968,17 @@ function fixHints(){
    в профиле или на другом устройстве — тогда он появится здесь сам. */
 function sync(){
   fixHints();
+  /* Мини-апп мог перезапуститься, пока человек входил на площадке.
+     Метка проверки живёт в sessionStorage — поднимаем ожидание. */
+  try{
+    var pend = (typeof window.bpVfyPending === 'function') ? window.bpVfyPending() : null;
+    if(pend && (pend.p === 'tiktok' || pend.p === 'youtube') && !waiting[pend.p]){
+      waiting[pend.p] = 1;
+      var pp = P(pend.p);
+      if(pp) pp.open = true;
+      paint(pend.p);
+    }
+  }catch(e){}
   pullCfg();
   pullChannels(true).then(function(map){
     if(!map) return;
@@ -79198,6 +79293,857 @@ if(typeof origGoTo === 'function' && !origGoTo.__bpAdmClaim){
 
 setTimeout(function(){ mount(); paint(); claimRow(); }, 1200);
 setInterval(function(){ if(!document.hidden) paint(); }, 3000);
+})();
+</script>
+
+<style id="bp-profile2-css">
+/* ══ v104 · ПРОФИЛЬ ПО ОБРАЗЦУ MORE VIEWS ═══════════════════════════════
+   Ничего из прежнего профиля не убрано — шапка, статистика, «О себе»,
+   баннер промо и выход на месте. Добавлено то, что есть у More Views:
+   имя и роль в одной строке, компактные плитки со значком у числа,
+   карточка «Заполнить профиль» (процент + что осталось), список
+   подключённых площадок, последние сделки, одобренные видео и тихая
+   строка рейтинга. Скрытое меню «Аккаунт» скрытым и осталось.
+   Все правки старых классов — через html.bp-onb #pg-profile, чтобы
+   перебить слой bp-onb-color (.bp-onb … !important).
+   Откат: удалить style#bp-profile2-css и script#bp-profile2.          */
+
+/* ── 1 · шапка ─────────────────────────────────────────────────────── */
+html.bp-onb #pg-profile .pf-hero{
+  padding:15px 15px 14px!important; border-radius:18px!important;
+  background:var(--card)!important; border-color:var(--brd)!important;
+  box-shadow:none!important; margin-bottom:6px!important;
+}
+/* мягкий свет в цвете аватара — единственная «неровность» на карточке */
+html.bp-onb #pg-profile .pf-hero::before{
+  top:-110px!important; left:-60px!important; right:auto!important;
+  width:240px!important; height:240px!important;
+  background:radial-gradient(circle,var(--pf2-glow,rgba(47,108,224,.22)),transparent 64%)!important;
+}
+html.bp-onb #pg-profile .pf-hero::after{ display:none!important }
+html.bp-onb #pg-profile .pf-hero-row{ gap:13px!important; align-items:center!important }
+html.bp-onb #pg-profile .pf-ava{ width:58px!important; height:58px!important }
+/* Кружок аватара. Раньше по краю шла полупрозрачная белая рамка 2px, а
+   под ней кольцо: на тёмном фоне это читается как чёрный ободок вокруг
+   лица — владелец увидел его первым делом. Там, где стоит настоящее
+   фото, ободка нет вовсе: кружок и есть фотография (класс bp-hasphoto
+   ставит скрипт слоя — так же для аватара в шапке и в меню). Двойное
+   скругление (круглый контейнер с overflow:hidden + круглая картинка)
+   тоже убрано: оно давало тёмный волосок от сглаживания. */
+html.bp-onb #pg-profile .pf-ava-img{
+  border:1px solid rgba(255,255,255,.10)!important;
+  box-shadow:none!important;
+}
+html .bp-hasphoto{
+  border:none!important; box-shadow:none!important;
+  background:none!important; background-image:none!important; overflow:visible!important;
+}
+html .bp-hasphoto > img{
+  width:100%!important; height:100%!important; display:block!important;
+  border-radius:50%!important; object-fit:cover!important;
+}
+html.bp-onb #pg-profile .pf-dot{ display:none!important }   /* серая точка ничего не значила */
+html.bp-onb #pg-profile .pf-info{
+  display:grid!important; grid-template-columns:auto minmax(0,1fr); column-gap:8px; row-gap:3px;
+  grid-template-areas:"name badge" "id id" "since since"; align-items:center;
+}
+html.bp-onb #pg-profile .prc-name{
+  grid-area:name; font-size:18px!important; font-weight:800!important; letter-spacing:-.4px!important;
+  line-height:1.2!important; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:190px;
+}
+html.bp-onb #pg-profile .prc-badges{ grid-area:badge; margin:0!important; min-width:0 }
+html.bp-onb #pg-profile .pf-handle-row{ grid-area:id; font-size:11.5px!important; color:var(--t3)!important; align-self:start }
+html.bp-onb #pg-profile .pf-handle-row svg{ width:10px; height:10px }
+html.bp-onb #pg-profile .pf2-since{
+  grid-area:since; font-size:11px; color:var(--t3); letter-spacing:.1px; margin-top:1px;
+}
+/* роль — чип у имени, как «Креатор» у More Views; по-прежнему нажимается */
+html.bp-onb #pg-profile #roleToggle,html.bp-onb #pg-profile .role-toggle{
+  min-height:0!important; height:22px!important; padding:0 8px 0 9px!important; gap:5px!important;
+  border-radius:99px!important; font-size:11px!important; line-height:22px!important;
+  background:var(--acc-bg)!important; border:1px solid var(--acc-br)!important;
+}
+html.bp-onb #pg-profile .role-lbl{ font-size:11px!important; font-weight:800!important; color:var(--acc2)!important; letter-spacing:0!important }
+html.bp-onb #pg-profile .role-check{ width:13px!important; height:13px!important; box-shadow:none!important }
+html.bp-onb #pg-profile .role-check svg{ width:8px!important; height:8px!important }
+html.bp-onb #pg-profile .role-toggle.advertiser{ background:var(--gold-bg,rgba(246,168,35,.14))!important; border-color:var(--gold-br,rgba(246,168,35,.4))!important }
+html.bp-onb #pg-profile .role-toggle.advertiser .role-lbl{ color:var(--gold,#f6a823)!important }
+html.bp-onb #pg-profile .pf-edit{ width:34px!important; height:34px!important; border-radius:11px!important; align-self:flex-start }
+
+/* ── 2 · заголовки разделов ────────────────────────────────────────── */
+html.bp-onb #pg-profile #pfStatsTitle,
+html #pg-profile .pf2-h{
+  display:flex!important; align-items:baseline; justify-content:space-between; gap:10px;
+  font-size:16px!important; font-weight:800!important; color:var(--t1)!important;
+  letter-spacing:-.3px!important; margin:16px 2px 9px!important; line-height:1.3;
+}
+html #pg-profile .pf2-h span{ display:block; font-size:11.5px; font-weight:600; color:var(--t3); letter-spacing:0; margin-top:2px }
+html #pg-profile .pf2-h .pf2-all{
+  display:inline-flex; align-items:center; gap:2px; flex-shrink:0; align-self:center;
+  font-size:12px; font-weight:700; color:var(--acc2); white-space:nowrap; cursor:pointer;
+  background:none; border:none; padding:4px 0 4px 8px; font-family:inherit; -webkit-tap-highlight-color:transparent;
+}
+html #pg-profile .pf2-h .pf2-all svg{ width:11px; height:11px; vertical-align:-1px; margin-left:2px; stroke:currentColor }
+
+/* ── 3 · плитки статистики: значок в строке с числом, подпись ниже ─── */
+html.bp-onb #pg-profile .pf-stats{ gap:8px!important; margin-bottom:10px!important }
+html.bp-onb #pg-profile .pf-st{
+  display:grid!important; grid-template-columns:30px minmax(0,1fr); column-gap:10px; align-items:center;
+  padding:12px 13px 11px!important; border-radius:16px!important; background:var(--card)!important;
+  border-color:var(--brd)!important; box-shadow:none!important;
+}
+html.bp-onb #pg-profile .pf-st-ico{
+  grid-row:1; width:30px!important; height:30px!important; margin:0!important; border-radius:9px!important;
+  background:rgba(255,255,255,.05)!important; border-color:var(--brd)!important;
+}
+html.bp-onb #pg-profile .pf-st-val{
+  grid-row:1; font-size:20px!important; font-weight:800!important; letter-spacing:-.5px!important;
+  line-height:1.1!important; color:var(--t1)!important; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+html.bp-onb #pg-profile .pf-st-lbl{
+  grid-column:1/-1; margin-top:7px!important; font-size:11.5px!important; font-weight:600!important; color:var(--t3)!important;
+}
+
+/* ── 4 · тихая строка рейтинга ─────────────────────────────────────── */
+html #pg-profile .pf2-rank{
+  display:flex; align-items:center; gap:10px; width:100%; box-sizing:border-box;
+  padding:10px 12px; margin:0 0 4px; border-radius:14px; cursor:pointer;
+  background:rgba(255,255,255,.025); border:1px solid var(--brd); color:var(--t2);
+  font-family:inherit; font-size:12.5px; font-weight:600; text-align:left; -webkit-tap-highlight-color:transparent;
+  transition:background .15s;
+}
+html #pg-profile .pf2-rank:active{ background:rgba(255,255,255,.06) }
+html #pg-profile .pf2-rank svg.l{ width:16px; height:16px; stroke:var(--t3); flex-shrink:0 }
+html #pg-profile .pf2-rank em{ font-style:normal; margin-left:auto; color:var(--t3); font-size:11.5px; white-space:nowrap }
+html #pg-profile .pf2-rank em b{ color:var(--t2); font-weight:700 }
+html #pg-profile .pf2-rank svg.a{ width:12px; height:12px; stroke:var(--t3); flex-shrink:0 }
+
+/* ── 5 · «Заполнить профиль» ───────────────────────────────────────── */
+html #pg-profile .pf2-card{
+  background:var(--card); border:1px solid var(--brd); border-radius:16px; padding:13px 13px 12px; margin-bottom:10px;
+}
+html #pg-profile .pf2-done-top{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px }
+html #pg-profile .pf2-done-top b{ font-size:15px; font-weight:800; color:var(--t1); letter-spacing:-.3px; line-height:1.3 }
+html #pg-profile .pf2-done-top i{
+  font-style:normal; font-size:20px; font-weight:800; color:var(--acc2); letter-spacing:-.6px;
+  font-variant-numeric:tabular-nums; line-height:1;
+}
+html #pg-profile .pf2-done-sub{ font-size:11.5px; color:var(--t3); line-height:1.45; margin-top:3px }
+html #pg-profile .pf2-bar{ height:6px; border-radius:99px; background:rgba(255,255,255,.08); overflow:hidden; margin:10px 0 4px }
+html #pg-profile .pf2-bar i{
+  display:block; height:100%; width:0; border-radius:99px;
+  background:linear-gradient(90deg,var(--acc),var(--acc2));
+  transition:width .8s cubic-bezier(.22,1,.36,1);
+}
+html #pg-profile .pf2-todo{
+  display:flex; align-items:center; gap:11px; width:100%; box-sizing:border-box; text-align:left;
+  padding:9px 2px; background:none; border:none; border-top:1px solid rgba(255,255,255,.055);
+  font-family:inherit; cursor:pointer; -webkit-tap-highlight-color:transparent; color:var(--t1);
+}
+html #pg-profile .pf2-todo:first-of-type{ border-top:none; margin-top:6px }
+html #pg-profile .pf2-todo:active{ opacity:.7 }
+html #pg-profile .pf2-todo .i{
+  width:28px; height:28px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center;
+  border:1.5px solid rgba(246,168,35,.55); color:#f6a823; font-size:13px; font-weight:800; background:rgba(246,168,35,.08);
+}
+html #pg-profile .pf2-todo .t{ min-width:0; flex:1 }
+html #pg-profile .pf2-todo .t b{ display:block; font-size:13px; font-weight:700; color:var(--t1); letter-spacing:-.1px }
+html #pg-profile .pf2-todo .t span{ display:block; font-size:11px; color:var(--t3); margin-top:1px; line-height:1.4 }
+html #pg-profile .pf2-todo svg{ width:12px; height:12px; stroke:var(--t3); flex-shrink:0 }
+html #pg-profile .pf2-more{ font-size:11px; color:var(--t3); padding:6px 2px 0 }
+
+/* ── 6 · «О себе»: тематика чипами под текстом ────────────────────── */
+html #pg-profile .pf2-chips{ display:flex; flex-wrap:wrap; gap:6px; margin-top:10px }
+html #pg-profile .pf2-chip{
+  font-size:11px; font-weight:700; color:var(--t2); padding:4px 9px; border-radius:99px;
+  background:rgba(255,255,255,.05); border:1px solid var(--brd);
+}
+html #pg-profile .pf2-chip.add{ color:var(--acc2); border-style:dashed; cursor:pointer; background:none }
+html.bp-onb #pg-profile .pf-card{ margin-bottom:10px!important; border-radius:16px!important }
+
+/* ── 7 · площадки, сделки, видео — общая строка ────────────────────── */
+html #pg-profile .pf2-list{ background:var(--card); border:1px solid var(--brd); border-radius:16px; overflow:hidden; margin-bottom:10px }
+html #pg-profile .pf2-row{
+  display:flex; align-items:center; gap:11px; width:100%; box-sizing:border-box; text-align:left;
+  padding:11px 12px; background:none; border:none; border-top:1px solid rgba(255,255,255,.055);
+  font-family:inherit; cursor:pointer; -webkit-tap-highlight-color:transparent; color:var(--t1);
+  transition:background .12s;
+}
+html #pg-profile .pf2-row:first-child{ border-top:none }
+html #pg-profile .pf2-row:active{ background:rgba(255,255,255,.04) }
+html #pg-profile .pf2-row .av{
+  width:38px; height:38px; border-radius:12px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
+  overflow:hidden; font-size:14px; font-weight:800; color:#fff; background:var(--card3,#1f1f28); position:relative;
+}
+html #pg-profile .pf2-row .av img{ width:100%; height:100%; object-fit:cover; display:block }
+html #pg-profile .pf2-row .av.round{ border-radius:50% }
+html #pg-profile .pf2-row .av svg{ width:19px; height:19px; fill:#fff }
+html #pg-profile .pf2-row .av.p-tg{ background:#2aabee }
+html #pg-profile .pf2-row .av.p-yt{ background:#ff0000 }
+html #pg-profile .pf2-row .av.p-tt{ background:#111; border:1px solid rgba(255,255,255,.18) }
+html #pg-profile .pf2-row .av.p-ig{ background:radial-gradient(circle at 30% 107%,#fdf497 0%,#fd5949 45%,#d6249f 60%,#285aeb 90%) }
+html #pg-profile .pf2-row .av.p-vk{ background:#0077ff }
+html #pg-profile .pf2-row .av.th{ width:40px; height:54px; border-radius:9px }
+html #pg-profile .pf2-row .av.th span{ font-size:10px; font-weight:800; color:var(--t3); letter-spacing:.5px }
+html #pg-profile .pf2-row .av.th img{ position:absolute; inset:0 }
+html #pg-profile .pf2-row .tx{ min-width:0; flex:1 }
+html #pg-profile .pf2-row .tx b{ display:block; font-size:13.5px; font-weight:800; color:var(--t1); letter-spacing:-.2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+html #pg-profile .pf2-row .tx > span{ display:block; font-size:11.5px; color:var(--t3); margin-top:2px; line-height:1.4; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+html #pg-profile .pf2-row .tx > span i{ font-style:normal; color:var(--acc2); font-weight:700 }
+html #pg-profile .pf2-row .rt{ flex-shrink:0; text-align:right }
+html #pg-profile .pf2-row .rt b{ display:block; font-size:13px; font-weight:800; color:var(--t1); letter-spacing:-.2px; font-variant-numeric:tabular-nums }
+html #pg-profile .pf2-row .rt b.g{ color:#3ddc84 }   /* деньги — зелёные, как в кошельке */
+html #pg-profile .pf2-row .rt svg{ width:12px; height:12px; stroke:var(--t3) }
+html #pg-profile .pf2-st{
+  font-size:10px; font-weight:800; letter-spacing:.2px; padding:3px 7px; border-radius:99px; white-space:nowrap;
+  background:rgba(255,255,255,.06); color:var(--t3); border:1px solid transparent;
+}
+html #pg-profile .pf2-st.act{ background:var(--acc-bg); color:var(--acc2) }
+html #pg-profile .pf2-st.rev{ background:rgba(246,168,35,.12); color:#f6a823 }
+html #pg-profile .pf2-st.ok{ background:rgba(61,220,132,.1); color:#3ddc84 }
+html #pg-profile .pf2-st.bad{ background:rgba(240,71,94,.12); color:#f0788a }
+html #pg-profile .pf2-empty{ padding:14px 14px 13px; font-size:12.5px; color:var(--t2); line-height:1.5 }
+html #pg-profile .pf2-empty span{ display:block; font-size:11.5px; color:var(--t3); margin-top:2px }
+html #pg-profile .pf2-add{
+  display:flex; align-items:center; justify-content:center; gap:7px; width:100%; box-sizing:border-box;
+  padding:11px; margin:-2px 0 12px; border-radius:14px; border:1px dashed var(--brd2); background:none;
+  color:var(--t2); font-family:inherit; font-size:12.5px; font-weight:700; cursor:pointer; -webkit-tap-highlight-color:transparent;
+}
+html #pg-profile .pf2-add svg{ width:14px; height:14px; stroke:var(--acc2) }
+html #pg-profile .pf2-add:active{ background:rgba(255,255,255,.04) }
+
+/* ── 8 · баннер и выход — чуть воздуха ─────────────────────────────── */
+html #pg-profile .pf-promo-banner{ margin-top:6px!important }
+html.bp-onb #pg-profile .pf-logout{ margin-top:10px!important; border-radius:14px!important; font-size:13px!important; padding:12px!important }
+
+/* ── 9 · шторка рейтинга ───────────────────────────────────────────── */
+html .pf2-ov{
+  position:fixed; inset:0; z-index:540; background:rgba(4,4,6,.72); display:flex; align-items:flex-end; justify-content:center;
+  animation:pf2Fade .2s ease backwards;
+}
+html .pf2-sheet{
+  width:100%; max-width:420px; max-height:84dvh; box-sizing:border-box; display:flex; flex-direction:column;
+  background:#0f0f15; border:1px solid var(--brd2); border-bottom:none; border-radius:22px 22px 0 0;
+  padding:10px 16px max(22px,env(safe-area-inset-bottom,0px)); animation:pf2Up .28s cubic-bezier(.22,1,.36,1) backwards;
+}
+html .pf2-sheet .h{ width:38px; height:4px; border-radius:2px; background:rgba(255,255,255,.16); margin:0 auto 12px; flex-shrink:0 }
+html .pf2-sheet .hd{ display:flex; align-items:flex-start; gap:10px; margin-bottom:10px; flex-shrink:0 }
+html .pf2-sheet .hd b{ display:block; font-size:17px; font-weight:800; color:var(--t1); letter-spacing:-.4px; line-height:1.25 }
+html .pf2-sheet .hd span{ display:block; font-size:11.5px; color:var(--t3); margin-top:3px; line-height:1.4 }
+html .pf2-sheet .x{
+  margin-left:auto; width:32px; height:32px; border-radius:10px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
+  background:rgba(255,255,255,.06); border:1px solid var(--brd); color:var(--t2); cursor:pointer; -webkit-tap-highlight-color:transparent;
+}
+html .pf2-sheet .x svg{ width:14px; height:14px; stroke:currentColor }
+html .pf2-sheet .bd{ overflow-y:auto; -webkit-overflow-scrolling:touch; min-height:0; flex:1 }
+html .pf2-tabs{ display:flex; gap:6px; margin-bottom:10px; flex-shrink:0 }
+html .pf2-tabs button{
+  flex:1; padding:8px 10px; border-radius:11px; border:1px solid var(--brd); background:rgba(255,255,255,.04);
+  color:var(--t2); font-family:inherit; font-size:12px; font-weight:700; cursor:pointer; -webkit-tap-highlight-color:transparent;
+}
+html .pf2-tabs button.on{ background:var(--acc-bg); border-color:var(--acc-br); color:var(--acc2) }
+html .pf2-lb{
+  display:flex; align-items:center; gap:10px; width:100%; box-sizing:border-box; text-align:left;
+  padding:9px 8px; border:none; border-radius:12px; background:none; font-family:inherit; color:var(--t1);
+  cursor:pointer; -webkit-tap-highlight-color:transparent;
+}
+html .pf2-lb:active{ background:rgba(255,255,255,.04) }
+html .pf2-lb.me{ background:var(--acc-bg); border:1px solid var(--acc-br); margin-top:8px }
+html .pf2-lb .n{
+  width:26px; height:26px; border-radius:8px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
+  font-size:12px; font-weight:800; color:var(--t3); background:rgba(255,255,255,.05); font-variant-numeric:tabular-nums;
+}
+html .pf2-lb .n.g1{ background:rgba(246,168,35,.16); color:#f6a823 }
+html .pf2-lb .n.g2{ background:rgba(255,255,255,.11); color:#d9dbe1 }
+html .pf2-lb .n.g3{ background:rgba(205,127,50,.16); color:#d9a066 }
+html .pf2-lb .av{
+  width:36px; height:36px; border-radius:50%; flex-shrink:0; overflow:hidden; display:flex; align-items:center; justify-content:center;
+  font-size:13px; font-weight:800; color:#fff; background:linear-gradient(135deg,#3f3f46,#27272a);
+}
+html .pf2-lb .av img{ width:100%; height:100%; object-fit:cover; display:block }
+html .pf2-lb .tx{ min-width:0; flex:1 }
+html .pf2-lb .tx b{ display:block; font-size:13.5px; font-weight:800; letter-spacing:-.2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+html .pf2-lb .tx > span{ display:block; font-size:11.5px; color:var(--t3); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+html .pf2-lb .tx > span i{ font-style:normal; color:#f6a823; font-weight:700 }
+html .pf2-lb .rt{ flex-shrink:0; font-size:13px; font-weight:800; color:var(--t1); font-variant-numeric:tabular-nums; text-align:right }
+html .pf2-lb .rt small{ display:block; font-size:10px; font-weight:600; color:var(--t3) }
+html .pf2-lb-me{ display:inline-block; font-style:normal; font-size:10px; font-weight:800; color:var(--acc2); background:rgba(47,108,224,.2); padding:2px 7px; border-radius:99px; margin-left:6px; vertical-align:1px }
+html .pf2-hint{
+  display:flex; gap:9px; align-items:flex-start; font-size:12px; color:var(--t2); line-height:1.5;
+  background:rgba(255,255,255,.035); border:1px solid var(--brd); border-radius:12px; padding:10px 12px; margin-top:10px;
+}
+html .pf2-hint svg{ width:15px; height:15px; stroke:var(--acc2); flex-shrink:0; margin-top:2px }
+html .pf2-hint b{ color:var(--t1) }
+html .pf2-note{ font-size:10.5px; color:var(--t3); line-height:1.5; margin-top:10px; padding:0 2px }
+html .pf2-lb-empty{ padding:22px 10px; text-align:center; font-size:12.5px; color:var(--t2); line-height:1.5 }
+html .pf2-lb-empty span{ display:block; color:var(--t3); font-size:11.5px; margin-top:3px }
+
+@keyframes pf2Up{ from{ transform:translateY(28px); opacity:0 } }
+@keyframes pf2Fade{ from{ opacity:0 } }
+@media (prefers-reduced-motion:reduce){
+  html .pf2-ov,html .pf2-sheet{ animation:none }
+  html #pg-profile .pf2-bar i{ transition:none }
+}
+</style>
+
+<script id="bp-profile2">
+/* ══ v104 · ПРОФИЛЬ ПО ОБРАЗЦУ MORE VIEWS — ЛОГИКА ═══════════════════════
+   Дорисовывает в #pg-profile то, чего не хватало рядом с прежними блоками
+   (ничего из старого не удаляет и не переставляет):
+     · строка «на площадке с …» в шапке;
+     · тихая строка рейтинга после плиток статистики + шторка «Рейтинг
+       блогеров» (по выполненным сделкам; деньги других не показываем);
+     · «Заполнить профиль» — процент и что осталось, каждая строка ведёт
+       туда, где это заполняется (исчезает, когда всё готово);
+     · тематика чипами под «О себе»;
+     · «Площадки» (блогеру) / «Компания» (рекламодателю);
+     · последние сделки, одобренные видео промо-программы.
+   Источники: те же, что у остальных слоёв (bp_my_cards, общие сделки,
+   bp_task_joins, bp_promo_subs, bp_reviews, /api/verify/list, /api/leaderboard).
+   Обёртки: updateProfileUI, renderProfileStats, saveAbout, goTo.
+   Откат: удалить style#bp-profile2-css и script#bp-profile2.          */
+(function(){
+'use strict';
+if(window.__bpProfile2) return; window.__bpProfile2 = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'pf2'); }catch(_){} }
+function $(id){ return document.getElementById(id); }
+function esc(s){
+  if(typeof bpEsc === 'function') return bpEsc(s);
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; });
+}
+function me(){ try{ return (typeof currentUser !== 'undefined') ? currentUser : null; }catch(e){ return null; } }
+function isAdv(){ try{ return (typeof _isAdvertiser !== 'undefined') ? !!_isAdvertiser : false; }catch(e){ return false; } }
+function LS(k, d){ try{ var v = localStorage.getItem(k); if(v == null) return d; var j = JSON.parse(v); return j == null ? d : j; }catch(e){ return d; } }
+function same(a, b){ return a != null && b != null && String(a) === String(b); }
+function fm(n){ return Math.round(Number(n) || 0).toLocaleString('ru'); }
+/* «12 000 ₽» → 12000, «1,5» → 1.5 */
+function num(v){ if(typeof v === 'number') return isFinite(v) ? v : 0; var s = String(v == null ? '' : v).replace(/\s| /g, '').replace(',', '.').replace(/[^\d.]/g, ''); return parseFloat(s) || 0; }
+function short(n){
+  n = Number(n) || 0;
+  if(n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace('.0', '').replace('.', ',') + 'M';
+  if(n >= 1e3) return (n / 1e3).toFixed(n >= 1e4 ? 0 : 1).replace('.0', '').replace('.', ',') + 'K';
+  return String(n);
+}
+function plural(n, one, few, many){ n = Math.abs(Math.round(n)) % 100; var d = n % 10; if(n > 10 && n < 20) return many; if(d > 1 && d < 5) return few; if(d === 1) return one; return many; }
+function reduced(){ try{ return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){ return false; } }
+function toast(msg, kind){ try{ if(typeof showAuthToast === 'function') showAuthToast(msg, kind || 'ok'); }catch(e){} }
+
+var MONTHS = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+var ARR = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
+var GLYPH = {
+  tg: '<svg viewBox="0 0 24 24"><path d="M2.9 11.3 20.6 4.1c.8-.3 1.6.4 1.4 1.3L19 19.2c-.2.9-1.2 1.2-1.9.7l-4.3-3.2-2.1 2c-.3.3-.6.4-1 .4l.3-4.4 8-7.2c.3-.3-.1-.5-.5-.2l-9.9 6.2-4.2-1.3c-.9-.3-.9-1 .5-1.5z"/></svg>',
+  yt: '<svg viewBox="0 0 24 24"><path d="M23 7.2c-.3-1-1-1.8-2-2C19.2 4.7 12 4.7 12 4.7s-7.2 0-9 .5c-1 .3-1.8 1-2 2C.5 9 .5 12 .5 12s0 3 .5 4.8c.3 1 1 1.8 2 2 1.8.5 9 .5 9 .5s7.2 0 9-.5c1-.3 1.8-1 2-2 .5-1.8.5-4.8.5-4.8s0-3-.5-4.8zM9.7 15.1V8.9l6 3.1-6 3.1z"/></svg>',
+  tt: '<svg viewBox="0 0 24 24"><path d="M16.5 2h-3.2v13.3a2.8 2.8 0 1 1-2.8-2.8c.3 0 .6 0 .8.1V9.4a6 6 0 1 0 5.2 6V8.8a7.4 7.4 0 0 0 4.3 1.4V7a4.3 4.3 0 0 1-4.3-4.3V2z"/></svg>',
+  ig: '<svg viewBox="0 0 24 24"><path d="M12 7.3a4.7 4.7 0 1 0 0 9.4 4.7 4.7 0 0 0 0-9.4zm0 7.7a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm6-8a1.1 1.1 0 1 1-2.2 0 1.1 1.1 0 0 1 2.2 0zM12 2.2c2.7 0 3 0 4 .1 2.8.1 4.5 1.8 4.6 4.6.1 1 .1 1.3.1 4s0 3-.1 4c-.1 2.8-1.8 4.5-4.6 4.6-1 .1-1.3.1-4 .1s-3 0-4-.1c-2.8-.1-4.5-1.8-4.6-4.6-.1-1-.1-1.3-.1-4s0-3 .1-4C3.5 4.1 5.2 2.4 8 2.3c1-.1 1.3-.1 4-.1zM12 .5c-2.7 0-3.1 0-4.2.1C4 .8 1.8 3 1.6 6.8 1.5 7.9 1.5 8.3 1.5 12s0 4.1.1 5.2c.2 3.8 2.4 6 6.2 6.2 1.1.1 1.5.1 4.2.1s3.1 0 4.2-.1c3.8-.2 6-2.4 6.2-6.2.1-1.1.1-1.5.1-5.2s0-4.1-.1-5.2C22.2 3 20 .8 16.2.6 15.1.5 14.7.5 12 .5z"/></svg>',
+  vk: '<svg viewBox="0 0 24 24"><path d="M12.8 17.4c-5.9 0-9.3-4-9.4-10.8h3c.1 5 2.3 7.1 4 7.5V6.6h2.8v4.3c1.7-.2 3.5-2.1 4.1-4.3h2.8c-.5 2.6-2.4 4.6-3.8 5.4 1.4.6 3.6 2.3 4.4 5.4h-3.1c-.7-2.1-2.3-3.7-4.4-3.9v3.9h-.4z"/></svg>'
+};
+var PLAT = {
+  telegram:{ k:'tg', name:'Telegram' }, youtube:{ k:'yt', name:'YouTube' }, tiktok:{ k:'tt', name:'TikTok' },
+  instagram:{ k:'ig', name:'Instagram' }, vk:{ k:'vk', name:'VK' }
+};
+var SHORT2LONG = { tg:'telegram', yt:'youtube', tt:'tiktok', ig:'instagram', vk:'vk' };
+
+/* ── данные ──────────────────────────────────────────────────────────── */
+function myCards(){
+  var u = me(); if(!u) return [];
+  try{
+    var all = (typeof window.bpMyCards === 'function') ? window.bpMyCards() : LS('bp_my_cards', []).filter(function(c){ return c && same(c.userId, u.id); });
+    return (all || []).filter(function(c){ return c && !c.hidden; });
+  }catch(e){ E(e); return []; }
+}
+function handleOf(url, pid){
+  try{
+    var s = String(url || '').trim(); if(!s) return '';
+    s = s.replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/^m\./i, '').replace(/\/+$/, '');
+    var path = s.split('/').slice(1).join('/');
+    if(!path) return s;
+    path = path.replace(/^@/, '').replace(/^(s\/|c\/|channel\/|user\/)/, '').split(/[?#]/)[0].split('/')[0];
+    if(!path) return s;
+    return (pid === 'youtube' && /^UC[\w-]{20,}$/.test(path)) ? 'YouTube-канал' : '@' + decodeURIComponent(path).slice(0, 32);
+  }catch(e){ return String(url || ''); }
+}
+var _ch = { at:0, rows:null, busy:false };
+function pullChannels(cb){
+  try{
+    var S = window.bpSrv;
+    if(!S || typeof S.raw !== 'function' || !S.configured || !S.configured() || !S.token || !S.token()) return;
+    if(Date.now() - _ch.at < 60000 || _ch.busy) return;
+    _ch.busy = true;
+    S.raw('GET', '/api/verify/list').then(function(j){
+      _ch.busy = false; _ch.at = Date.now(); _ch.rows = (j && j.rows) || [];
+      try{ cb && cb(); }catch(e){ E(e); }
+    }).catch(function(){ _ch.busy = false; _ch.at = Date.now(); });
+  }catch(e){ E(e); }
+}
+/* объединяем три источника: подтверждено входом (сервер) → карточка → ссылки из профиля */
+function platforms(){
+  var u = me(); if(!u) return [];
+  var by = {};
+  function put(pid, src, o){
+    if(!PLAT[pid]) return;
+    var r = by[pid] || (by[pid] = { pid:pid, url:'', subs:0, title:'', verified:false });
+    if(o.url && !r.url) r.url = o.url;
+    if(o.subs && !r.subs) r.subs = num(o.subs);
+    if(o.title && !r.title) r.title = o.title;
+    if(src === 'server'){ r.verified = true; if(o.url) r.url = o.url; if(o.subs) r.subs = num(o.subs); if(o.title) r.title = o.title; }
+  }
+  try{ (_ch.rows || []).forEach(function(c){ if(c && c.platform) put(String(c.platform).toLowerCase(), 'server', c); }); }catch(e){}
+  try{
+    myCards().forEach(function(c){
+      var pd = c && c.platData; if(!pd) return;
+      Object.keys(pd).forEach(function(pid){ var p = pd[pid]; if(p && (p.url || p.subs)) put(pid, 'card', p); });
+    });
+  }catch(e){}
+  try{
+    var sl = u.socialLinks || {};
+    Object.keys(sl).forEach(function(k){ var v = sl[k]; if(v && String(v).trim()) put(SHORT2LONG[k] || k, 'links', { url:String(v).trim() }); });
+  }catch(e){}
+  return Object.keys(by).map(function(k){ var r = by[k]; if(!r.title) r.title = handleOf(r.url, r.pid) || PLAT[r.pid].name; return r; });
+}
+function company(){ try{ return (typeof loadCompanyData === 'function') ? (loadCompanyData() || {}) : (LS('bp_company', {}) || {}); }catch(e){ return {}; } }
+function kycOf(){ var u = me(); return (u && u.kyc) || {}; }
+function deals(){
+  try{
+    var list = (typeof getMySharedDealsAsCards === 'function') ? getMySharedDealsAsCards() : [];
+    list = (list || []).slice();
+    list.sort(function(a, b){ var ta = (a._shared && a._shared.createdAt) || 0, tb = (b._shared && b._shared.createdAt) || 0; return tb - ta; });
+    return list;
+  }catch(e){ E(e); return []; }
+}
+function videos(){
+  var u = me(); if(!u) return [];
+  try{
+    return LS('bp_promo_subs', []).filter(function(s){ return s && same(s.userId, u.id) && s.status !== 'rejected'; })
+      .sort(function(a, b){ return (b.at || 0) - (a.at || 0); });
+  }catch(e){ return []; }
+}
+function ytId(u){ var m = /(?:youtu\.be\/|[?&]v=|\/shorts\/|\/embed\/|\/live\/)([\w-]{6,})/.exec(String(u || '')); return m ? m[1] : ''; }
+
+/* ── чек-лист «Заполнить профиль» ─────────────────────────────────────── */
+function todo(){
+  var u = me(); if(!u) return { items:[], done:0, total:0 };
+  var k = kycOf(), id = k.identity || {}, items = [];
+  var hasNiche = !!((u.niches && u.niches.length) || myCards().some(function(c){ return c.topics && c.topics.length; }));
+  var pls = platforms();
+  items.push({ key:'photo', ok:!!(u.photo || u.avatar), t:'Добавить фото', s:'С лицом доверяют больше, чем букве', go:'edit' });
+  items.push({ key:'about', ok:!!(u.about && String(u.about).trim()), t:'Рассказать о себе', s:'Два-три предложения о вас и контенте', go:'about' });
+  if(!isAdv()){
+    items.push({ key:'niche', ok:hasNiche, t:'Выбрать тематику', s:'До четырёх направлений — по ним вас находят', go:'edit' });
+    items.push({ key:'plat', ok:pls.length > 0, t:'Добавить площадки', s:'Ссылки на каналы, где выходит реклама', go:'edit' });
+    items.push({ key:'card', ok:myCards().length > 0, t:'Разместить карточку в каталоге', s:'Без неё рекламодатели вас не увидят', go:'card' });
+    items.push({ key:'city', ok:!!u.city, t:'Указать город', s:'Нужен для локальных кампаний', go:'edit' });
+    items.push({ key:'kyc', ok:id.status === 'verified', pending:id.status === 'pending', t: id.status === 'pending' ? 'Личность на проверке' : 'Подтвердить личность',
+      s: id.status === 'pending' ? 'Документы на проверке у оператора' : (id.status === 'rejected' ? 'Оператор вернул документы — посмотрите почему' : 'Понадобится для вывода денег'), go:'kyc' });
+    items.push({ key:'payout', ok:!!(k.payout && k.payout.done), t:'Указать реквизиты', s:'Куда приходят деньги за сделки', go:'payout' });
+  } else {
+    var c = company();
+    items.push({ key:'company', ok:!!(c && c.name && c.inn), t:'Заполнить данные компании', s: (c && c.name) ? 'ИНН не указан — нужен для счетов' : 'Нужны для счетов и закрывающих', go:'company' });
+    items.push({ key:'city', ok:!!u.city, t:'Указать город', s:'Поможет блогерам понять, где вы', go:'edit' });
+  }
+  var done = items.filter(function(i){ return i.ok; }).length;
+  return { items:items, done:done, total:items.length };
+}
+window.bpPf2Go = function(what){
+  try{
+    var u = me();
+    if(what === 'edit'){ if(typeof openEditProfile === 'function') openEditProfile(); return; }
+    if(what === 'about'){
+      var c = document.querySelector('#pg-profile .pf-card');
+      if(c) c.scrollIntoView({ block:'center', behavior: reduced() ? 'auto' : 'smooth' });
+      setTimeout(function(){ try{ if(typeof editAbout === 'function') editAbout(); }catch(e){ E(e); } }, 250);
+      return;
+    }
+    if(what === 'card'){ if(typeof goTo === 'function') goTo('add-blogger-card'); return; }
+    if(what === 'company'){ if(typeof goTo === 'function') goTo('company'); return; }
+    if(what === 'kyc'){ if(typeof window.bpKycIdent === 'function') window.bpKycIdent(); else if(typeof goTo === 'function') goTo('settings'); return; }
+    if(what === 'payout'){ if(typeof window.bpKycPayout === 'function') window.bpKycPayout(); else if(typeof goTo === 'function') goTo('withdraw'); return; }
+    if(what === 'deals'){
+      if(typeof goTo === 'function') goTo('chats');
+      setTimeout(function(){ try{ if(typeof switchMainSection === 'function') switchMainSection('deals'); }catch(e){ E(e); } }, 90);
+      return;
+    }
+    if(what === 'videos'){ if(typeof window.bpVpGo === 'function') window.bpVpGo('videos'); else if(typeof window.bpVidPromo === 'function') window.bpVidPromo(); return; }
+  }catch(e){ E(e); }
+};
+
+/* ── разметка ───────────────────────────────────────────────────────── */
+function sec(id, title, sub, allLabel, allGo){
+  var d = $(id);
+  if(!d){ d = document.createElement('div'); d.id = id; d.className = 'pf2-sec'; }
+  d.setAttribute('data-title', title);
+  var h = '<div class="pf2-h"><div><span style="display:inline;font-size:inherit;font-weight:inherit;color:inherit;margin:0">' + esc(title) + '</span>'
+    + (sub ? '<span>' + esc(sub) + '</span>' : '') + '</div>'
+    + (allLabel ? '<button type="button" class="pf2-all" onclick="bpPf2Go(\'' + allGo + '\')">' + esc(allLabel) + ARR + '</button>' : '')
+    + '</div>';
+  d._head = h;
+  return d;
+}
+function avatarHtml(o){
+  if(o.img) return '<img src="' + esc(o.img) + '" alt="" loading="lazy">';
+  return esc((o.initials || (o.name || 'Б').trim().charAt(0)).toString().slice(0, 2).toUpperCase());
+}
+function initialsOf(name){ var p = String(name || '').trim().split(/\s+/); return ((p[0] || 'Б')[0] + (p[1] ? p[1][0] : '')).toUpperCase(); }
+function gradOf(name){
+  var G = ['linear-gradient(135deg,#2f6ce0,#1b49a8)','linear-gradient(135deg,#6366f1,#818cf8)','linear-gradient(135deg,#0891b2,#06b6d4)','linear-gradient(135deg,#b45309,#f59e0b)','linear-gradient(135deg,#dc2626,#f97316)','linear-gradient(135deg,#52525b,#3f3f46)'];
+  var s = 0, str = String(name || ''); for(var i = 0; i < str.length; i++) s = (s * 31 + str.charCodeAt(i)) & 0xffffff; return G[Math.abs(s) % G.length];
+}
+function tone(st){
+  st = String(st || '');
+  if(st === 'active' || st === 'new' || st === 'pending' || st === 'countered') return 'act';
+  if(st === 'review') return 'rev';
+  if(st === 'done') return 'ok';
+  if(st === 'dispute') return 'bad';
+  return '';
+}
+
+function renderSince(){
+  var u = me(), info = document.querySelector('#pg-profile .pf-info'); if(!u || !info) return;
+  var el = $('pf2Since');
+  var d = u.registeredAt ? new Date(u.registeredAt) : null;
+  if(!d || isNaN(d)){ if(el) el.remove(); return; }
+  if(!el){ el = document.createElement('div'); el.id = 'pf2Since'; el.className = 'pf2-since'; info.appendChild(el); }
+  el.textContent = 'На площадке с ' + d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear();
+}
+/* Фото в кружке рисует чужой слой (paintAva): ставит <img> внутрь
+   контейнера, у которого своя рамка. Помечаем такие контейнеры, чтобы
+   рамка и кольцо не превращались в тёмный ободок вокруг лица. */
+function flatAvatars(){
+  try{
+    ['#pg-profile .pf-ava-img', '.tb-ava', '.drw-user-ava'].forEach(function(sel){
+      Array.prototype.forEach.call(document.querySelectorAll(sel), function(box){
+        box.classList.toggle('bp-hasphoto', !!box.querySelector('img'));
+      });
+    });
+  }catch(e){ E(e); }
+}
+function renderGlow(){
+  try{
+    var hero = document.querySelector('#pg-profile .pf-hero'); if(!hero) return;
+    var box = hero.querySelector('.pf-ava-img'); if(!box) return;
+    var ph = box.querySelector('div[data-bpava]') || $('profAvaInitials');
+    var col = null;
+    if(ph){
+      var bg = getComputedStyle(ph).backgroundImage || '';
+      var m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(bg) || (function(){ var h = /#([0-9a-f]{6})/i.exec(bg); if(!h) return null; var v = parseInt(h[1], 16); return [0, v >> 16 & 255, v >> 8 & 255, v & 255]; })();
+      if(m) col = [Number(m[1]), Number(m[2]), Number(m[3])];
+    }
+    if(!col) col = [47, 108, 224];
+    hero.style.setProperty('--pf2-glow', 'rgba(' + col.join(',') + ',.26)');
+    hero.style.setProperty('--pf2-ring', 'rgba(' + col.join(',') + ',.5)');
+  }catch(e){ E(e); }
+}
+
+/* набег цифр в плитках — только когда экран только что открыт */
+var _openedAt = 0;
+function countUp(el, target, prefix, suffix){
+  if(reduced() || target <= 0){ el.textContent = prefix + fm(target) + suffix; return; }
+  var t0 = performance.now(), dur = 650, done = false;
+  function fin(){ if(done) return; done = true; el.textContent = prefix + fm(target) + suffix; }
+  function tick(now){
+    if(done) return;
+    var p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+    el.textContent = prefix + fm(Math.round(target * e)) + suffix;
+    if(p < 1) requestAnimationFrame(tick); else fin();
+  }
+  requestAnimationFrame(tick); setTimeout(fin, dur + 250);
+}
+function animStats(){
+  if(Date.now() - _openedAt > 1500) return;
+  var box = $('pfStats'); if(!box) return;
+  Array.prototype.forEach.call(box.querySelectorAll('.pf-st-val'), function(el){
+    if(el.dataset.pf2Anim) return; el.dataset.pf2Anim = '1';
+    var m = /^(\D*?)(\d[\d\s ]*)(\s?₽)?$/.exec(el.textContent.trim()); if(!m) return;
+    var v = num(m[2]); if(!v) return;
+    countUp(el, v, m[1] || '', m[3] ? ' ₽' : '');
+  });
+}
+
+function renderDone(){
+  var u = me(), host = $('pfPromoBanner'), page = $('pg-profile'); if(!u || !page) return;
+  var T = todo(), el = $('pf2Done');
+  if(!T.total || T.done === T.total){ if(el) el.remove(); return; }
+  if(!el){ el = document.createElement('div'); el.id = 'pf2Done'; el.className = 'pf2-sec'; (host || page).parentNode === page && host ? page.insertBefore(el, host) : page.appendChild(el); }
+  var pct = Math.round(T.done / T.total * 100), miss = T.items.filter(function(i){ return !i.ok; });
+  var rows = miss.slice(0, 5).map(function(i){
+    return '<button type="button" class="pf2-todo" onclick="bpPf2Go(\'' + i.go + '\')">'
+      + '<span class="i"' + (i.pending ? ' style="color:var(--t3);border-color:var(--brd2);background:none"' : '') + '>' + (i.pending ? '…' : '!') + '</span>'
+      + '<span class="t"><b>' + esc(i.t) + '</b><span>' + esc(i.s) + '</span></span>' + ARR + '</button>';
+  }).join('');
+  el.innerHTML = '<div class="pf2-card">'
+    + '<div class="pf2-done-top"><div><b>Заполнить профиль</b><div class="pf2-done-sub">'
+    + (isAdv() ? 'Заполненный профиль вызывает больше доверия у блогеров' : 'Заполненные профили чаще получают заказы')
+    + ' · осталось ' + miss.length + ' из ' + T.total + '</div></div><i>' + pct + '%</i></div>'
+    + '<div class="pf2-bar"><i style="width:' + (el._pct == null ? 0 : el._pct) + '%"></i></div>'
+    + rows + (miss.length > 5 ? '<div class="pf2-more">…и ещё ' + (miss.length - 5) + '</div>' : '')
+    + '</div>';
+  var bar = el.querySelector('.pf2-bar i');
+  requestAnimationFrame(function(){ requestAnimationFrame(function(){ bar.style.width = pct + '%'; }); });
+  setTimeout(function(){ bar.style.width = pct + '%'; }, 400);
+  el._pct = pct;
+}
+
+function renderChips(){
+  var u = me(), card = document.querySelector('#pg-profile .pf-card'); if(!u || !card) return;
+  var el = $('pf2Chips');
+  var list = (u.niches && u.niches.length) ? u.niches.slice() : [];
+  if(!list.length){
+    try{ myCards().forEach(function(c){ if(c.catsText && !/Новый блогер/i.test(c.catsText)) list = list.concat(String(c.catsText).split('·').map(function(s){ return s.trim(); }).filter(Boolean)); }); }catch(e){}
+  }
+  list = list.filter(function(v, i, a){ return v && a.indexOf(v) === i; }).slice(0, 6);
+  if(isAdv() && !list.length){ if(el) el.remove(); return; }
+  if(!el){ el = document.createElement('div'); el.id = 'pf2Chips'; el.className = 'pf2-chips'; card.appendChild(el); }
+  el.innerHTML = list.map(function(t){ return '<span class="pf2-chip">' + esc(t) + '</span>'; }).join('')
+    + (list.length ? '' : '<span class="pf2-chip add" role="button" tabindex="0" onclick="bpPf2Go(\'edit\')">+ Тематика</span>');
+}
+
+function renderPlat(){
+  var u = me(), page = $('pg-profile'), host = $('pfPromoBanner'); if(!u || !page) return;
+  var el = $('pf2Plat');
+  if(isAdv()){
+    var c = company();
+    if(!el){ el = sec('pf2Plat'); page.insertBefore(el, host || null); }
+    var head = sec('pf2Plat', 'Компания', 'Так вас видят блогеры', 'Изменить', 'company');
+    var ok = !!(c && c.name);
+    el.innerHTML = head._head + '<div class="pf2-list">' + (ok
+      ? '<button type="button" class="pf2-row" onclick="bpPf2Go(\'company\')"><span class="av" style="background:' + gradOf(c.name) + '">' + esc(initialsOf(c.name)) + '</span>'
+        + '<span class="tx"><b>' + esc(c.name) + '</b><span>' + esc(c.industry || 'Отрасль не указана') + ' · ' + (c.inn ? 'ИНН указан' : 'ИНН не указан') + (c.verified ? ' · <i>проверена</i>' : '') + '</span></span><span class="rt">' + ARR + '</span></button>'
+      : '<div class="pf2-empty">Компания не заполнена<span>Название и ИНН нужны для счетов и закрывающих документов</span></div>')
+      + '</div>' + (ok ? '' : '<button type="button" class="pf2-add" onclick="bpPf2Go(\'company\')"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Заполнить данные компании</button>');
+    return;
+  }
+  var pls = platforms();
+  if(!el){ el = sec('pf2Plat'); page.insertBefore(el, host || null); }
+  var h = sec('pf2Plat', 'Площадки', pls.length ? 'Их видят рекламодатели в каталоге' : 'Каналы, где выходит реклама', pls.length ? 'Изменить' : '', 'edit');
+  var rows = pls.map(function(p){
+    var P = PLAT[p.pid];
+    return '<button type="button" class="pf2-row" onclick="bpPf2Go(\'edit\')"><span class="av p-' + P.k + '">' + GLYPH[P.k] + '</span>'
+      + '<span class="tx"><b>' + esc(p.title) + '</b><span>' + esc(P.name) + (p.subs ? ' · ' + short(p.subs) + ' ' + plural(p.subs, 'подписчик', 'подписчика', 'подписчиков') : '')
+      + ' · ' + (p.verified ? '<i>подтверждён входом</i>' : 'со слов блогера') + '</span></span><span class="rt">' + ARR + '</span></button>';
+  }).join('');
+  el.innerHTML = h._head + '<div class="pf2-list">' + (rows || '<div class="pf2-empty">Площадок пока нет<span>Добавьте ссылки на каналы — рекламодатели выбирают по ним</span></div>') + '</div>'
+    + '<button type="button" class="pf2-add" onclick="bpPf2Go(\'edit\')"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>' + (rows ? 'Добавить площадку' : 'Добавить первую площадку') + '</button>';
+  pullChannels(function(){ try{ renderPlat(); renderDone(); }catch(e){ E(e); } });
+}
+
+function renderDeals(){
+  var u = me(), page = $('pg-profile'), host = $('pfPromoBanner'); if(!u || !page) return;
+  var el = $('pf2Deals'), list = deals(), adv = isAdv();
+  if(!el){ el = sec('pf2Deals'); page.insertBefore(el, host || null); }
+  var h = sec('pf2Deals', 'Сделки', list.length ? 'Последние ' + Math.min(3, list.length) + ' из ' + list.length : (adv ? 'Заявки блогерам и их статус' : 'Заявки от рекламодателей'), list.length ? 'Все' : '', 'deals');
+  var rows = list.slice(0, 3).map(function(d){
+    var s = d._shared || {}, img = adv ? (s.bloggerAvatar || null) : null;
+    var col = d.color && /gradient|#/.test(d.color) ? d.color : gradOf(d.name);
+    var price = d.price ? String(d.price).replace(/₽/g, '').trim() + ' ₽' : '';
+    return '<button type="button" class="pf2-row" data-pf2-deal="' + esc(String(d.id)) + '">'
+      + '<span class="av round" style="background:' + esc(col) + '">' + avatarHtml({ img:img, initials:d.initials, name:d.name }) + '</span>'
+      + '<span class="tx"><b>' + esc(d.name || (adv ? 'Блогер' : 'Рекламодатель')) + '</b><span>' + esc(d.platform || 'Реклама') + (price ? ' · ' + esc(price) : '') + (d.num ? ' · №' + esc(d.num) : '') + '</span></span>'
+      + '<span class="rt"><span class="pf2-st ' + tone(d.statusKey) + '">' + esc(d.statusLabel || '') + '</span></span></button>';
+  }).join('');
+  el.innerHTML = h._head + '<div class="pf2-list">' + (rows
+    || '<div class="pf2-empty">Сделок пока нет<span>' + (adv ? 'Найдите блогера в каталоге и отправьте заявку — деньги останутся в эскроу до публикации' : 'Заявки приходят из каталога: разместите карточку и укажите цены за форматы') + '</span></div>')
+    + '</div>';
+}
+
+function renderVideos(){
+  var u = me(), page = $('pg-profile'), host = $('pfPromoBanner'); if(!u || !page) return;
+  var el = $('pf2Vids'), list = isAdv() ? [] : videos();
+  if(!list.length){ if(el) el.remove(); return; }
+  if(!el){ el = sec('pf2Vids'); page.insertBefore(el, host || null); }
+  var earned = list.reduce(function(s, v){ return s + (v.status === 'paid' ? num(v.payout) : 0); }, 0);
+  var h = sec('pf2Vids', 'Видео', 'Промо-программа · ' + list.length + ' ' + plural(list.length, 'видео', 'видео', 'видео') + (earned ? ' · ' + fm(earned) + ' ₽ выплачено' : ''), 'Все', 'videos');
+  var LAB = { yt:'YouTube', tt:'TikTok', ig:'Instagram', tg:'Telegram', vk:'VK' };
+  var rows = list.slice(0, 3).map(function(v){
+    var id = v.plat === 'yt' ? ytId(v.url) : '', views = Math.max(num(v.views), num(v.views2));
+    var th = '<span class="av th"><span>' + esc((v.plat || '▶').toUpperCase()) + '</span>' + (id ? '<img src="https://i.ytimg.com/vi/' + esc(id) + '/mqdefault.jpg" alt="" loading="lazy" onerror="this.remove()">' : '') + '</span>';
+    var right = v.status === 'paid' ? '<b class="g">+' + fm(v.payout) + ' ₽</b>'
+      : (v.status === 'review' ? '<span class="pf2-st rev">На проверке</span>' : '<span class="pf2-st act">Замер</span>');
+    return '<button type="button" class="pf2-row" onclick="bpPf2Go(\'videos\')">' + th
+      + '<span class="tx"><b>' + esc(v.title || v.url || 'Видео') + '</b><span>' + esc(LAB[v.plat] || 'Видео') + (views ? ' · ' + short(views) + ' ' + plural(views, 'просмотр', 'просмотра', 'просмотров') : '') + '</span></span>'
+      + '<span class="rt">' + right + '</span></button>';
+  }).join('');
+  el.innerHTML = h._head + '<div class="pf2-list">' + rows + '</div>';
+}
+
+/* ── рейтинг ─────────────────────────────────────────────────────────── */
+function localBoard(){
+  var by = {};
+  function row(id, name){ var k = String(id); return by[k] || (by[k] = { id:id, name:name || '', deals:0, earned:0, img:null, initials:'' }); }
+  try{
+    var all = (typeof _sharedDealsLoad === 'function') ? _sharedDealsLoad() : LS('bp_shared_deals_v1', []);
+    (all || []).forEach(function(d){
+      if(!d || d.status !== 'done' || d.bloggerId == null) return;
+      var r = row(d.bloggerId, d.bloggerName); r.deals++; r.earned += num(d.price);
+      if(!r.img && d.bloggerAvatar) r.img = d.bloggerAvatar; if(!r.initials && d.bloggerInitials) r.initials = d.bloggerInitials;
+    });
+  }catch(e){ E(e); }
+  try{
+    LS('bp_task_joins', []).forEach(function(j){
+      if(!j || j.userId == null) return;
+      var n = (j.status === 'accepted' || j.status === 'finished') ? 1 : 0;
+      (j.posts || []).forEach(function(p){ if(p && p.status !== 'rejected') n++; });
+      if(!n) return; var r = row(j.userId, j.userName); r.deals += n; r.earned += num(j.payout);
+    });
+  }catch(e){ E(e); }
+  try{
+    LS('bp_users', []).forEach(function(u){ if(!u) return; var r = by[String(u.id)]; if(!r) return; if(!r.name) r.name = u.name || ''; if(!r.img) r.img = u.photo || u.avatar || null; });
+  }catch(e){}
+  var arr = Object.keys(by).map(function(k){ return by[k]; });
+  arr.forEach(function(r){
+    try{ var rs = (typeof bpReviewStats === 'function') ? bpReviewStats('blogger', r.name) : null; r.rating = (rs && rs.avg && rs.avg !== '—') ? String(rs.avg) : ''; }catch(e){ r.rating = ''; }
+  });
+  arr.sort(function(a, b){ return (b.deals - a.deals) || ((parseFloat(b.rating) || 0) - (parseFloat(a.rating) || 0)) || (b.earned - a.earned); });
+  return arr;
+}
+var _srvBoard = { at:0, rows:null, me:null, busy:false };
+function pullBoard(cb){
+  try{
+    var S = window.bpSrv;
+    if(!S || typeof S.raw !== 'function' || !S.configured || !S.configured()) return;
+    if(Date.now() - _srvBoard.at < 60000 || _srvBoard.busy) return;
+    _srvBoard.busy = true;
+    S.raw('GET', '/api/leaderboard').then(function(j){
+      _srvBoard.busy = false; _srvBoard.at = Date.now();
+      _srvBoard.rows = (j && Array.isArray(j.rows)) ? j.rows : null; _srvBoard.me = (j && j.me) || null;
+      try{ cb && cb(); }catch(e){ E(e); }
+    }).catch(function(){ _srvBoard.busy = false; _srvBoard.at = Date.now(); });
+  }catch(e){ E(e); }
+}
+/* итоговая таблица: сервер, если он ответил и что-то знает; иначе — это устройство */
+function board(){
+  var u = me(), rows, mine = null, place = 0;
+  if(_srvBoard.rows && _srvBoard.rows.length){
+    rows = _srvBoard.rows.map(function(r){ return { id:r.id, srv:true, name:r.name || '', deals:num(r.deals), rating:r.rating ? String(r.rating) : '', img:null, initials:'' }; });
+    var mySrv = null; try{ mySrv = (window.bpMoney && typeof window.bpMoney.mySrvId === 'function') ? window.bpMoney.mySrvId() : (u && u.srvId); }catch(e){}
+    rows.forEach(function(r, i){ if(mySrv != null && same(r.id, mySrv)){ r.me = true; mine = r; place = i + 1; } });
+    /* inList — видно ли себя в списке. Сервер считает место «спортивно»
+       (при равенстве сделок место общее), поэтому у места 7 можно не быть
+       среди первых десяти строк. Подсказки опираются на inList, а не на
+       число, иначе получится «вы в десятке», а себя в списке нет. */
+    var inList = !!mine;
+    if(!mine && _srvBoard.me && num(_srvBoard.me.place)){ place = num(_srvBoard.me.place); mine = { id:mySrv, name:(u && u.name) || 'Вы', deals:num(_srvBoard.me.deals), rating:'', me:true }; }
+    return { rows:rows, mine:mine, place:place, inList:inList, total: Math.max(rows.length, num(_srvBoard.me && _srvBoard.me.total)), src:'server' };
+  }
+  rows = localBoard();
+  rows.forEach(function(r, i){ if(u && same(r.id, u.id)){ r.me = true; mine = r; place = i + 1; } });
+  return { rows:rows, mine:mine, place:place, inList: !!mine && place <= 10, total:rows.length, src:'local' };
+}
+function renderRank(){
+  var u = me(), stats = $('pfStats'), page = $('pg-profile'); if(!u || !stats || !page) return;
+  var el = $('pf2Rank');
+  if(!el){
+    el = document.createElement('button'); el.type = 'button'; el.id = 'pf2Rank'; el.className = 'pf2-rank';
+    el.setAttribute('onclick', 'bpPf2Board()');
+    var anchor = $('bpArbProfileStat') || stats;
+    anchor.parentNode.insertBefore(el, anchor.nextSibling);
+  }
+  var B = board(), adv = isAdv(), right;
+  if(adv) right = '<em>смотреть</em>';
+  else if(B.place) right = '<em>вы <b>' + B.place + '-й</b> из ' + B.total + '</em>';
+  else right = '<em>после первой сделки</em>';
+  el.innerHTML = '<svg class="l" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M8.2 13.9 7 22l5-3 5 3-1.2-8.1"/></svg>'
+    + '<span>' + (adv ? 'Лучшие блогеры площадки' : 'Рейтинг блогеров') + '</span>' + right
+    + '<svg class="a" viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
+  pullBoard(function(){ try{ renderRank(); var ov = $('pf2Ov'); if(ov) fillBoard(ov); }catch(e){ E(e); } });
+}
+function cardOfUser(id){
+  try{ return LS('bp_my_cards', []).find(function(c){ return c && !c.hidden && same(c.userId, id); }) || null; }catch(e){ return null; }
+}
+window.bpPf2Open = function(id){
+  try{
+    var u = me();
+    if(u && same(id, u.id)){ window.bpPf2Close(); return; }
+    var c = cardOfUser(id);
+    if(!c){ toast('У блогера пока нет карточки в каталоге', 'err'); return; }
+    var B = board(), r = null; B.rows.forEach(function(x){ if(same(x.id, id)) r = x; });
+    var bp = { name:c.name, handle:'', about:c.msg || '', subs:c.subsVal || '—', er:c.erVal || '—', rating:(r && r.rating) || '—', deals:(r && r.deals) || '—',
+      color:'linear-gradient(135deg,' + (c.col || '#2f6ce0,#1b49a8') + ')', initials:c.initials || initialsOf(c.name), img:c.avatar || null };
+    window.bpPf2Close();
+    if(typeof window.bpOpenBloggerProfile === 'function') window.bpOpenBloggerProfile(bp, id);
+  }catch(e){ E(e); }
+};
+window.bpPf2Close = function(){ var ov = $('pf2Ov'); if(ov) ov.remove(); };
+function fillBoard(ov){
+  var u = me(), B = board(), adv = isAdv(), top = B.rows.slice(0, 10), body = ov.querySelector('.bd'); if(!body) return;
+  function line(r, i){
+    var n = i + 1, cls = n === 1 ? ' g1' : n === 2 ? ' g2' : n === 3 ? ' g3' : '';
+    var ava = r.img ? '<img src="' + esc(r.img) + '" alt="" loading="lazy">' : esc(r.initials || initialsOf(r.name));
+    var bg = r.img ? '' : ' style="background:' + gradOf(r.name) + '"';
+    return '<button type="button" class="pf2-lb' + (r.me && !B.inList ? ' me' : '') + '" data-pf2-user="' + esc(String(r.id)) + '">'
+      + '<span class="n' + cls + '">' + n + '</span><span class="av"' + bg + '>' + ava + '</span>'
+      + '<span class="tx"><b>' + esc(r.name || 'Блогер') + (r.me ? '<em class="pf2-lb-me">вы</em>' : '') + '</b>'
+      + '<span>' + (r.rating ? '<i>★ ' + esc(r.rating) + '</i> · ' : '') + fm(r.deals) + ' ' + plural(r.deals, 'сделка', 'сделки', 'сделок') + '</span></span>'
+      + '<span class="rt">' + fm(r.deals) + '<small>' + plural(r.deals, 'сделка', 'сделки', 'сделок') + '</small></span></button>';
+  }
+  var html = top.map(line).join('');
+  if(!top.length){
+    html = '<div class="pf2-lb-empty">Рейтинг пока пуст<span>' + (adv ? 'Первые завершённые сделки на площадке ещё впереди' : 'Первая выполненная сделка выведет вас на первое место') + '</span></div>';
+  }
+  if(B.mine && !B.inList) html += line(B.mine, B.place - 1);
+  var hint = '';
+  if(!adv){
+    var myDeals = B.mine ? B.mine.deals : 0;
+    if(!B.place) hint = '<b>Как попасть в рейтинг.</b> Выполните первую сделку через эскроу или задание — карточка в каталоге помогает получить первый заказ.';
+    else if(!B.inList){ var need = Math.max(1, num(top[top.length - 1] && top[top.length - 1].deals) - myDeals + 1); hint = 'До списка — ещё <b>' + need + ' ' + plural(need, 'сделка', 'сделки', 'сделок') + '</b>. Каждая закрытая сделка поднимает вас выше.'; }
+    else if(B.place > 1){ var ahead = top[B.place - 2]; var gap = Math.max(1, num(ahead && ahead.deals) - myDeals + 1); hint = 'Вы в списке. До ' + (B.place - 1) + '-го места — <b>' + gap + ' ' + plural(gap, 'сделка', 'сделки', 'сделок') + '</b>.'; }
+    else hint = '<b>Вы на первом месте.</b> Так держать — рейтинг видят рекламодатели.';
+  } else if(top.length){
+    hint = 'Нажмите на блогера, чтобы открыть его карточку и отправить заявку.';
+  }
+  body.innerHTML = html + (hint ? '<div class="pf2-hint"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg><span>' + hint + '</span></div>' : '')
+    + '<div class="pf2-note">Считаются только завершённые сделки через эскроу и принятые задания. ' + (B.src === 'server' ? 'Данные со всей площадки.' : 'Пока сервер недоступен — по данным этого устройства.') + '</div>';
+}
+window.bpPf2Board = function(){
+  try{
+    window.bpPf2Close();
+    var ov = document.createElement('div'); ov.id = 'pf2Ov'; ov.className = 'pf2-ov';
+    ov.addEventListener('click', function(e){ if(e.target === ov) window.bpPf2Close(); });
+    ov.innerHTML = '<div class="pf2-sheet" role="dialog" aria-label="Рейтинг блогеров"><div class="h"></div>'
+      + '<div class="hd"><div><b>Рейтинг блогеров</b><span>По выполненным сделкам и отзывам · обновляется сам</span></div>'
+      + '<button type="button" class="x" onclick="bpPf2Close()" aria-label="Закрыть"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>'
+      + '<div class="bd"></div></div>';
+    document.body.appendChild(ov);
+    fillBoard(ov);
+    _srvBoard.at = 0; pullBoard(function(){ try{ var o = $('pf2Ov'); if(o) fillBoard(o); renderRank(); }catch(e){ E(e); } });
+  }catch(e){ E(e); }
+};
+
+/* ── сборка и обёртки ─────────────────────────────────────────────────── */
+var _t = null;
+function render(){
+  if(_t) return;
+  _t = setTimeout(function(){
+    _t = null;
+    try{
+      if(!me() || !$('pg-profile')) return;
+      renderSince(); flatAvatars(); renderGlow(); renderRank(); renderChips(); renderDone(); renderPlat(); renderDeals(); renderVideos(); animStats();
+    }catch(e){ E(e); }
+  }, 0);
+}
+function after(name, fn){
+  var o = window[name]; if(typeof o !== 'function') return;
+  window[name] = function(){ var r = o.apply(this, arguments); try{ fn.apply(this, arguments); }catch(e){ E(e); } return r; };
+}
+after('updateProfileUI', render);
+after('renderProfileStats', render);
+after('saveAbout', render);
+after('goTo', function(p){ if(p === 'profile'){ _openedAt = Date.now(); var b = $('pfStats'); if(b) Array.prototype.forEach.call(b.querySelectorAll('.pf-st-val'), function(el){ delete el.dataset.pf2Anim; }); render(); } });
+/* Обработчики — делегированием, а не строкой в onclick: id сделки и id
+   пользователя приходят из хранилища, и подставлять их в код кнопки
+   значит доверять хранилищу. Здесь они остаются данными. */
+document.addEventListener('click', function(e){
+  try{
+    var t = e.target && e.target.closest ? e.target.closest('[data-pf2-deal],[data-pf2-user]') : null;
+    if(!t) return;
+    var d = t.getAttribute('data-pf2-deal');
+    if(d != null){ if(typeof openDealDetail === 'function') openDealDetail(d); return; }
+    var u = t.getAttribute('data-pf2-user');
+    if(u != null) window.bpPf2Open(u);
+  }catch(err){ E(err); }
+});
+document.addEventListener('keydown', function(e){ if(e.key === 'Escape' && $('pf2Ov')) window.bpPf2Close(); });
+/* если профиль уже открыт к моменту подключения слоя */
+setTimeout(function(){ try{ var pg = $('pg-profile'); if(pg && pg.classList.contains('on')){ _openedAt = Date.now(); render(); } }catch(e){ E(e); } }, 400);
 })();
 </script>
 

@@ -401,6 +401,38 @@ const q = {
     FROM ledger WHERE user_id = ?`),
   myLedger: db.prepare(`SELECT id, bucket, amount, kind, ref, created_at
     FROM ledger WHERE user_id = ? ORDER BY id DESC LIMIT 100`),
+  /* Рейтинг блогеров: одна выплата в журнале = одна закрытая сделка или
+     принятое задание. Денег в рейтинге нет — только счётчик.
+     Виды выплат два: обычная 'payout' и 'settle-payout' — деньги, которые
+     арбитр присудил блогеру. Спор — это тоже выполненная работа, и не
+     считать её значило бы наказывать за обращение к арбитру. */
+  /* Считаем СДЕЛКИ, а не строки журнала: COUNT(DISTINCT ref). Бюджет
+     кампании уходит частями — несколько раундов публикаций одному
+     человеку под тем же ref, и это одна работа, а не три. */
+  lbTop: db.prepare(`SELECT u.id, u.name,
+      COUNT(DISTINCT COALESCE(l.ref, 'id:' || l.id)) AS deals, MAX(l.created_at) AS last_at
+    FROM ledger l JOIN users u ON u.id = l.user_id
+    WHERE l.kind IN ('payout','settle-payout') AND l.bucket = 'available' AND l.amount > 0 AND u.is_blocked = 0
+    GROUP BY u.id ORDER BY deals DESC, last_at ASC, u.id ASC LIMIT ?`),
+  lbTotal: db.prepare(`SELECT COUNT(DISTINCT l.user_id) AS n
+    FROM ledger l JOIN users u ON u.id = l.user_id
+    WHERE l.kind IN ('payout','settle-payout') AND l.bucket = 'available' AND l.amount > 0 AND u.is_blocked = 0`),
+  lbMine: db.prepare(`SELECT COUNT(DISTINCT COALESCE(ref, 'id:' || id)) AS deals,
+      MAX(created_at) AS last_at FROM ledger
+    WHERE user_id = ? AND kind IN ('payout','settle-payout') AND bucket = 'available' AND amount > 0`),
+  /* Место считаем ПО ТОМУ ЖЕ порядку, что и список (deals DESC, last_at ASC,
+     id ASC). Со строгим «больше сделок» все с равным числом получали одно
+     место: человек не попадал в десятку, а приложение писало ему «вы 2-й»
+     и «вы в десятке», показывая первыми совсем других людей. Третий ключ —
+     id: время в журнале с точностью до секунды, и у выплат одной секунды
+     порядок иначе был бы случайным. */
+  lbPlace: db.prepare(`SELECT COUNT(*) AS ahead FROM (
+      SELECT l.user_id, COUNT(DISTINCT COALESCE(l.ref, 'id:' || l.id)) AS deals,
+        MAX(l.created_at) AS last_at
+      FROM ledger l JOIN users u ON u.id = l.user_id
+      WHERE l.kind IN ('payout','settle-payout') AND l.bucket = 'available' AND l.amount > 0 AND u.is_blocked = 0
+      GROUP BY l.user_id HAVING deals > ?
+        OR (deals = ? AND (last_at < ? OR (last_at = ? AND l.user_id < ?))))`),
   insDeal: db.prepare('INSERT INTO deals (id, payer_id, payee_id, amount, status) VALUES (?,?,?,?,?)'),
   deal: db.prepare('SELECT * FROM deals WHERE id = ?'),
   updDeal: db.prepare(`UPDATE deals SET status = ?, payee_id = ?, updated_at = datetime('now') WHERE id = ?`),
@@ -644,6 +676,8 @@ function moneyOp(opKey, userId, kind, build) {
     const add = (uid, bucket, amount, k, ref) => {
       q.insLedger.run(opKey, uid, bucket, amount, k, ref || null);
       touched.add(uid);
+      /* новая выплата меняет рейтинг блогеров — кэш списка сбрасываем сразу */
+      if (k === 'payout' || k === 'settle-payout') lbCache.at = 0;
     };
 
     const result = build(add);
@@ -832,6 +866,8 @@ function rateLimit(req, key, limit, windowMs) {
   return true;
 }
 const tooOften = { status: 429, body: { error: 'Слишком часто — подождите минуту и попробуйте снова' } };
+/* Рейтинг пересчитывается не чаще раза в минуту: запрос групповой, а ручка открытая. */
+const lbCache = { at: 0, rows: null, total: 0 };
 
 /* ── Тревога в Телеграм ──────────────────────────────────────────────
    Скрытая ошибка не должна ждать, пока владелец откроет пульт: каждая
@@ -1323,6 +1359,35 @@ async function platformProbe(p) {
 const routes = {
 
   'GET /api/health': async () => ({ status: 200, body: { ok: true, version: 'bp-server-1' } }),
+
+  /* ── Рейтинг блогеров ──
+     Публичная ручка: её видит и тот, кто ещё не вошёл (каталог тоже
+     открыт всем). Отдаём НАМЕРЕННО МАЛО: id, имя и число выплат — то
+     есть закрытых сделок и принятых заданий. Ни сумм, ни адресов
+     каналов: заработок других людей — не для витрины. Своё место и свой
+     счётчик получает только вошедший, и только про себя.
+     Считается из журнала, а не из таблицы сделок: бюджет кампании
+     платится частями разным людям, и у такой сделки один payee_id. */
+  'GET /api/leaderboard': async (req) => {
+    if (!rateLimit(req, 'lb', 60, 60000)) return tooOften;
+    const now = Date.now();
+    if (!lbCache.rows || now - lbCache.at > 60000) {
+      lbCache.rows = q.lbTop.all(10).map((r) => ({ id: r.id, name: r.name, deals: Number(r.deals) || 0 }));
+      lbCache.total = Number((q.lbTotal.get() || {}).n) || 0;
+      lbCache.at = now;
+    }
+    let me = null;
+    const u = auth(req);
+    if (u) {
+      const mine = q.lbMine.get(u.id) || {};
+      const deals = Number(mine.deals) || 0;
+      const place = deals
+        ? (Number((q.lbPlace.get(deals, deals, mine.last_at || '', mine.last_at || '', u.id) || {}).ahead) || 0) + 1
+        : 0;
+      me = { deals, place, total: lbCache.total };
+    }
+    return { status: 200, body: { rows: lbCache.rows, total: lbCache.total, me } };
+  },
 
   'POST /api/register': async (req, body) => {
     if (!rateLimit(req, 'reg', 10, 60000)) return tooOften;
@@ -2517,20 +2582,35 @@ async function handleVerifyCallback(req, res, url) {
   }
 
   const redirect = PUBLIC_URL + '/api/verify/callback/' + p;
+
+  /* Запрос к площадке с ограничением по времени и одной повторной
+     попыткой: разовый обрыв бывает, вечное ожидание — нет. */
+  const ask = async (address, opts) => {
+    let last;
+    for (let i = 0; i < 2; i++) {
+      try {
+        const stop = AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined;
+        const r = await fetch(address, Object.assign({ signal: stop }, opts || {}));
+        return await r.json();
+      } catch (e) { last = e; }
+    }
+    throw new Error('Площадка не ответила вовремя. Попробуйте ещё раз через минуту.');
+  };
+
   try {
     let channel;
     if (p === 'youtube') {
-      const tok = await (await fetch(cfg.token, {
+      const tok = await ask(cfg.token, {
         method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
           code, client_id: cfg.id, client_secret: cfg.secret,
           redirect_uri: redirect, grant_type: 'authorization_code',
         }),
-      })).json();
+      });
       if (!tok.access_token) throw new Error(tok.error_description || 'YouTube не выдал доступ');
-      const me = await (await fetch(
+      const me = await ask(
         'https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true',
-        { headers: { Authorization: 'Bearer ' + tok.access_token } })).json();
+        { headers: { Authorization: 'Bearer ' + tok.access_token } });
       const it = me.items && me.items[0];
       if (!it) throw new Error('У этого аккаунта нет канала на YouTube');
       channel = {
@@ -2539,19 +2619,22 @@ async function handleVerifyCallback(req, res, url) {
         subs: Number(it.statistics && it.statistics.subscriberCount) || 0,
       };
     } else {
-      const tok = await (await fetch(cfg.token, {
+      const tok = await ask(cfg.token, {
         method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
           code, client_key: cfg.id, client_secret: cfg.secret,
           redirect_uri: redirect, grant_type: 'authorization_code',
         }),
-      })).json();
+      });
       if (!tok.access_token) throw new Error((tok.error_description || tok.error) || 'TikTok не выдал доступ');
-      const me = await (await fetch(
+      const me = await ask(
         cfg.userInfo + '?fields=open_id,display_name,profile_deep_link,follower_count',
-        { headers: { Authorization: 'Bearer ' + tok.access_token } })).json();
+        { headers: { Authorization: 'Bearer ' + tok.access_token } });
       const d = me.data && me.data.user;
-      if (!d) throw new Error('TikTok не отдал данные аккаунта');
+      if (!d) {
+        const why = (me.error && (me.error.message || me.error.code)) || '';
+        throw new Error('TikTok не отдал данные аккаунта' + (why ? ': ' + why : ''));
+      }
       channel = {
         id: d.open_id, title: d.display_name || '',
         url: d.profile_deep_link || '', subs: Number(d.follower_count) || 0,
