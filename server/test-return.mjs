@@ -161,16 +161,39 @@ try {
   ok(list.length === 1 && String(list[0].external_id) === 'kanal-1',
     'канал виден в аккаунте блогера', mine.body);
 
-  /* ── Тот же канал во второй аккаунт ── */
+  /* ── Тот же канал во ВТОРОЙ аккаунт ──
+     Раньше здесь стоял запрет «один канал — один аккаунт», и человек с
+     двумя аккаунтами (личный и рабочий) не мог подтвердить в них свой же
+     TikTok. Теперь ключ уникальности — пара «аккаунт + канал», и второй
+     аккаунт проходит тот же путь до конца. */
   const start2 = await api('GET', '/api/verify/start?platform=tiktok', null, other.token);
   const back2 = await callback(start2.body.nonce);
   const loc2 = back2.headers.get('location') || '';
-  const body2 = await back2.text();
-  ok(back2.status !== 302 || !loc2.startsWith(APP),
-    'занятый канал во второй аккаунт не возвращают с пропуском',
+  ok(back2.status === 302 && loc2.startsWith(APP),
+    'тот же канал во втором аккаунте возвращает с пропуском',
     { status: back2.status, loc: loc2.slice(0, 60) });
-  ok(/уже привязан|подтверждён в аккаунте/i.test(body2 + loc2),
-    'человеку сказали, что канал уже привязан к другому аккаунту');
+  const claim2 = new URL(loc2).searchParams.get('claim');
+  ok(!!claim2, 'пропуск для второго аккаунта выдан');
+  const good2 = await api('POST', '/api/verify/confirm',
+    { nonce: start2.body.nonce, claim: claim2 }, other.token);
+  ok(good2.status === 200 && good2.body.ok, 'канал привязался и ко второму аккаунту', good2.body);
+
+  const mine2 = await api('GET', '/api/verify/list', null, other.token);
+  const list2 = (mine2.body && mine2.body.rows) || [];
+  ok(list2.length === 1 && String(list2[0].external_id) === 'kanal-1',
+    'канал виден во втором аккаунте', mine2.body);
+
+  const still = await api('GET', '/api/verify/list', null, blogger.token);
+  ok(((still.body && still.body.rows) || []).length === 1,
+    'у первого аккаунта канал никуда не делся', still.body);
+
+  /* Отвязка снимает канал ТОЛЬКО у того, кто отвязывает. */
+  const unl = await api('POST', '/api/verify/unlink',
+    { platform: 'tiktok', externalId: 'kanal-1' }, other.token);
+  ok(unl.status === 200, 'второй аккаунт отвязал свой канал', unl.body);
+  const after = await api('GET', '/api/verify/list', null, blogger.token);
+  ok(((after.body && after.body.rows) || []).length === 1,
+    'у первого аккаунта канал остался на месте', after.body);
 
   /* ── Просроченная и выдуманная метка ── */
   const junk = await api('POST', '/api/verify/confirm', { nonce: 'нет-такой', claim }, blogger.token);

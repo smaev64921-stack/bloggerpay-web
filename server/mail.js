@@ -23,7 +23,11 @@ const RESEND_URL = 'https://api.resend.com/emails';
 
 /* Читается лениво из process.env — server.js кладёт туда .env целиком. */
 function cfg() {
-  const appRaw = String(process.env.APP_URL || '').trim().replace(/\/+$/, '');
+  /* Сначала собственный внешний адрес сервера, APP_URL — только если
+     сайт живёт отдельно: иначе забытая переменная уводит человека из
+     письма на старую выкладку (05.09.2026). */
+  const appRaw = externalBase(process.env)
+    || String(process.env.APP_URL || '').trim().replace(/\/+$/, '');
   /* Без схемы адрес — не адрес, а относительная ссылка: почтовый клиент
      раскроет её от СВОЕГО домена (mail.google.com/…/app.example.com) и
      человек упрётся в 404. Лучше письмо совсем без кнопки и логотипа —

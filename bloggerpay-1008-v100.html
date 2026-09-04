@@ -10880,7 +10880,11 @@ window.BP_SERVER = window.BP_SERVER || '';
        а канал так и не привязывался. Возврат узнаём по параметрам в
        адресе и не трогаем. */
     var q = String(location.search || '');
-    if(/[?&](vfy|claim|code|state|tt_state|yt_state)=/.test(q)){
+    /* glogin — возврат после входа через Google. Его в списке не было, и
+       новичка, который как раз ЗАВЁЛ аккаунт через Google, уносило на
+       знакомство вместе с потерей метки: вход состоялся, а приложение
+       об этом не узнавало. */
+    if(/[?&](vfy|claim|code|state|glogin|tglogin|tt_state|yt_state)=/.test(q)){
       localStorage.setItem('bp_onboarded', '1');
       return;
     }
@@ -73206,10 +73210,9 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
         if(!j || !j.url || !j.nonce) throw new Error('Площадка не ответила');
         savePending(platform, j.nonce, j.url);
         var opened = holderGo(holder, j.url);
-        /* Поле для кода показываем СРАЗУ, не дожидаясь опроса сервера.
-           Раньше человек возвращался с кодом в руках и смотрел на «ждём
-           входа…»: опрос ходит раз в три секунды, а в свёрнутой вкладке
-           таймеры вообще замирают — отсюда ощущение вечной загрузки. */
+        /* Шторку показываем сразу, не дожидаясь опроса: в свёрнутой
+           вкладке таймеры замирают, и без неё экран выглядел бы
+           застывшим. Кода в ней больше нет — см. vfyWaitSheet. */
         vfyCodeSheet(platform, name, j.nonce, btn, j.url, opened);
       })
       .catch(function(e){
@@ -73222,7 +73225,8 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
       });
   };
 
-  /* Продолжить прерванную проверку: код на руках, а вкладка новая. */
+  /* Продолжить прерванную проверку: вкладку закрыли, а привязка не
+     доехала. Открываем то же ожидание и ту же кнопку «открыть заново». */
   window.bpVfyResume = function(){
     var r = readPending();
     if(!r) return false;
@@ -73233,53 +73237,51 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
     return true;
   };
 
-  /* ── Шторка ввода кода ──
-     Код показывает страница, куда площадка вернула человека. Здесь он его
-     переносит. Канал привяжется к ТОМУ аккаунту, который вводит код, —
-     подсунутая кем-то ссылка авторизации бесполезна.
+  /* ── Шторка ожидания ──
+     Кода здесь больше нет. Он и раньше был тупиком: страница возврата
+     цифры не печатает — она уводит человека прямо в приложение с
+     пропуском в адресе, и канал привязывается сам (finishReturn).
+     Поле «шесть цифр» только пугало и заставляло искать несуществующее.
 
-     Опрос состояния идёт фоном и ничего не блокирует: как только сервер
-     узнает канал, подпись сменится на его название и число подписчиков. */
+     Осталось честное ожидание: пока человек у площадки, опрос показывает,
+     что происходит; если возврат ушёл в другой браузер и сам собой ничего
+     не случилось — прямо об этом говорим и даём открыть заново. */
   function vfyCodeSheet(platform, name, nonce, btn, authUrl, opened){
-    if(btn){ btn.disabled = true; btn.textContent = 'Введите код'; }
+    if(btn){ btn.disabled = true; btn.textContent = 'Ждём площадку…'; }
     var old = document.getElementById('bpVfyCode'); if(old) old.remove();
     var ov = document.createElement('div'); ov.id = 'bpVfyCode';
     ov.style.cssText = 'position:fixed;inset:0;z-index:640;background:rgba(4,4,8,.78);display:flex;align-items:flex-end;justify-content:center;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)';
     ov.onclick = function(e){ if(e.target === ov) close(); };
     ov.innerHTML = '<div style="width:100%;max-width:420px;box-sizing:border-box;background:var(--card,#141416);border:1px solid rgba(255,255,255,.1);border-radius:22px 22px 0 0;padding:22px 18px calc(env(safe-area-inset-bottom,0px) + 20px);font-family:inherit">'
-      + '<div style="font-size:16px;font-weight:800;color:var(--t1);text-align:center">Код из ' + esc(name) + '</div>'
-      + '<div id="bpVfySub" style="font-size:12px;color:var(--t2);line-height:1.6;margin:8px 0 14px;text-align:center">'
-      +   (opened ? 'Войдите в аккаунт в открывшемся окне. ' + esc(name) + ' покажет шесть цифр — введите их здесь.'
-                  : 'Откройте ' + esc(name) + ' кнопкой ниже, войдите в аккаунт и перенесите сюда шесть цифр со страницы возврата.')
+      + '<div style="font-size:16px;font-weight:800;color:var(--t1);text-align:center">Подключаем ' + esc(name) + '</div>'
+      + '<div id="bpVfySub" style="font-size:12.5px;color:var(--t2);line-height:1.6;margin:8px 0 16px;text-align:center">'
+      +   (opened ? 'Войдите в аккаунт в открывшемся окне — канал привяжется сам.'
+                  : 'Откройте ' + esc(name) + ' кнопкой ниже и войдите в аккаунт — канал привяжется сам.')
       + '</div>'
-      + '<input id="bpVfyInp" inputmode="numeric" maxlength="6" placeholder="______" autocomplete="one-time-code" '
-      + 'style="width:100%;box-sizing:border-box;text-align:center;letter-spacing:14px;font:800 30px/1 ui-monospace,Menlo,monospace;'
-      + 'background:rgba(255,255,255,.05);border:1.5px solid rgba(255,255,255,.14);border-radius:14px;padding:16px 10px;color:var(--t1);outline:none">'
-      + '<div id="bpVfyErr" style="min-height:16px;font-size:11px;color:#fb7185;text-align:center;margin-top:7px"></div>'
-      + '<button id="bpVfyGo" type="button" style="width:100%;margin-top:6px;border:none;border-radius:14px;padding:15px;background:linear-gradient(160deg,#2f6ce0,#1b49a8);color:#fff;font-family:inherit;font-size:15px;font-weight:800;cursor:pointer">Подтвердить канал</button>'
-      + (authUrl ? '<a id="bpVfyAgain" href="#" target="_blank" rel="noopener" style="display:block;text-align:center;width:100%;margin-top:8px;padding:12px;color:var(--acc2,#5b93f5);font-size:12.5px;font-weight:700;text-decoration:none">Открыть ' + esc(name) + ' ещё раз</a>' : '')
-      + '<button id="bpVfyX" type="button" style="width:100%;margin-top:4px;border:none;background:none;color:var(--t3);font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;padding:8px">Отмена</button>'
+      + '<div id="bpVfySpin" style="width:26px;height:26px;margin:0 auto 18px;border-radius:50%;border:2.5px solid rgba(255,255,255,.14);border-top-color:var(--acc,#2f6ce0);animation:glgSpin .9s linear infinite"></div>'
+      + (authUrl ? '<button id="bpVfyAgain" type="button" style="width:100%;border:none;border-radius:14px;padding:15px;background:var(--acc,#2f6ce0);color:#fff;font-family:inherit;font-size:15px;font-weight:800;cursor:pointer">Открыть ' + esc(name) + ' ещё раз</button>' : '')
+      + '<button id="bpVfyX" type="button" style="width:100%;margin-top:8px;border:none;background:none;color:var(--t3);font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;padding:10px">Отмена</button>'
       + '</div>';
     document.body.appendChild(ov);
-    var inp = document.getElementById('bpVfyInp');
-    var err = document.getElementById('bpVfyErr');
     var sub = document.getElementById('bpVfySub');
     var again = document.getElementById('bpVfyAgain');
     if(again && authUrl){
-      again.href = authUrl;                       /* адрес свойством, не в разметку */
-      again.onclick = function(ev){ ev.preventDefault(); var h = openHolder(); if(!holderGo(h, authUrl)) vfyLinkFallback(authUrl, name); };
-    }
-    /* На телефоне поле сразу не фокусируем: всплывшая клавиатура закрывает
-       окно площадки, из которого человек ещё копирует код. */
-    if(!/Android|iPhone|iPad/i.test(navigator.userAgent || '')){
-      setTimeout(function(){ try{ inp.focus(); }catch(e){} }, 120);
+      again.onclick = function(){ var h = openHolder(); if(!holderGo(h, authUrl)) vfyLinkFallback(authUrl, name); };
     }
 
     var alive = true;
     function close(){ alive = false; ov.remove(); if(btn){ btn.disabled = false; btn.textContent = 'Подтвердить'; } }
 
-    /* Фоновый опрос: только чтобы показать название канала. Ничего не
-       ждёт и ничего не блокирует — код можно ввести в любой момент. */
+    /* Опрос говорит только одно, но важное: площадка человека узнала.
+       Дальше канал привяжет возврат — а если через 12 секунд после этого
+       шторка ещё жива, значит возврат открылся в другом браузере, и сам
+       собой он уже не привяжется. Молчать в этом месте нельзя. */
+    function lost(){
+      if(!alive) return;
+      var sp = document.getElementById('bpVfySpin'); if(sp) sp.style.display = 'none';
+      sub.innerHTML = 'Похоже, страница возврата открылась в другом браузере — оттуда канал'
+        + ' привязать нельзя. Откройте ' + esc(name) + ' ещё раз в этом же браузере.';
+    }
     (function watch(tries){
       if(!alive || tries > 90) return;
       setTimeout(function(){
@@ -73289,7 +73291,8 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
           if(j && j.state === 'awaiting_code'){
             sub.innerHTML = 'Канал <b style="color:var(--t1)">' + esc(j.title || '') + '</b>'
               + (j.subs ? ' · ' + Number(j.subs).toLocaleString('ru') + ' подписчиков' : '')
-              + '<br>Введите шесть цифр со страницы возврата.';
+              + '<br>Заканчиваем привязку…';
+            setTimeout(lost, 12000);
             return;                                  /* дальше опрашивать нечего */
           }
           watch(tries + 1);
@@ -73297,33 +73300,6 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
       }, tries < 5 ? 1500 : 4000);
     })(0);
 
-    inp.addEventListener('input', function(){
-      inp.value = inp.value.replace(/\D/g, '').slice(0, 6);
-      err.textContent = '';
-      if(inp.value.length === 6) submit();          /* шесть цифр — не заставляем жать кнопку */
-    });
-    function submit(){
-      var code = inp.value.replace(/\D/g, '');
-      if(code.length !== 6){ err.textContent = 'Нужно шесть цифр'; return; }
-      var go = document.getElementById('bpVfyGo'); if(go){ go.disabled = true; go.textContent = 'Проверяем…'; }
-      srv().raw('POST', '/api/verify/confirm', { nonce: nonce, code: code }).then(function(j){
-        alive = false; clearPending(); ov.remove();
-        if(btn){ btn.classList.add('done'); btn.textContent = 'Подтверждён'; btn.disabled = true; }
-        toast(name + ' подтверждён', 'ok');
-        paintVerified();
-        try{ if(typeof window.bpAbcAfterVerify === 'function') window.bpAbcAfterVerify(platform); }catch(e){}
-      }).catch(function(e){
-        if(go){ go.disabled = false; go.textContent = 'Подтвердить канал'; }
-        var m = String((e && e.message) || 'Код не подходит');
-        err.textContent = m;
-        if(/начните.*заново|15 минут|много попыток/i.test(m)){
-          clearPending();
-          setTimeout(function(){ close(); }, 2200);
-        }
-      });
-    }
-    document.getElementById('bpVfyGo').onclick = submit;
-    inp.addEventListener('keydown', function(e){ if(e.key === 'Enter') submit(); });
     document.getElementById('bpVfyX').onclick = close;
   }
   window.bpVfyCodeSheet = vfyCodeSheet;
@@ -79160,8 +79136,8 @@ window.bpAbcVerify = function(pid){
 };
 window.bpAbcVerifyCancel = function(pid){ waiting[pid] = 0; paint(pid); };
 
-/* Открыть поле ввода кода заново: человек закрыл шторку, свернул
-   приложение, вкладка перезапустилась — метка проверки живёт отдельно. */
+/* Вернуть шторку ожидания: человек закрыл её, свернул приложение,
+   вкладка перезапустилась — метка проверки живёт отдельно. */
 window.bpAbcCode = function(){
   try{
     if(typeof window.bpVfyResume === 'function' && window.bpVfyResume()) return;
@@ -79186,9 +79162,9 @@ function blockTikTok(){
   var off = CFG && CFG.tiktok && CFG.tiktok.configured === false;
   if(waiting.tiktok){
     return '<div class="attv">' +
-      '<div class="attv-t">Введите код из TikTok</div>' +
-      '<div class="attv-s">Войдите в аккаунт в открывшемся окне. TikTok покажет шесть цифр — перенесите их в поле, и канал привяжется к вашей карточке.</div>' +
-      '<button type="button" class="attv-go" onclick="bpAbcCode()">Ввести код</button>' +
+      '<div class="attv-t">Заканчиваем подключение TikTok</div>' +
+      '<div class="attv-s">Войдите в аккаунт в открывшемся окне — канал привяжется к карточке сам, вводить ничего не нужно.</div>' +
+      '<button type="button" class="attv-go" onclick="bpAbcCode()">Показать окно ожидания</button>' +
       '<button type="button" class="attv-cancel" onclick="bpAbcVerifyCancel(\'tiktok\')">Отменить</button>' +
     '</div>';
   }
@@ -79204,8 +79180,8 @@ function blockYouTubeExtra(){
   if(CFG && CFG.youtube && CFG.youtube.configured === false) return '';
   if(waiting.youtube){
     return '<div class="attv" style="margin-top:9px">' +
-      '<div class="attv-s">YouTube показал шесть цифр — введите их, и канал привяжется.</div>' +
-      '<button type="button" class="attv-go yt" onclick="bpAbcCode()">Ввести код</button>' +
+      '<div class="attv-s">Войдите в аккаунт YouTube в открывшемся окне — канал привяжется сам.</div>' +
+      '<button type="button" class="attv-go yt" onclick="bpAbcCode()">Показать окно ожидания</button>' +
       '<button type="button" class="attv-cancel" onclick="bpAbcVerifyCancel(\'youtube\')">Отменить</button></div>';
   }
   return '<div class="attv-yt-or">или</div>' +
@@ -81880,6 +81856,21 @@ html .glg-x{
   color:var(--t3,#7d818c); font:inherit; font-size:12.5px; font-weight:600; cursor:pointer;
 }
 html .glg-err{ font-size:12px; color:#f0788a; margin-top:10px; line-height:1.45; min-height:1px }
+/* Ожидание вместо кода: код — запасной путь, а не задание. */
+html .glg-wait{ display:flex; align-items:flex-start; gap:11px; margin:2px 0 2px }
+html .glg-wait p{ margin:0 }
+html .glg-dots{
+  width:17px; height:17px; flex:0 0 17px; margin-top:1px; border-radius:50%;
+  border:2px solid rgba(255,255,255,.15); border-top-color:var(--acc,#2f6ce0);
+  animation:glgSpin .9s linear infinite;
+}
+@keyframes glgSpin{ to{ transform:rotate(360deg) } }
+html .glg-hint{
+  width:100%; margin-top:10px; padding:9px; border:none; background:none;
+  color:var(--t3,#7d818c); font:inherit; font-size:12px; font-weight:600;
+  text-decoration:underline; text-underline-offset:3px; cursor:pointer;
+}
+html .glg-more[hidden], html .glg-hint[hidden]{ display:none!important }
 </style>
 <script id="bp-glogin">
 (function(){
@@ -81991,14 +81982,20 @@ function sheet(){
   var ov = document.createElement('div');
   ov.id = 'glgOv'; ov.className = 'glg-ov';
   ov.addEventListener('click', function(e){ if(e.target === ov) window.bpGLoginClose(); });
+  /* Кода на виду больше нет: в обычном случае приложение забирает вход
+     само — по метке в адресе или опросом. Поле остаётся под тихой
+     строкой и всплывает, только если ждём подозрительно долго. */
   ov.innerHTML = '<div class="glg-sheet" role="dialog" aria-label="Вход через Google">'
     + '<div class="h"></div>'
     + '<b>Заканчиваем вход</b>'
-    + '<p>Выберите аккаунт в открывшемся окне Google. Как только войдёте — приложение подхватит это само.'
-    + ' Если вход открылся в другом браузере, введите код с той страницы.</p>'
-    + '<input class="glg-code" id="glgCode" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code">'
-    + '<div class="glg-err" id="glgErr"></div>'
-    + '<button type="button" class="glg-act" id="glgGo">Войти по коду</button>'
+    + '<div class="glg-wait"><span class="glg-dots"></span>'
+    + '<p id="glgTxt">Выберите аккаунт в открывшемся окне Google — дальше приложение продолжит само.</p></div>'
+    + '<div class="glg-more" id="glgMore" hidden>'
+    +   '<input class="glg-code" id="glgCode" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code">'
+    +   '<div class="glg-err" id="glgErr"></div>'
+    +   '<button type="button" class="glg-act" id="glgGo">Войти по коду</button>'
+    + '</div>'
+    + '<button type="button" class="glg-hint" id="glgHint" hidden>Вход открылся в другом браузере? Ввести код</button>'
     + '<button type="button" class="glg-x" onclick="bpGLoginClose()">Отмена</button>'
     + '</div>';
   document.body.appendChild(ov);
@@ -82006,6 +82003,14 @@ function sheet(){
   if(go) go.addEventListener('click', byCode);
   var inp = $('glgCode');
   if(inp) inp.addEventListener('keydown', function(e){ if(e.key === 'Enter') byCode(); });
+  var hint = $('glgHint');
+  if(hint) hint.addEventListener('click', function(){
+    var m = $('glgMore');
+    if(m) m.hidden = false;
+    hint.hidden = true;
+    var i = $('glgCode');
+    if(i) { try{ i.focus(); }catch(e){} }
+  });
 }
 
 function err(m){
@@ -82036,14 +82041,29 @@ function byCode(){
 }
 
 /* Пока человек у Google — спрашиваем сервер, не вошёл ли он уже.
-   Две минуты: дольше ждать бессмысленно, метка живёт 15 минут и код
-   всё равно останется рабочим. */
+   Две минуты: дольше ждать бессмысленно, метка живёт 15 минут.
+   Считаем ТИКИ, а не время: встроенный браузер замораживает вкладку,
+   пока человек у Google, и по часам бюджет сгорел бы впустую. */
+function say(t){ var e = $('glgTxt'); if(e) e.textContent = t; }
+function offerCode(){
+  var h = $('glgHint'), m = $('glgMore');
+  if(h && m && m.hidden) h.hidden = false;
+}
+
 function watch(){
   _tries = 0;
   if(_timer) clearInterval(_timer);
   _timer = setInterval(function(){
     _tries++;
-    if(_tries > 60 || !_nonce){ clearInterval(_timer); _timer = null; return; }
+    if(!_nonce){ clearInterval(_timer); _timer = null; return; }
+    if(_tries === 10) say('Всё ещё ждём ответ Google…');
+    if(_tries === 23) offerCode();
+    if(_tries > 60){
+      clearInterval(_timer); _timer = null;
+      say('Google так и не ответил. Попробуйте войти ещё раз.');
+      offerCode();
+      return;
+    }
     srv().raw('GET', '/api/auth/google/pending?nonce=' + encodeURIComponent(_nonce))
       .then(function(j){
         if(j && j.state === 'ok' && j.token){
@@ -82055,12 +82075,17 @@ function watch(){
   }, 2000);
 }
 
+/* Заблокированный попап window.open не бросает исключение, а возвращает
+   null — и раньше не открывалось ничего, молча. Уходим этой же вкладкой:
+   метка уже сохранена, и возврат приведёт человека обратно. */
 function openLink(u){
   try{
     var tg = window.Telegram && window.Telegram.WebApp;
     if(tg && tg.initData && typeof tg.openLink === 'function'){ tg.openLink(u); return; }
   }catch(e){ E(e); }
-  try{ window.open(u, '_blank', 'noopener'); }catch(e){ location.href = u; }
+  var w = null;
+  try{ w = window.open(u, '_blank', 'noopener'); }catch(e){ E(e); }
+  if(!w){ try{ location.href = u; }catch(e){ E(e); } }
 }
 
 /* Заменяем заглушку. Ссылку от сервера получаем СРАЗУ по нажатию и в том
@@ -82113,6 +82138,18 @@ try{
     } else {
       toast('Этот вход начинали не здесь. Откройте приложение там, где нажимали «Войти через Google».', 'err');
     }
+  } else if(own && ready()){
+    /* Приложение перезапустили посреди входа. Метка жива — поднимаем
+       ожидание заново: раньше опрос стартовал только по адресу с меткой,
+       и вход после перезапуска висел бы вечно. */
+    setTimeout(function(){
+      try{
+        if(window.currentUser) return;
+        if(document.getElementById('glgOv')) return;
+        _nonce = own;
+        sheet(); watch();
+      }catch(e){ E(e); }
+    }, 1500);
   }
 }catch(e){ E(e); }
 })();

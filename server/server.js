@@ -172,8 +172,16 @@ const cleanKey = (v) => String(v == null ? '' : v).trim().replace(/^["']+|["']+$
 const TT_AUTH_BASE = (cleanKey(ENV.TT_AUTH_BASE) || 'https://www.tiktok.com').replace(/\/+$/, '');
 const TT_API_BASE = (cleanKey(ENV.TT_API_BASE) || 'https://open.tiktokapis.com').replace(/\/+$/, '');
 /* Куда возвращать человека после площадки: обычно это сам сайт, который
-   раздаёт этот же сервер. APP_URL нужен, только если сайт живёт отдельно. */
-const APP_BASE = (String(ENV.APP_URL || '').trim().replace(/\/+$/, '') || PUBLIC_URL) + '/';
+   раздаёт этот же сервер. APP_URL нужен, только если сайт живёт отдельно.
+
+   Пока сервер виден из интернета — он И ЕСТЬ сайт, и APP_URL не должен
+   его пересиливать (05.09.2026). Забытая в панели переменная со старым
+   адресом уводила людей на прошлую выкладку: туда уезжали и сообщение
+   бота об обновлении, и метка входа через Google, и пропуск канала.
+   Ровно такой порядок уже действует в bot.js (pickAppUrl). */
+const APP_BASE = (SERVER_IS_PUBLIC
+  ? PUBLIC_URL
+  : (String(ENV.APP_URL || '').trim().replace(/\/+$/, '') || PUBLIC_URL)) + '/';
 
 const OAUTH = {
   youtube: {
@@ -290,7 +298,10 @@ CREATE TABLE IF NOT EXISTS channels (
   url         TEXT,
   subs        INTEGER,
   checked_at  TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE(platform, external_id)
+  /* Ключ — «аккаунт + канал», а не один канал на всю площадку: у одного
+     человека бывает два аккаунта (личный и рабочий), и свой же канал он
+     должен уметь подтвердить в обоих. Дважды в одном аккаунте нельзя. */
+  UNIQUE(user_id, platform, external_id)
 );
 CREATE INDEX IF NOT EXISTS channels_user ON channels(user_id);
 
@@ -439,6 +450,52 @@ catch (e) { /* индекс мог не создаться на старом д�
 try { db.exec('ALTER TABLE channels ADD COLUMN avatar TEXT'); }
 catch (e) { /* уже есть */ }
 
+/* Снимаем старый запрет «один канал — один аккаунт» (05.09.2026).
+   SQLite не умеет убирать ограничение у существующей таблицы, поэтому
+   таблицу пересобираем: новая с ключом (user_id, platform, external_id),
+   данные переливаем, старую сносим. Делается один раз — на второй запуск
+   в схеме уже новый ключ, и условие не совпадает. */
+try {
+  const t = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='channels'").get();
+  if (t && /UNIQUE\s*\(\s*platform\s*,\s*external_id\s*\)/i.test(t.sql)) {
+    /* Внешние ключи на время пересборки выключаем: так советует сама
+       SQLite для «сделать новую таблицу и переименовать». Переключать
+       PRAGMA внутри транзакции нельзя, поэтому до и после. */
+    db.exec('PRAGMA foreign_keys = OFF');
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      db.exec(`CREATE TABLE channels_new (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id     INTEGER NOT NULL REFERENCES users(id),
+        platform    TEXT NOT NULL,
+        external_id TEXT NOT NULL,
+        title       TEXT,
+        url         TEXT,
+        subs        INTEGER,
+        avatar      TEXT,
+        checked_at  TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(user_id, platform, external_id)
+      )`);
+      db.exec(`INSERT INTO channels_new
+          (id, user_id, platform, external_id, title, url, subs, avatar, checked_at)
+        SELECT id, user_id, platform, external_id, title, url, subs, avatar, checked_at
+        FROM channels`);
+      db.exec('DROP TABLE channels');
+      db.exec('ALTER TABLE channels_new RENAME TO channels');
+      db.exec('CREATE INDEX IF NOT EXISTS channels_user ON channels(user_id)');
+      db.exec('COMMIT');
+      console.log('каналы: ключ уникальности переведён на «аккаунт + канал»');
+    } catch (e) {
+      try { db.exec('ROLLBACK'); } catch (_) { /* нечего откатывать */ }
+      throw e;
+    } finally {
+      db.exec('PRAGMA foreign_keys = ON');
+    }
+  }
+} catch (e) {
+  console.error('каналы: пересборка таблицы не удалась —', e && e.message);
+}
+
 /* Вход через Google (04.09.2026). Связь ведём по google_sub — это
    постоянный номер аккаунта у Google. По почте связывать нельзя: почту
    можно сменить или занять чужой обычной регистрацией, и человек
@@ -566,12 +623,17 @@ const q = {
   insError: db.prepare('INSERT INTO errors (user_id, message, where_at, version, ua) VALUES (?,?,?,?,?)'),
   myChannels: db.prepare(`SELECT platform, external_id, title, url, subs, avatar, checked_at
     FROM channels WHERE user_id = ? ORDER BY checked_at DESC`),
-  channelByExt: db.prepare('SELECT * FROM channels WHERE platform = ? AND external_id = ?'),
-  delChannel: db.prepare('DELETE FROM channels WHERE platform = ? AND external_id = ?'),
+  /* Канал ищем ВНУТРИ аккаунта: один и тот же канал может быть подтверждён
+     у нескольких людей, и «найти канал вообще» больше не имеет смысла —
+     непонятно, чью строку вернули бы. */
+  channelOf: db.prepare('SELECT * FROM channels WHERE user_id = ? AND platform = ? AND external_id = ?'),
+  channelsByExt: db.prepare('SELECT * FROM channels WHERE platform = ? AND external_id = ?'),
+  delChannel: db.prepare('DELETE FROM channels WHERE user_id = ? AND platform = ? AND external_id = ?'),
+  delChannelEverywhere: db.prepare('DELETE FROM channels WHERE platform = ? AND external_id = ?'),
   upsertChannel: db.prepare(`INSERT INTO channels (user_id, platform, external_id, title, url, subs, avatar)
     VALUES (?,?,?,?,?,?,?)
-    ON CONFLICT(platform, external_id) DO UPDATE SET
-      user_id = excluded.user_id, title = excluded.title, url = excluded.url,
+    ON CONFLICT(user_id, platform, external_id) DO UPDATE SET
+      title = excluded.title, url = excluded.url,
       subs = excluded.subs, avatar = excluded.avatar, checked_at = datetime('now')`),
   /* Группируем по тексту: сто раз одна ошибка — это одна поломка,
      а не сто. Владельцу важно, ЧТО ломается и у скольких людей. */
@@ -2714,11 +2776,10 @@ const routes = {
       rec.tries++;
       return { status: 400, body: { error: 'Код не подходит', left: Math.max(0, 5 - rec.tries) } };
     }
-    const taken = q.channelByExt.get(rec.platform, String(rec.channel.id));
-    if (taken && taken.user_id !== u.id) {
-      vfy.delete(nonce);
-      return { status: 409, body: { error: 'Этот канал уже подтверждён в другом аккаунте BloggerPay' } };
-    }
+    /* Запрета «канал уже подтверждён в другом аккаунте» здесь больше нет:
+       человек доказал вход в канал прямо сейчас, и второй его же аккаунт
+       имеет на канал такое же право. Повторное подтверждение в ТОМ ЖЕ
+       аккаунте просто обновляет строку (ON CONFLICT). */
     q.upsertChannel.run(u.id, rec.platform, String(rec.channel.id),
       rec.channel.title, rec.channel.url, rec.channel.subs, rec.channel.avatar || null);
     vfy.delete(nonce);
@@ -2780,10 +2841,9 @@ const routes = {
 
   /* Отвязка канала оператором: канал продали, аккаунт потеряли, привязали
      не туда. Без этого строку можно было убрать только правкой базы. */
-  /* Отвязать свой канал. Нужно, чтобы человек мог убрать чужой или
-     ошибочный канал и подтвердить другой: без этого запись держала бы
-     площадку занятой (UNIQUE по platform+external_id), и повторное
-     подтверждение с другого аккаунта упиралось бы в «занято». */
+  /* Отвязать свой канал: человек убирает ошибочный или больше не свой.
+     Удаляем строго свою строку — тот же канал может быть подтверждён и у
+     других, и они тут ни при чём. */
   'POST /api/verify/unlink': async (req, body) => {
     const u = auth(req);
     if (!u) return { status: 401, body: { error: 'Нужен вход' } };
@@ -2791,10 +2851,9 @@ const routes = {
     const platform = String(body.platform || '');
     const externalId = String(body.externalId || '');
     if (!platform || !externalId) return { status: 400, body: { error: 'Нужны platform и externalId' } };
-    const row = q.channelByExt.get(platform, externalId);
-    if (!row) return { status: 404, body: { error: 'Такой канал не подтверждён' } };
-    if (row.user_id !== u.id) return { status: 403, body: { error: 'Это чужой канал' } };
-    q.delChannel.run(platform, externalId);
+    const row = q.channelOf.get(u.id, platform, externalId);
+    if (!row) return { status: 404, body: { error: 'Такой канал у вас не подтверждён' } };
+    q.delChannel.run(u.id, platform, externalId);
     return { status: 200, body: { ok: true, platform, externalId } };
   },
 
@@ -2803,10 +2862,10 @@ const routes = {
     const platform = String(body.platform || '');
     const externalId = String(body.externalId || '');
     if (!platform || !externalId) return { status: 400, body: { error: 'Нужны platform и externalId' } };
-    const row = q.channelByExt.get(platform, externalId);
-    if (!row) return { status: 404, body: { error: 'Такой канал не подтверждён' } };
-    q.delChannel.run(platform, externalId);
-    return { status: 200, body: { ok: true, freedFrom: row.user_id } };
+    const rows = q.channelsByExt.all(platform, externalId);
+    if (!rows.length) return { status: 404, body: { error: 'Такой канал не подтверждён' } };
+    q.delChannelEverywhere.run(platform, externalId);
+    return { status: 200, body: { ok: true, freedFrom: rows.map((r) => r.user_id) } };
   },
 
   /* Приём ошибок от приложения. Без входа: ломается часто именно то,
@@ -3099,12 +3158,23 @@ function verifyPage(res, title, text, good, code, goto) {
     + 'p{color:#a2a9b4;font-weight:500;font-size:14px;margin:0}'
     + 'code{display:block;margin:18px auto 6px;padding:14px 10px;max-width:260px;'
     + 'background:#171a20;border:1px solid #2f6ce0;border-radius:14px;'
-    + 'font:800 34px/1 ui-monospace,Menlo,Consolas,monospace;letter-spacing:8px;color:#fff}</style>'
-    + (goto ? '<meta http-equiv="refresh" content="2;url=' + esc(goto) + '">' : '')
+    + 'font:800 34px/1 ui-monospace,Menlo,Consolas,monospace;letter-spacing:8px;color:#fff}'
+    /* Код — запасной путь, а не задание: он нужен только тому, у кого
+       приложение осталось в другом браузере. Поэтому прячем его под
+       строку-раскрывашку, чтобы главным на экране было «возвращаем вас
+       обратно», а не шесть цифр. */
+    + 'details{margin-top:18px}summary{cursor:pointer;color:#7d818c;font-size:12.5px;font-weight:600}'
+    + 'details code{margin-top:10px}</style>'
+    + (goto ? '<meta http-equiv="refresh" content="1;url=' + esc(goto) + '">' : '')
     + '<style>a.go{display:inline-block;margin-top:16px;padding:13px 20px;border-radius:14px;'
     + 'background:#2f6ce0;color:#fff;text-decoration:none;font-weight:700;font-size:15px}</style>'
     + '<div><b>' + esc(title) + '</b><p>' + esc(text) + '</p>'
-    + (code ? '<code>' + esc(code) + '</code>' : '')
+    + (code
+        ? (goto
+            ? '<details><summary>Приложение открыто в другом браузере? Показать код</summary>'
+              + '<code>' + esc(code) + '</code></details>'
+            : '<code>' + esc(code) + '</code>')
+        : '')
     + (goto ? '<a class="go" href="' + esc(goto) + '">Вернуться в приложение</a>' : '')
     + '</div>';
   res.writeHead(good ? 200 : 400, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -3113,9 +3183,10 @@ function verifyPage(res, title, text, good, code, goto) {
 
 /* ── Возврат от Google после входа ──
    Меняем код на токен, спрашиваем у Google, кто это, находим или заводим
-   аккаунт и кладём готовую сессию под метку. Человеку показываем код:
-   если он вернулся в другом браузере (так бывает из мини-аппа), метка
-   приложению недоступна, и код — единственный способ забрать вход. */
+   аккаунт и кладём готовую сессию под метку. Дальше человека сразу
+   уводит обратно в приложение — оно заберёт вход по метке само. Код
+   остаётся под раскрывашкой: он нужен только тому, у кого приложение
+   осталось в другом браузере. */
 async function handleGoogleCallback(req, res, url) {
   const cfg = OAUTH.youtube;
   const state = String(url.searchParams.get('state') || '');
@@ -3132,8 +3203,9 @@ async function handleGoogleCallback(req, res, url) {
     return verifyPage(res, 'Вход отменён', 'Вы не разрешили доступ — аккаунт не создан.', false);
   }
   if (rec.done) {
-    return verifyPage(res, 'Код уже выдан',
-      'Введите его в приложении. Если код потерян — начните вход заново.', false, rec.code);
+    return verifyPage(res, 'Вход уже подтверждён',
+      'Вернитесь в приложение — оно уже впустило вас. Если нет, начните вход заново.',
+      false, rec.code, APP_BASE + '?glogin=' + encodeURIComponent(state));
   }
 
   const ask = async (address, opts) => {
@@ -3216,7 +3288,7 @@ async function handleGoogleCallback(req, res, url) {
     glog.set(state, rec);
 
     return verifyPage(res, 'Вы вошли',
-      'Сейчас вернём вас в приложение. Если оно открыто в другом месте — введите там этот код:',
+      'Возвращаем вас в приложение…',
       true, rec.code, APP_BASE + '?glogin=' + encodeURIComponent(state));
   } catch (e) {
     return verifyPage(res, 'Не вышло войти', String((e && e.message) || e).slice(0, 160), false);
@@ -3323,14 +3395,6 @@ async function handleVerifyCallback(req, res, url) {
 
     if (!channel.id) throw new Error('Площадка не назвала аккаунт');
 
-    /* Один канал — один аккаунт: иначе двое «подтвердят» один и тот же. */
-    const taken = q.channelByExt.get(p, String(channel.id));
-    if (taken) {
-      vfy.delete(state);
-      return verifyPage(res, 'Канал уже привязан',
-        'Этот канал подтверждён в аккаунте BloggerPay. Если это ваш канал и доступ потерян — напишите в поддержку.', false);
-    }
-
     /* Не привязываем здесь: канал получит тот, кто введёт код в приложении.
        Так подсунутая кем-то ссылка авторизации не запишет ваш канал на него. */
     rec.channel = channel;
@@ -3373,7 +3437,7 @@ function sendRecoverPage(res) {
   /* Адрес мини-аппа отдаём атрибутом: страница лежит статикой, а знать,
      куда возвращать человека, ей надо. Кавычки вычищаем — иначе адресом
      из .env можно было бы дописать свой атрибут в тег. */
-  const app = String(process.env.APP_URL || '').trim().replace(/[^A-Za-z0-9:/._~%?#\[\]@!$&'()*+,;=-]/g, '');
+  const app = APP_BASE.replace(/\/+$/, '').replace(/[^A-Za-z0-9:/._~%?#\[\]@!$&'()*+,;=-]/g, '');
   const safe = /^https?:\/\//i.test(app) ? app : '';
   html = html.replace('<html lang="ru">', '<html lang="ru" data-app="' + safe + '">');
   res.writeHead(200, {
