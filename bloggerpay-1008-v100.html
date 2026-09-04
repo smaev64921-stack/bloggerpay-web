@@ -82647,7 +82647,7 @@ function mine(){
 }
 function forget(){ try{ localStorage.removeItem(NKEY); }catch(e){} }
 
-var _nonce = '', _timer = null, _tries = 0;
+var _nonce = '', _timer = null, _tries = 0, _url = '';
 
 function close(){
   if(_timer){ clearInterval(_timer); _timer = null; }
@@ -82657,49 +82657,29 @@ function close(){
 window.bpTgLoginClose = function(){ _nonce = ''; forget(); close(); };
 
 function say(t){ var e = $('tglgTxt'); if(e) e.textContent = t; }
-function offerCode(){
-  var h = $('tglgHint'), m = $('tglgMore');
-  if(h && m && m.hidden) h.hidden = false;
-}
+function offerAgain(){ var b = $('tglgAgain'); if(b) b.hidden = false; }
 
 function sheet(){
   close();
   var ov = document.createElement('div');
   ov.id = 'tglgOv'; ov.className = 'glg-ov';
   ov.addEventListener('click', function(e){ if(e.target === ov) window.bpTgLoginClose(); });
+  /* Кода здесь нет вовсе. У Телеграма он и не нужен: страница возврата
+     уводит человека прямо в приложение, а если приложение осталось в
+     другом окне — его подхватывает опрос. Единственное, что может
+     понадобиться, — открыть окно Телеграма ещё раз, если браузер его
+     заблокировал или человек его случайно закрыл. */
   ov.innerHTML = '<div class="glg-sheet" role="dialog" aria-label="Вход через Телеграм">'
     + '<div class="h"></div>'
     + '<b>Заканчиваем вход</b>'
     + '<div class="glg-wait"><span class="glg-dots"></span>'
     + '<p id="tglgTxt">Подтвердите вход в открывшемся окне Телеграма — дальше приложение продолжит само.</p></div>'
-    + '<div class="glg-more" id="tglgMore" hidden>'
-    +   '<input class="glg-code" id="tglgCode" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code">'
-    +   '<div class="glg-err" id="tglgErr"></div>'
-    +   '<button type="button" class="glg-act" id="tglgGo">Войти по коду</button>'
-    + '</div>'
-    + '<button type="button" class="glg-hint" id="tglgHint" hidden>Вход открылся в другом браузере? Ввести код</button>'
+    + '<button type="button" class="glg-act" id="tglgAgain" hidden>Открыть Телеграм ещё раз</button>'
     + '<button type="button" class="glg-x" onclick="bpTgLoginClose()">Отмена</button>'
     + '</div>';
   document.body.appendChild(ov);
-  var go = $('tglgGo');
-  if(go) go.addEventListener('click', byCode);
-  var inp = $('tglgCode');
-  if(inp) inp.addEventListener('keydown', function(e){ if(e.key === 'Enter') byCode(); });
-  var hint = $('tglgHint');
-  if(hint) hint.addEventListener('click', function(){
-    var m = $('tglgMore');
-    if(m) m.hidden = false;
-    hint.hidden = true;
-    var i = $('tglgCode');
-    if(i) { try{ i.focus(); }catch(e){} }
-  });
-}
-
-function err(m){
-  var e = $('tglgErr');
-  if(e) e.textContent = m || '';
-  var i = $('tglgCode');
-  if(i && m) i.classList.add('bad');
+  var again = $('tglgAgain');
+  if(again) again.addEventListener('click', function(){ if(_url) openLink(_url); });
 }
 
 function letIn(token, who){
@@ -82710,25 +82690,6 @@ function letIn(token, who){
   return false;
 }
 
-function byCode(){
-  var i = $('tglgCode');
-  var code = String((i && i.value) || '').replace(/\D/g, '');
-  if(code.length !== 6){ err('Код — шесть цифр со страницы возврата'); return; }
-  var n = _nonce || mine();
-  if(!n){ err('Приложение не помнит эту попытку входа — начните вход заново'); return; }
-  err('');
-  var go = $('tglgGo');
-  if(go) go.disabled = true;
-  srv().raw('POST', '/api/auth/telegram/claim', { code: code, nonce: n })
-    .then(function(j){
-      if(j && j.token){ forget(); close(); letIn(j.token, j.user || {}); }
-      else { err('Код не подошёл'); if(go) go.disabled = false; }
-    })
-    .catch(function(e2){
-      err((e2 && e2.message) || 'Код не подошёл или устарел');
-      if(go) go.disabled = false;
-    });
-}
 
 function watch(){
   _tries = 0;
@@ -82736,12 +82697,17 @@ function watch(){
   _timer = setInterval(function(){
     _tries++;
     if(!_nonce){ clearInterval(_timer); _timer = null; return; }
-    if(_tries === 10) say('Всё ещё ждём ответ Телеграма…');
-    if(_tries === 23) offerCode();
+    /* Через шестнадцать секунд честно объясняем, что происходит: первый
+       вход Телеграм всегда спрашивает номер и присылает подтверждение в
+       само приложение — это его шаг, и ускорить его мы не можем. */
+    if(_tries === 8){
+      say('Телеграм спросит номер телефона и пришлёт подтверждение в само приложение — это его шаг, не наш.');
+      offerAgain();
+    }
     if(_tries > 60){
       clearInterval(_timer); _timer = null;
       say('Телеграм так и не ответил. Попробуйте войти ещё раз.');
-      offerCode();
+      offerAgain();
       return;
     }
     srv().raw('GET', '/api/auth/telegram/pending?nonce=' + encodeURIComponent(_nonce))
@@ -82809,6 +82775,7 @@ window.loginTelegram = function(){
   if(hot){
     _warm = null;
     _nonce = hot.nonce;
+    _url = hot.url;
     keep(_nonce);
     sheet();
     watch();
@@ -82821,6 +82788,7 @@ window.loginTelegram = function(){
     .then(function(j){
       if(!j || !j.url) throw new Error('Сервер не дал ссылку входа');
       _nonce = j.nonce || '';
+      _url = j.url;
       keep(_nonce);
       sheet();
       watch();
