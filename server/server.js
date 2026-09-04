@@ -433,6 +433,12 @@ catch (e) { /* уже есть */ }
 try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_tg ON users(tg_id) WHERE tg_id IS NOT NULL'); }
 catch (e) { /* индекс мог не создаться на старом движке — не критично */ }
 
+/* Картинка канала (04.09.2026): её отдаёт сама площадка вместе с именем,
+   и по ней человек узнаёт свой канал в списке с одного взгляда. Базы,
+   созданные раньше, получают колонку здесь. */
+try { db.exec('ALTER TABLE channels ADD COLUMN avatar TEXT'); }
+catch (e) { /* уже есть */ }
+
 /* ── Мелкая утварь ─────────────────────────────────────────────────── */
 
 const q = {
@@ -544,15 +550,15 @@ const q = {
   userLedger: db.prepare(`SELECT id, bucket, amount, kind, ref, created_at
     FROM ledger WHERE user_id = ? ORDER BY id DESC LIMIT 60`),
   insError: db.prepare('INSERT INTO errors (user_id, message, where_at, version, ua) VALUES (?,?,?,?,?)'),
-  myChannels: db.prepare(`SELECT platform, external_id, title, url, subs, checked_at
+  myChannels: db.prepare(`SELECT platform, external_id, title, url, subs, avatar, checked_at
     FROM channels WHERE user_id = ? ORDER BY checked_at DESC`),
   channelByExt: db.prepare('SELECT * FROM channels WHERE platform = ? AND external_id = ?'),
   delChannel: db.prepare('DELETE FROM channels WHERE platform = ? AND external_id = ?'),
-  upsertChannel: db.prepare(`INSERT INTO channels (user_id, platform, external_id, title, url, subs)
-    VALUES (?,?,?,?,?,?)
+  upsertChannel: db.prepare(`INSERT INTO channels (user_id, platform, external_id, title, url, subs, avatar)
+    VALUES (?,?,?,?,?,?,?)
     ON CONFLICT(platform, external_id) DO UPDATE SET
       user_id = excluded.user_id, title = excluded.title, url = excluded.url,
-      subs = excluded.subs, checked_at = datetime('now')`),
+      subs = excluded.subs, avatar = excluded.avatar, checked_at = datetime('now')`),
   /* Группируем по тексту: сто раз одна ошибка — это одна поломка,
      а не сто. Владельцу важно, ЧТО ломается и у скольких людей. */
   errorGroups: db.prepare(`SELECT message, where_at,
@@ -2539,7 +2545,10 @@ const routes = {
     if (p === 'youtube') {
       q1.set('client_id', cfg.id);
       q1.set('access_type', 'online');
-      q1.set('prompt', 'consent');
+      /* select_account — чтобы человек КАЖДЫЙ раз выбирал, каким аккаунтом
+         входит. Без этого Google молча берёт тот, в котором браузер уже
+         сидит: сменить аккаунт и подтвердить второй канал было нельзя. */
+      q1.set('prompt', 'select_account consent');
     } else {
       q1.set('client_key', cfg.id);
     }
@@ -2612,7 +2621,7 @@ const routes = {
       return { status: 409, body: { error: 'Этот канал уже подтверждён в другом аккаунте BloggerPay' } };
     }
     q.upsertChannel.run(u.id, rec.platform, String(rec.channel.id),
-      rec.channel.title, rec.channel.url, rec.channel.subs);
+      rec.channel.title, rec.channel.url, rec.channel.subs, rec.channel.avatar || null);
     vfy.delete(nonce);
     return {
       status: 200,
@@ -2672,6 +2681,24 @@ const routes = {
 
   /* Отвязка канала оператором: канал продали, аккаунт потеряли, привязали
      не туда. Без этого строку можно было убрать только правкой базы. */
+  /* Отвязать свой канал. Нужно, чтобы человек мог убрать чужой или
+     ошибочный канал и подтвердить другой: без этого запись держала бы
+     площадку занятой (UNIQUE по platform+external_id), и повторное
+     подтверждение с другого аккаунта упиралось бы в «занято». */
+  'POST /api/verify/unlink': async (req, body) => {
+    const u = auth(req);
+    if (!u) return { status: 401, body: { error: 'Нужен вход' } };
+    if (!rateLimit(req, 'vfyunlink:' + u.id, 20, 60000)) return tooOften;
+    const platform = String(body.platform || '');
+    const externalId = String(body.externalId || '');
+    if (!platform || !externalId) return { status: 400, body: { error: 'Нужны platform и externalId' } };
+    const row = q.channelByExt.get(platform, externalId);
+    if (!row) return { status: 404, body: { error: 'Такой канал не подтверждён' } };
+    if (row.user_id !== u.id) return { status: 403, body: { error: 'Это чужой канал' } };
+    q.delChannel.run(platform, externalId);
+    return { status: 200, body: { ok: true, platform, externalId } };
+  },
+
   'POST /api/admin/verify/unlink': async (req, body) => {
     if (!isAdmin(req)) return { status: 403, body: { error: 'Нужен X-Admin-Key' } };
     const platform = String(body.platform || '');
@@ -3030,10 +3057,14 @@ async function handleVerifyCallback(req, res, url) {
         { headers: { Authorization: 'Bearer ' + tok.access_token } });
       const it = me.items && me.items[0];
       if (!it) throw new Error('У этого аккаунта нет канала на YouTube');
+      const th = (it.snippet && it.snippet.thumbnails) || {};
       channel = {
         id: it.id, title: (it.snippet && it.snippet.title) || '',
         url: 'https://youtube.com/channel/' + it.id,
         subs: Number(it.statistics && it.statistics.subscriberCount) || 0,
+        /* картинку канала площадка отдаёт вместе с именем — по ней человек
+           узнаёт свой канал в списке с одного взгляда */
+        avatar: ((th.medium || th.default || {}).url) || '',
       };
     } else {
       const tok = await ask(cfg.token, {

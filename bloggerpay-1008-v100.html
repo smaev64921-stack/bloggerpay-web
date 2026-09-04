@@ -81578,5 +81578,266 @@ html img.bp-logo-img{
 }
 </style>
 
+<style id="bp-vfy-multi-css">
+/* ══ НЕСКОЛЬКО КАНАЛОВ И СМЕНА АККАУНТА ═══════════════════════════════
+   Было: после первого подтверждения кнопка гасла навсегда («Подтверждён»),
+   и человек не мог ни добавить второй канал, ни переподтвердить другим
+   аккаунтом. Теперь под площадками — список подтверждённых каналов, у
+   каждого своя отвязка, а кнопка остаётся живой и зовёт добавить ещё.
+   Откат: удалить style#bp-vfy-multi-css и script#bp-vfy-multi.        */
+/* Карточка канала: настоящая картинка канала кружком, имя, под ним
+   площадка и подписчики. Вся карточка ведёт на канал, отвязка — крестик
+   справа. Так это сделано на площадках, где список каналов читается с
+   одного взгляда. */
+html #epVfyList{ margin-top:10px; display:flex; flex-direction:column; gap:8px }
+html .vfm-row{
+  display:flex; align-items:center; gap:12px; padding:12px 13px; border-radius:16px;
+  background:var(--card,#121218); border:1px solid var(--brd,rgba(255,255,255,.09));
+  transition:opacity .15s; cursor:pointer;
+}
+html .vfm-row:active{ opacity:.8 }
+html .vfm-ava{
+  width:44px; height:44px; border-radius:50%; flex-shrink:0;
+  display:flex; align-items:center; justify-content:center; position:relative;
+  background:var(--card3,#1f1f28);
+}
+html .vfm-ava img{ width:100%; height:100%; object-fit:cover; display:block; border-radius:50% }
+html .vfm-ava .vfm-glyph{
+  width:100%; height:100%; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+}
+html .vfm-ava .vfm-glyph svg{ width:20px; height:20px; fill:#fff }
+html .vfm-ava.p-youtube .vfm-glyph{ background:#ff0000 }
+html .vfm-ava.p-tiktok .vfm-glyph{ background:#111 }
+/* значок площадки поверх картинки — сразу видно, откуда канал */
+html .vfm-badge{
+  position:absolute; right:-1px; bottom:-1px; width:18px; height:18px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center; border:2px solid var(--card,#121218);
+}
+html .vfm-badge svg{ width:9px; height:9px; fill:#fff }
+html .vfm-badge.p-youtube{ background:#ff0000 }
+html .vfm-badge.p-tiktok{ background:#111 }
+html .vfm-tx{ min-width:0; flex:1 }
+html .vfm-tx b{
+  display:flex; align-items:center; gap:5px; font-size:14px; font-weight:700;
+  color:var(--t1,#f2f4f8); letter-spacing:-.2px; min-width:0;
+}
+html .vfm-tx b span.nm{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0 }
+/* галочка «канал подтверждён входом» — как отметка у имени, а не хвост
+   строки: хвост первым и обрезался, и отметку было не видно */
+html .vfm-ok{ flex-shrink:0; width:14px; height:14px; display:block }
+html .vfm-ok svg{ width:14px; height:14px; display:block }
+html .vfm-tx span{
+  display:block; font-size:11.5px; color:var(--t3,#7d818c); margin-top:2px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+html .vfm-tx span i{ font-style:normal; color:#3ddc84 }
+html .vfm-x{
+  flex-shrink:0; background:none; border:none; padding:8px; cursor:pointer;
+  color:var(--t3,#7d818c); -webkit-tap-highlight-color:transparent; line-height:0;
+}
+html .vfm-x svg{ width:15px; height:15px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round }
+html .vfm-x:active{ color:#f0788a }
+html .vfm-empty{ font-size:11.5px; color:var(--t3,#7d818c); line-height:1.5 }
+/* «Добавить ещё» — это действие, а не отметка «готово»: зелёный цвет
+   готовности здесь сбивал с толку. */
+html .ep-verify.vfm-more{
+  background:var(--acc-bg,rgba(47,108,224,.16))!important;
+  border-color:var(--acc-br,rgba(47,108,224,.42))!important;
+  color:var(--acc2,#5b93f5)!important;
+}
+</style>
+<script id="bp-vfy-multi">
+(function(){
+'use strict';
+if(window.__bpVfyMulti) return; window.__bpVfyMulti = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'vfymulti'); }catch(_){} }
+function $(id){ return document.getElementById(id); }
+function esc(s){
+  try{ return bpEsc(String(s == null ? '' : s)); }
+  catch(e){ return String(s == null ? '' : s).replace(/[<>&"]/g, ''); }
+}
+function toast(m, k){ try{ showAuthToast(m, k || 'info'); }catch(e){} }
+function srv(){ return window.bpSrv; }
+function online(){
+  try{ var s = srv(); return !!(s && s.configured && s.configured() && typeof s.raw === 'function'); }
+  catch(e){ return false; }
+}
+var ICO = {
+  youtube: '<svg viewBox="0 0 24 24"><path d="M23 7.2c-.3-1-1-1.8-2-2C19.2 4.7 12 4.7 12 4.7s-7.2 0-9 .5c-1 .3-1.8 1-2 2C.5 9 .5 12 .5 12s0 3 .5 4.8c.3 1 1 1.8 2 2 1.8.5 9 .5 9 .5s7.2 0 9-.5c1-.3 1.8-1 2-2 .5-1.8.5-4.8.5-4.8s0-3-.5-4.8zM9.7 15.1V8.9l6 3.1-6 3.1z"/></svg>',
+  tiktok:  '<svg viewBox="0 0 24 24"><path d="M16.5 2h-3.2v13.3a2.8 2.8 0 1 1-2.8-2.8c.3 0 .6 0 .8.1V9.4a6 6 0 1 0 5.2 6V8.8a7.4 7.4 0 0 0 4.3 1.4V7a4.3 4.3 0 0 1-4.3-4.3V2z"/></svg>'
+};
+var NAME = { youtube: 'YouTube', tiktok: 'TikTok' };
+var BTN = { youtube: 'epVerifyYt', tiktok: 'epVerifyTt' };
+var FIELD = { youtube: 'epYt', tiktok: 'epTt' };
+
+function shortNum(n){
+  n = Number(n) || 0;
+  if(n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace('.0', '').replace('.', ',') + 'M';
+  if(n >= 1e3) return (n / 1e3).toFixed(n >= 1e4 ? 0 : 1).replace('.0', '').replace('.', ',') + 'K';
+  return String(n);
+}
+function plural(n, one, few, many){
+  n = Math.abs(Math.round(n)) % 100; var d = n % 10;
+  if(n > 10 && n < 20) return many;
+  if(d > 1 && d < 5) return few;
+  if(d === 1) return one;
+  return many;
+}
+/* Место для списка — сразу под блоком площадок в редакторе профиля. */
+function host(){
+  var el = $('epVfyList');
+  if(el) return el;
+  var hint = $('epVerifyHint');
+  if(!hint || !hint.parentNode) return null;
+  el = document.createElement('div');
+  el.id = 'epVfyList';
+  hint.parentNode.insertBefore(el, hint);
+  return el;
+}
+/* Адрес картинки и канала приходит от площадки — пропускаем только
+   https, чтобы в разметку не попало ничего постороннего. */
+function safeUrl(u){
+  var v = String(u == null ? '' : u);
+  return /^https:\/\/[\w.-]+\//.test(v) ? v : '';
+}
+var OK = '<svg viewBox="0 0 24 24" fill="none" stroke="#3ddc84" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+function row(c){
+  var p = String(c.platform || '');
+  var title = c.title || c.url || NAME[p] || 'Канал';
+  var subs = Number(c.subs) || 0;
+  var img = safeUrl(c.avatar);
+  var glyph = '<span class="vfm-glyph">' + (ICO[p] || '') + '</span>';
+  /* Картинка канала иногда не открывается (площадка сменила адрес,
+     нет сети) — тогда вместо пустого круга показываем значок площадки. */
+  var ava = img
+    ? '<img loading="lazy" src="' + esc(img) + '" alt="" data-vfm-img="1">'
+      + '<span class="vfm-badge p-' + esc(p) + '">' + (ICO[p] || '') + '</span>'
+    : glyph;
+  var link = safeUrl(c.url);
+  return '<div class="vfm-row"' + (link ? ' data-vfm-open="' + esc(link) + '" role="button" tabindex="0"' : '') + '>'
+    + '<span class="vfm-ava p-' + esc(p) + '" data-fallback="' + esc(glyph) + '">' + ava + '</span>'
+    + '<span class="vfm-tx"><b><span class="nm">' + esc(title) + '</span>'
+    + '<span class="vfm-ok" title="Подтверждён входом">' + OK + '</span></b>'
+    + '<span>' + esc(NAME[p] || p)
+    + (subs ? ' · ' + shortNum(subs) + ' ' + plural(subs, 'подписчик', 'подписчика', 'подписчиков') : '')
+    + '</span></span>'
+    + '<button type="button" class="vfm-x" title="Отвязать канал" aria-label="Отвязать канал"'
+    + ' data-vfm-unlink="' + esc(p) + '|' + esc(c.external_id || c.externalId || '') + '">'
+    + '<svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+    + '</button></div>';
+}
+/* Картинка канала может не открыться (площадка сменила адрес, нет сети)
+   или прийти пустой. Тогда показываем значок площадки, а бейдж убираем:
+   иначе на кружке оказывалось два значка. */
+function fixBroken(box){
+  Array.prototype.forEach.call(box.querySelectorAll('img[data-vfm-img]'), function(im){
+    function fallback(){
+      var w = im.parentNode;
+      if(!w) return;
+      var f = w.getAttribute('data-fallback') || '';
+      var badge = w.querySelector('.vfm-badge');
+      if(badge) badge.remove();
+      im.remove();
+      if(f) w.insertAdjacentHTML('afterbegin', f);
+    }
+    im.addEventListener('error', fallback);
+    im.addEventListener('load', function(){ if(!im.naturalWidth) fallback(); });
+    if(im.complete && !im.naturalWidth) fallback();
+  });
+}
+
+function paint(){
+  if(!online()) return;
+  srv().raw('GET', '/api/verify/list').then(function(j){
+    var rows = (j && j.rows) || [];
+    var box = host();
+    if(box){
+      box.innerHTML = rows.length
+        ? rows.map(row).join('')
+        : '<div class="vfm-empty">Пока ни один канал не подтверждён входом.</div>';
+      fixBroken(box);
+    }
+    /* Кнопки остаются живыми: можно добавить второй канал или войти
+       другим аккаунтом. Раньше здесь стояло disabled = true. */
+    Object.keys(BTN).forEach(function(p){
+      var btn = $(BTN[p]);
+      if(!btn) return;
+      var has = rows.some(function(c){ return String(c.platform) === p; });
+      btn.disabled = false;
+      btn.classList.remove('done');
+      btn.classList.toggle('vfm-more', has);
+      btn.textContent = has ? 'Добавить ещё' : 'Подтвердить';
+      btn.title = has ? 'Можно подтвердить ещё один канал — Google спросит, каким аккаунтом входить' : '';
+    });
+    rows.forEach(function(c){
+      var f = $(FIELD[c.platform]);
+      if(f && c.url && !f.value) f.value = c.url;
+    });
+    var hint = $('epVerifyHint');
+    if(hint){
+      hint.textContent = rows.length
+        ? 'Подтверждено каналов: ' + rows.length
+          + '. Можно добавить ещё — при входе выберите нужный аккаунт. Подтверждённые каналы рекламодатель видит с отметкой, остальные — как «со слов блогера».'
+        : '«Подтвердить» — это вход в ваш аккаунт на площадке: она сама сообщит нам название канала и число подписчиков. Пароль мы не видим.';
+    }
+  }).catch(function(e){ E(e); });
+}
+window.bpPaintVerified = paint;
+window.bpVfyRefresh = paint;
+
+window.bpVfyUnlink = function(platform, externalId){
+  if(!online()){ toast('Нет связи с сервером', 'err'); return; }
+  function go(){
+    srv().raw('POST', '/api/verify/unlink', { platform: platform, externalId: externalId })
+      .then(function(){ toast('Канал отвязан', 'ok'); paint(); })
+      .catch(function(err){ toast((err && err.message) || 'Не вышло отвязать', 'err'); });
+  }
+  try{
+    if(typeof window.bpConfirm === 'function'){
+      window.bpConfirm({
+        title: 'Отвязать канал?',
+        text: 'Отметка «подтверждён» пропадёт. Подтвердить снова можно в любой момент — тем же или другим аккаунтом.',
+        yes: 'Отвязать'
+      }).then(function(ok){ if(ok) go(); });
+      return;
+    }
+  }catch(e){ E(e); }
+  go();
+};
+
+document.addEventListener('click', function(e){
+  try{
+    var el = e.target && e.target.closest ? e.target.closest('[data-vfm-unlink]') : null;
+    if(el){
+      var v = String(el.getAttribute('data-vfm-unlink') || '').split('|');
+      if(v.length === 2 && v[0] && v[1]) window.bpVfyUnlink(v[0], v[1]);
+      return;
+    }
+    var open = e.target && e.target.closest ? e.target.closest('[data-vfm-open]') : null;
+    if(!open) return;
+    var url = open.getAttribute('data-vfm-open');
+    if(!url) return;
+    /* В мини-аппе обычный переход не работает — только через Телеграм. */
+    if(window.Telegram && Telegram.WebApp && Telegram.WebApp.openLink) Telegram.WebApp.openLink(url);
+    else window.open(url, '_blank', 'noopener');
+  }catch(err){ E(err); }
+});
+
+/* Экран профиля открывается своей функцией — подхватываем её. */
+try{
+  var oe = window.openEditProfile;
+  if(typeof oe === 'function'){
+    window.openEditProfile = function(){
+      var r = oe.apply(this, arguments);
+      setTimeout(function(){ try{ paint(); }catch(e){ E(e); } }, 120);
+      return r;
+    };
+  }
+}catch(e){ E(e); }
+})();
+</script>
+
 </body>
 </html>
