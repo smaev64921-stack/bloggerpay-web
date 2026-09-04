@@ -3413,6 +3413,14 @@ const routes = {
    пару секунд, а кнопка остаётся на случай, если переход не сработал.
    Нужно для входа через Google: в том же браузере приложение подхватит
    вход по метке в адресе, и код вводить не придётся. */
+/* Успешный вход возвращаем ПЕРЕХОДОМ, а не страницей: человек и так
+   знает, что вошёл, а страница «Вы вошли» с паузой — лишняя остановка
+   посреди дороги. Так же устроен возврат после подтверждения канала. */
+function backToApp(res, goto) {
+  res.writeHead(302, { Location: goto, 'Cache-Control': 'no-store' });
+  return res.end();
+}
+
 function verifyPage(res, title, text, good, code, goto) {
   const esc = (s) => String(s).replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
   const html = '<!doctype html><meta charset="utf-8">'
@@ -3673,8 +3681,7 @@ function tgFinish(res, state, rec, fields) {
   rec.code = String(crypto.randomInt(100000, 1000000));
   tglog.set(state, rec);
 
-  return verifyPage(res, 'Вы вошли', 'Возвращаем вас в приложение…',
-    true, rec.code, APP_BASE + '?tglogin=' + encodeURIComponent(state));
+  return backToApp(res, APP_BASE + '?tglogin=' + encodeURIComponent(state));
 }
 
 /* Страница-перекладчик: читает фрагмент и отправляет его обычным
@@ -3838,9 +3845,7 @@ async function handleGoogleCallback(req, res, url) {
     rec.code = String(crypto.randomInt(100000, 1000000));
     glog.set(state, rec);
 
-    return verifyPage(res, 'Вы вошли',
-      'Возвращаем вас в приложение…',
-      true, rec.code, APP_BASE + '?glogin=' + encodeURIComponent(state));
+    return backToApp(res, APP_BASE + '?glogin=' + encodeURIComponent(state));
   } catch (e) {
     return verifyPage(res, 'Не вышло войти', String((e && e.message) || e).slice(0, 160), false);
   }

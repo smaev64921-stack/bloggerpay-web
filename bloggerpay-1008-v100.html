@@ -82766,6 +82766,22 @@ function openLink(u){
   if(!w){ try{ location.href = u; }catch(e){ E(e); } }
 }
 
+/* Ссылку входа готовим заранее, пока человек смотрит на экран: иначе
+   после нажатия он полсекунды смотрит в пустое окно, пока сервер
+   отвечает. Метка живёт 15 минут, берём её с запасом в 10. */
+var _warm = null;
+function warm(){
+  if(!ready() || _warm) return;
+  try{
+    srv().raw('GET', '/api/auth/telegram/start')
+      .then(function(j){ if(j && j.url) _warm = { url: j.url, nonce: j.nonce || '', at: Date.now() }; })
+      .catch(function(){});
+  }catch(e){ E(e); }
+}
+function warmFresh(){
+  return (_warm && (Date.now() - _warm.at) < 10 * 60 * 1000) ? _warm : null;
+}
+
 var prev = window.loginTelegram;
 window.loginTelegram = function(){
   /* Внутри мини-аппа прежний путь по initData короче и надёжнее. */
@@ -82788,6 +82804,19 @@ window.loginTelegram = function(){
     if(!(tg2 && tg2.initData)) win = window.open('', '_blank');
   }catch(e){ E(e); }
 
+  /* Готовая ссылка есть — уходим сразу, без ожидания сервера. */
+  var hot = role ? null : warmFresh();
+  if(hot){
+    _warm = null;
+    _nonce = hot.nonce;
+    keep(_nonce);
+    sheet();
+    watch();
+    if(win && !win.closed){ win.location = hot.url; }
+    else openLink(hot.url);
+    return;
+  }
+
   srv().raw('GET', '/api/auth/telegram/start' + (role ? ('?role=' + encodeURIComponent(role)) : ''))
     .then(function(j){
       if(!j || !j.url) throw new Error('Сервер не дал ссылку входа');
@@ -82803,6 +82832,11 @@ window.loginTelegram = function(){
       toast((e2 && e2.message) || 'Не вышло начать вход через Телеграм', 'err');
     });
 };
+
+/* Ссылку готовим, когда экран входа уже на глазах: раньше сервер ещё
+   может быть не подключён. */
+setTimeout(warm, 1500);
+setTimeout(warm, 4000);
 
 /* Возврат в том же браузере — только от своего входа: чужую метку в
    адресе можно прислать кому угодно, и человек оказался бы в чужом

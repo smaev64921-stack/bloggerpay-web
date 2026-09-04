@@ -127,8 +127,11 @@ try {
   const good = tgReply();
   const okRes = await fetch(BASE + '/api/auth/telegram/callback?' + asQuery(st.body.nonce, good),
     { redirect: 'manual' });
-  const okTxt = await okRes.text();
-  ok(/Вы вошли/.test(okTxt), 'верная подпись пускает', okTxt.slice(0, 160));
+  const loc = okRes.headers.get('location') || '';
+  /* Успех возвращает переходом, а не страницей «Вы вошли»: лишняя
+     остановка посреди дороги — это и есть «долго грузит». */
+  ok(okRes.status === 302 && loc.indexOf('tglogin=' + st.body.nonce) > 0,
+    'верная подпись пускает и сразу возвращает в приложение', { status: okRes.status, loc: loc.slice(0, 90) });
 
   const got = await api('GET', '/api/auth/telegram/pending?nonce=' + st.body.nonce);
   ok(got.status === 200 && got.body.state === 'ok' && got.body.token, 'сессия отдана приложению', got.body);
