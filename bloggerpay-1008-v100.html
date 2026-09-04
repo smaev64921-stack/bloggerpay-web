@@ -78871,15 +78871,22 @@ function markVerified(pid){
       self.innerHTML = TT.ok + 'подтверждён входом';
       self.__bpGreenDone = 1;
     }
+    /* Число подписчиков площадка отдаёт не всегда: пока приложение не
+       прошло проверку, TikTok выдаёт только базовые данные. Ноль в поле
+       и запрет на правку в этом случае — вранье и тупик, поэтому
+       запираем поле, только когда число действительно пришло. */
     var subs = document.getElementById('abc-inp-subs-' + pid);
-    if(subs){
-      subs.value = Number(ch.subs) || 0;
+    var real = Number(ch.subs) || 0;
+    if(subs && real > 0){
+      subs.value = real;
       subs.readOnly = true;
       subs.title = 'Число пришло из ' + LABEL[pid] + ' — изменить нельзя';
     }
     var note = area.querySelector('.abc-selfsaid-note');
     if(note){
-      note.textContent = 'Подписчики пришли из ' + LABEL[pid] + ' и меняться руками не могут. Просмотры и ER — с ваших слов: рекламодатель видит их с пометкой.';
+      note.textContent = real > 0
+        ? 'Подписчики пришли из ' + LABEL[pid] + ' и меняться руками не могут. Просмотры и ER — с ваших слов: рекламодатель видит их с пометкой.'
+        : 'Владение каналом подтверждено входом. Число подписчиков площадка не передала — укажите его сами, рекламодатель увидит пометку «со слов блогера».';
     }
     var edit = area.querySelector('.abc-url-edit-btn');
     if(edit){
@@ -80144,6 +80151,345 @@ document.addEventListener('click', function(e){
 document.addEventListener('keydown', function(e){ if(e.key === 'Escape' && $('pf2Ov')) window.bpPf2Close(); });
 /* если профиль уже открыт к моменту подключения слоя */
 setTimeout(function(){ try{ var pg = $('pg-profile'); if(pg && pg.classList.contains('on')){ _openedAt = Date.now(); render(); } }catch(e){ E(e); } }, 400);
+})();
+</script>
+
+<script id="bp-cardsync">
+/* ══ v104 · ОБЩИЙ КАТАЛОГ: КАРТОЧКА ЕДЕТ ЧЕРЕЗ СЕРВЕР ══════════════════
+   Было: карточка блогера лежала только в браузере (bp_my_cards). Человек
+   публиковал её на одном телефоне — на втором её не было; рекламодатель
+   не видел вообще никого. Это и есть «зашёл с двух телефонов, ничего не
+   обновилось».
+
+   Стало: своя карточка уезжает на сервер (POST /api/cards), каталог
+   приезжает оттуда (GET /api/cards) и подмешивается в тот же
+   bp_my_cards — весь остальной код (renderMyCard, фильтры, поиск)
+   продолжает работать как раньше и ничего про сервер не знает.
+
+   Что важно:
+   · Своя карточка на устройстве главнее серверной: правки не затирает
+     чужой ответ. Наверх едет то, что человек видит у себя.
+   · Чужие карточки помечены _foreign и живут под userId 'srv:<id>' —
+     местный id чужого человека нам неизвестен, а совпасть со своим он
+     не должен ни при каких обстоятельствах.
+   · Значки площадок для чужой карточки рисуем САМИ по списку платформ:
+     чужую разметку (socsHtml) сервер не хранит и мы не принимаем.
+   · Сделки и переписка через сервер ещё не ходят. Поэтому заявка на
+     карточку человека с другого устройства не отправляется молча в
+     никуда (и не морозит деньги), а честно объясняет положение дел.
+
+   Откат: удалить script#bp-cardsync.                                   */
+(function(){
+'use strict';
+if(window.__bpCardSync) return; window.__bpCardSync = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'cardsync'); }catch(_){} }
+function me(){ try{ return (typeof currentUser !== 'undefined') ? currentUser : null; }catch(e){ return null; } }
+function same(a, b){ return a != null && b != null && String(a) === String(b); }
+function srv(){ return window.bpSrv; }
+function ready(){
+  try{ var S = srv(); return !!(S && S.configured && S.configured() && S.token && S.token()); }
+  catch(e){ return false; }
+}
+function mySrvId(){
+  try{
+    if(window.bpMoney && typeof window.bpMoney.mySrvId === 'function'){
+      var v = window.bpMoney.mySrvId(); if(v != null) return v;
+    }
+  }catch(e){}
+  var u = me(); return (u && u.srvId != null) ? u.srvId : null;
+}
+var KEY = 'bp_my_cards';
+function cards(){
+  try{ var a = JSON.parse(localStorage.getItem(KEY) || '[]'); return Array.isArray(a) ? a : []; }
+  catch(e){ return []; }
+}
+function save(list){
+  _selfWrite = true;
+  try{ localStorage.setItem(KEY, JSON.stringify(list)); }catch(e){ E(e); }
+  setTimeout(function(){ _selfWrite = false; }, 0);
+}
+
+/* ── что уезжает наверх ──
+   Ровно те поля, которые сервер и так оставит (белый список у него
+   свой). Служебное — почту, местный id, отметки админа — не шлём. */
+var PLATS = ['youtube','telegram','tiktok','instagram','vk'];
+function outbound(c){
+  var o = {};
+  ['name','initials','col','catsText','sinceText','subsVal','reachVal','erVal','cpvVal','publishedAt','msg','avatar']
+    .forEach(function(k){ if(c[k] != null && c[k] !== '') o[k] = c[k]; });
+  ['genderF','genderM','kids'].forEach(function(k){ if(c[k] != null) o[k] = c[k]; });
+  ['showGender','showKids'].forEach(function(k){ if(c[k] != null) o[k] = !!c[k]; });
+  o.platforms = Array.isArray(c.platforms) ? c.platforms.filter(function(p){ return PLATS.indexOf(p) >= 0; }) : [];
+  o.topics = Array.isArray(c.topics) ? c.topics : [];
+  o.platData = {};
+  if(c.platData) PLATS.forEach(function(pid){
+    var p = c.platData[pid]; if(!p) return;
+    o.platData[pid] = { url:p.url || '', subs:p.subs || 0, er:p.er || 0, reach:p.reach || 0,
+      verified:!!p.verified, enabled:p.enabled !== false };
+  });
+  o.integrations = {};
+  if(c.integrations) PLATS.forEach(function(pid){
+    if(Array.isArray(c.integrations[pid])) o.integrations[pid] = c.integrations[pid];
+  });
+  return o;
+}
+
+/* ── что приезжает вниз ──
+   Строки от других людей — это чужой ввод. Углы срезаем здесь, а не
+   надеемся на разметку: в имени и подписях не должно быть тегов, а в
+   цвете — ничего, кроме цвета (он подставляется прямо в style). */
+function txt(v, max){ return String(v == null ? '' : v).replace(/[<>]/g, '').slice(0, max || 200); }
+function colOf(v, name){
+  var s = String(v || '');
+  if(/^#[0-9a-f]{3,8}(\s*,\s*#[0-9a-f]{3,8})?$/i.test(s)) return s;
+  var h = 0, n = String(name || 'x');
+  for(var i = 0; i < n.length; i++) h = (h * 31 + n.charCodeAt(i)) & 0xffffff;
+  var G = ['#2f6ce0,#1b49a8','#06b6d4,#3b82f6','#f6a823,#f0642a','#6366f1,#818cf8','#e8305a,#c2569c'];
+  return G[Math.abs(h) % G.length];
+}
+var SOC = {
+  instagram:{ cls:'sig', icon:'instagram', label:'Instagram' },
+  youtube:  { cls:'syt', icon:'youtube',   label:'YouTube' },
+  telegram: { cls:'stg', icon:'telegram',  label:'Telegram' },
+  tiktok:   { cls:'stt', icon:'tiktok',    label:'TikTok' }
+};
+/* Значки строим сами — той же разметкой, что и мастер (см. socsHtml
+   на шаге 3): тогда пересборщик карточек узнаёт их и красит как свои. */
+function socsOf(list){
+  return (list || []).map(function(pid){
+    var s = SOC[pid]; if(!s) return '';
+    var url = 'https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/' + s.icon + '.svg';
+    if(typeof bpUrl === 'function') url = bpUrl(url);
+    return '<div class="blc-soc ' + s.cls + '" title="' + s.label + '">'
+      + '<img loading="lazy" class="soc-img" src="' + url + '" alt=""></div>';
+  }).join('');
+}
+function initialsOf(name){
+  var p = String(name || 'Б').trim().split(/\s+/).filter(Boolean);
+  return ((p[0] || 'Б').charAt(0) + (p[1] ? p[1].charAt(0) : '')).toUpperCase();
+}
+function inbound(row, localUserId, foreign){
+  var c = row.card || {};
+  var out = {
+    id: String(row.id),
+    userId: localUserId,
+    srvId: row.userId,
+    name: txt(c.name, 60) || 'Блогер',
+    initials: txt(c.initials, 4) || initialsOf(c.name),
+    col: colOf(c.col, c.name),
+    catsText: txt(c.catsText, 200) || 'Новый блогер на платформе',
+    sinceText: txt(c.sinceText, 60),
+    subsVal: txt(c.subsVal, 20) || '—',
+    reachVal: txt(c.reachVal, 20) || '—',
+    erVal: txt(c.erVal, 20) || '—',
+    cpvVal: txt(c.cpvVal, 20) || '—',
+    publishedAt: txt(c.publishedAt, 40),
+    msg: txt(c.msg, 500),
+    avatar: (typeof c.avatar === 'string' && c.avatar.indexOf('data:image/') === 0) ? c.avatar : null,
+    platforms: Array.isArray(c.platforms) ? c.platforms.filter(function(p){ return PLATS.indexOf(p) >= 0; }) : [],
+    topics: Array.isArray(c.topics) ? c.topics.map(function(t){ return txt(t, 40); }) : [],
+    platData: c.platData || {},
+    integrations: c.integrations || {},
+    genderF: c.genderF, genderM: c.genderM, kids: c.kids,
+    showGender: !!c.showGender, showKids: !!c.showKids,
+    _srvAt: row.updatedAt || ''
+  };
+  out.socsHtml = socsOf(out.platforms);
+  if(foreign) out._foreign = true;
+  return out;
+}
+
+/* ── отправка своего ─────────────────────────────────────────────── */
+var _sent = {};          /* id → подпись отправленного */
+var _selfWrite = false;  /* наша собственная запись в bp_my_cards */
+var _pushT = null;
+function mine(){
+  var u = me(); if(!u) return [];
+  return cards().filter(function(c){ return c && c.id && !c._foreign && same(c.userId, u.id) && !c.hidden; });
+}
+function pushNow(){
+  if(!ready()) return;
+  var list = mine(), live = {};
+  list.forEach(function(c){
+    live[c.id] = 1;
+    var body = outbound(c), sig = '';
+    try{ sig = JSON.stringify(body); }catch(e){ return; }
+    if(_sent[c.id] === sig) return;
+    _sent[c.id] = sig;
+    srv().raw('POST', '/api/cards', { id: c.id, card: body })
+      .catch(function(){ delete _sent[c.id]; });   /* не вышло — попробуем в следующий раз */
+  });
+  /* карточку удалили у себя — снимаем и с витрины */
+  Object.keys(_sent).forEach(function(id){
+    if(live[id]) return;
+    delete _sent[id];
+    srv().raw('POST', '/api/cards/delete', { id: id }).catch(function(){});
+  });
+}
+function schedulePush(){
+  if(_pushT) return;
+  _pushT = setTimeout(function(){ _pushT = null; try{ pushNow(); }catch(e){ E(e); } }, 600);
+}
+
+/* ── приём чужого ────────────────────────────────────────────────── */
+var _pull = { at: 0, busy: false };
+function repaint(){
+  try{
+    var home = document.getElementById('pg-home');
+    if(home && home.classList.contains('on') && typeof loadMyCards === 'function') loadMyCards();
+  }catch(e){ E(e); }
+}
+function apply(rows){
+  var u = me(); if(!u) return;
+  var my = mySrvId();
+  var list = cards(), changed = false, seen = {};
+  var byId = {};
+  list.forEach(function(c, i){ if(c && c.id) byId[c.id] = i; });
+
+  rows.forEach(function(r){
+    if(!r || !r.id || !r.card) return;
+    seen[r.id] = 1;
+    var i = byId[r.id];
+    var isMine = my != null && same(r.userId, my);
+    if(isMine){
+      /* своя карточка с другого телефона: подхватываем, если её здесь нет.
+         Если есть — местная главнее, наверх уедет она. */
+      if(i == null){
+        list.push(inbound(r, u.id, false));
+        changed = true;
+      } else if(list[i].srvId == null){
+        list[i].srvId = r.userId; changed = true;
+      }
+      return;
+    }
+    var fresh = inbound(r, 'srv:' + r.userId, true);
+    if(i == null){ list.push(fresh); changed = true; return; }
+    if(!list[i]._foreign) return;                       /* свою чужой не перетрёт */
+    if(list[i]._srvAt !== fresh._srvAt || list[i].name !== fresh.name){
+      /* сохраняем то, что дописали местные слои (закладки и т.п.) */
+      list[i] = Object.assign({}, list[i], fresh);
+      changed = true;
+    }
+  });
+
+  /* чужие карточки, которых на сервере больше нет (сняли или удалили) */
+  var kept = list.filter(function(c){ return !(c && c._foreign && !seen[c.id]); });
+  if(kept.length !== list.length){ list = kept; changed = true; }
+
+  if(changed){ save(list); repaint(); }
+}
+function pull(force){
+  try{
+    var S = srv();
+    if(!S || typeof S.raw !== 'function' || !S.configured || !S.configured()) return;
+    if(!me()) return;
+    if(_pull.busy) return;
+    if(!force && Date.now() - _pull.at < 30000) return;
+    _pull.busy = true; _pull.at = Date.now();
+    S.raw('GET', '/api/cards').then(function(j){
+      _pull.busy = false;
+      try{ apply((j && j.rows) || []); }catch(e){ E(e); }
+    }).catch(function(){ _pull.busy = false; });
+  }catch(e){ _pull.busy = false; E(e); }
+}
+window.bpCardsPull = function(){ pull(true); };
+
+/* ── заявка на карточку человека с другого устройства ──
+   Деньги ходят через сервер, а сделка и переписка — пока нет. Молча
+   отправить заявку значило бы заморозить деньги в никуда: получатель
+   её просто не увидит. Пока честно говорим об этом. */
+function foreignOf(cardId){
+  if(!cardId) return null;
+  var c = cards().find(function(x){ return x && x.id === cardId; });
+  return (c && c._foreign) ? c : null;
+}
+function tellForeign(c){
+  var link = '';
+  try{
+    var pd = c.platData || {};
+    Object.keys(pd).forEach(function(k){ if(!link && pd[k] && pd[k].url) link = pd[k].url; });
+  }catch(e){}
+  var ov = document.createElement('div');
+  ov.className = 'pf2-ov'; ov.id = 'bpCsSheet';
+  ov.addEventListener('click', function(e){ if(e.target === ov) ov.remove(); });
+  var esc = (typeof bpEsc === 'function') ? bpEsc : function(s){ return String(s == null ? '' : s); };
+  ov.innerHTML = '<div class="pf2-sheet" role="dialog" aria-label="Заявка блогеру"><div class="h"></div>'
+    + '<div class="hd"><div><b>' + esc(c.name) + ' — на другом устройстве</b>'
+    + '<span>Карточку видно уже сейчас, а заявки и переписка между устройствами появятся в ближайшем обновлении.</span></div>'
+    + '<button type="button" class="x" onclick="document.getElementById(\'bpCsSheet\').remove()" aria-label="Закрыть">'
+    + '<svg viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>'
+    + '<div class="bd"><div class="pf2-hint"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>'
+    + '<span>Деньги не заморожены — заявка не отправлена. Так и задумано: получатель её сейчас не увидит, а деньги висели бы в эскроу зря.</span></div>'
+    + (link ? '<button type="button" class="pf2-add" style="margin-top:12px" onclick="bpCsOpenLink()">Открыть канал блогера</button>' : '')
+    + '</div></div>';
+  window.__bpCsLink = link;
+  document.body.appendChild(ov);
+}
+window.bpCsOpenLink = function(){
+  var u = window.__bpCsLink; if(!u) return;
+  try{
+    var sheet = document.getElementById('bpCsSheet'); if(sheet) sheet.remove();
+    if(window.Telegram && Telegram.WebApp && Telegram.WebApp.openLink) Telegram.WebApp.openLink(u);
+    else window.open(u, '_blank', 'noopener');
+  }catch(e){ E(e); }
+};
+
+/* ── подключение к приложению ────────────────────────────────────── */
+function hook(){
+  /* любая запись в bp_my_cards (мастер, фото, удаление) → отправка */
+  try{
+    if(window.bpData && typeof window.bpData.onChange === 'function'){
+      window.bpData.onChange(function(key){
+        if(key !== KEY || _selfWrite) return;
+        schedulePush();
+      });
+    }
+  }catch(e){ E(e); }
+
+  /* каталог открывается — забираем свежее */
+  try{
+    var g = window.goTo;
+    if(typeof g === 'function'){
+      window.goTo = function(page){
+        var r = g.apply(this, arguments);
+        try{ if(page === 'home') pull(false); }catch(e){ E(e); }
+        return r;
+      };
+    }
+  }catch(e){ E(e); }
+
+  /* вход в приложение: сначала отдать своё, потом забрать общее */
+  try{
+    var enter = window.enterApp;
+    if(typeof enter === 'function'){
+      window.enterApp = function(){
+        var r = enter.apply(this, arguments);
+        setTimeout(function(){ try{ pushNow(); pull(true); }catch(e){ E(e); } }, 1800);
+        return r;
+      };
+    }
+  }catch(e){ E(e); }
+
+  /* заказ по чужой карточке — честный отказ вместо тихой заморозки */
+  try{
+    var atc = window.addToCamp;
+    if(typeof atc === 'function'){
+      window.addToCamp = function(btn){
+        try{
+          var el = btn && btn.closest ? btn.closest('.blc') : null;
+          var f = foreignOf(el && el.getAttribute('data-cardid'));
+          if(f){ tellForeign(f); return; }
+        }catch(e){ E(e); }
+        return atc.apply(this, arguments);
+      };
+    }
+  }catch(e){ E(e); }
+}
+
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', hook);
+else hook();
+setTimeout(function(){ try{ if(me()){ pushNow(); pull(true); } }catch(e){ E(e); } }, 2500);
 })();
 </script>
 

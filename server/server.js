@@ -279,6 +279,24 @@ CREATE TABLE IF NOT EXISTS channels (
 );
 CREATE INDEX IF NOT EXISTS channels_user ON channels(user_id);
 
+/* Карточки блогеров — общий каталог.
+   Каталог жил только в браузере: карточка, опубликованная на одном
+   телефоне, не появлялась ни на втором телефоне того же человека, ни у
+   рекламодателя. Теперь она едет сюда, и каталог у всех один.
+   В data лежит ТОЛЬКО то, что и так видно в каталоге (белый список
+   полей — cleanCard ниже): почта, местный id, баланс и остальное не
+   сохраняем, даже если клиент их пришлёт. hidden — рубильник владельца:
+   публичную витрину нужно уметь закрыть, не удаляя работу человека. */
+CREATE TABLE IF NOT EXISTS cards (
+  id         TEXT PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id),
+  data       TEXT NOT NULL,
+  hidden     INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS cards_user ON cards(user_id);
+
 /* Ошибки у пользователей. Раньше они жили в памяти вкладки и стирались
    при перезагрузке: у человека белый экран, а владелец об этом никогда
    не узнавал. Теперь видно, что и у скольких людей ломается.
@@ -433,6 +451,18 @@ const q = {
       WHERE l.kind IN ('payout','settle-payout') AND l.bucket = 'available' AND l.amount > 0 AND u.is_blocked = 0
       GROUP BY l.user_id HAVING deals > ?
         OR (deals = ? AND (last_at < ? OR (last_at = ? AND l.user_id < ?))))`),
+  cardGet: db.prepare('SELECT * FROM cards WHERE id = ?'),
+  cardsMine: db.prepare('SELECT id FROM cards WHERE user_id = ?'),
+  cardIns: db.prepare('INSERT INTO cards (id, user_id, data) VALUES (?,?,?)'),
+  cardUpd: db.prepare("UPDATE cards SET data = ?, updated_at = datetime('now') WHERE id = ?"),
+  cardDel: db.prepare('DELETE FROM cards WHERE id = ? AND user_id = ?'),
+  cardHide: db.prepare("UPDATE cards SET hidden = ?, updated_at = datetime('now') WHERE id = ?"),
+  cardsPublic: db.prepare(`SELECT c.id, c.user_id, c.data, c.updated_at
+    FROM cards c JOIN users u ON u.id = c.user_id
+    WHERE c.hidden = 0 AND u.is_blocked = 0
+    ORDER BY c.updated_at DESC LIMIT ?`),
+  cardsAll: db.prepare(`SELECT c.id, c.user_id, c.hidden, c.updated_at, u.name AS owner
+    FROM cards c JOIN users u ON u.id = c.user_id ORDER BY c.updated_at DESC LIMIT 300`),
   insDeal: db.prepare('INSERT INTO deals (id, payer_id, payee_id, amount, status) VALUES (?,?,?,?,?)'),
   deal: db.prepare('SELECT * FROM deals WHERE id = ?'),
   updDeal: db.prepare(`UPDATE deals SET status = ?, payee_id = ?, updated_at = datetime('now') WHERE id = ?`),
@@ -866,6 +896,64 @@ function rateLimit(req, key, limit, windowMs) {
   return true;
 }
 const tooOften = { status: 429, body: { error: 'Слишком часто — подождите минуту и попробуйте снова' } };
+/* ── Что из карточки блогера попадает в общий каталог ──
+   Белый список, а не чёрный: клиент кладёт в карточку и служебное
+   (почту владельца, местный id, отметку админа), и всё это уехало бы
+   всем в витрину. Что не перечислено здесь — не сохраняется.
+   socsHtml (готовая разметка значков) не принимаем сознательно: чужую
+   разметку в каталог пускать нельзя, значки клиент рисует сам по
+   списку площадок. */
+const CARD_STR = { name: 60, initials: 4, col: 64, catsText: 200, sinceText: 60,
+  subsVal: 20, reachVal: 20, erVal: 20, cpvVal: 20, publishedAt: 40, msg: 500 };
+const CARD_PLATS = ['youtube', 'telegram', 'tiktok', 'instagram', 'vk'];
+function cardStr(v, max) { return String(v == null ? '' : v).slice(0, max); }
+function cleanCard(raw) {
+  const src = (raw && typeof raw === 'object') ? raw : {};
+  const out = {};
+  for (const k of Object.keys(CARD_STR)) if (src[k] != null) out[k] = cardStr(src[k], CARD_STR[k]);
+  for (const k of ['genderF', 'genderM', 'kids']) {
+    const n = Number(src[k]);
+    if (Number.isFinite(n)) out[k] = Math.max(0, Math.min(100, Math.round(n)));
+  }
+  for (const k of ['showGender', 'showKids']) if (src[k] != null) out[k] = !!src[k];
+  /* Фото — только вшитая картинка. Ссылка на посторонний адрес означала бы,
+     что открытие каталога стучится на чужой сервер за каждым лицом. */
+  const av = cardStr(src.avatar, 400000);
+  if (/^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(av) && av.length <= 300000) out.avatar = av;
+  out.platforms = Array.isArray(src.platforms)
+    ? src.platforms.filter((x) => CARD_PLATS.includes(x)).slice(0, 8) : [];
+  out.topics = Array.isArray(src.topics)
+    ? src.topics.map((t) => cardStr(t, 40)).filter(Boolean).slice(0, 10) : [];
+  out.platData = {};
+  const pd = (src.platData && typeof src.platData === 'object') ? src.platData : {};
+  for (const pid of CARD_PLATS) {
+    const pl = pd[pid];
+    if (!pl || typeof pl !== 'object') continue;
+    const url = cardStr(pl.url, 300);
+    if (url && !/^https?:\/\//i.test(url)) continue;   /* javascript: в каталог не пускаем */
+    out.platData[pid] = {
+      url,
+      subs: Math.max(0, Math.round(Number(pl.subs) || 0)),
+      er: Math.max(0, Number(pl.er) || 0),
+      reach: Math.max(0, Math.round(Number(pl.reach) || 0)),
+      verified: !!pl.verified,
+      enabled: pl.enabled !== false,
+    };
+  }
+  out.integrations = {};
+  const ig = (src.integrations && typeof src.integrations === 'object') ? src.integrations : {};
+  for (const pid of CARD_PLATS) {
+    if (!Array.isArray(ig[pid])) continue;
+    out.integrations[pid] = ig[pid].slice(0, 20)
+      .filter((x) => x && typeof x === 'object')
+      .map((x) => ({ fmtId: cardStr(x.fmtId, 30), price: Math.max(0, Math.round(Number(x.price) || 0)) }));
+  }
+  return out;
+}
+/* Каталог отдаём из памяти: страница главной открывается часто, а список
+   меняется редко. Любая правка карточки сбрасывает срок. */
+const cardsCache = { at: 0, rows: null };
+
 /* Рейтинг пересчитывается не чаще раза в минуту: запрос групповой, а ручка открытая. */
 const lbCache = { at: 0, rows: null, total: 0 };
 
@@ -1359,6 +1447,69 @@ async function platformProbe(p) {
 const routes = {
 
   'GET /api/health': async () => ({ status: 200, body: { ok: true, version: 'bp-server-1' } }),
+
+  /* ── Каталог блогеров ──
+     GET открыт всем (каталог и так виден до входа), POST — только своей
+     карточке. Чужую перезаписать нельзя даже с валидным токеном. */
+  'GET /api/cards': async (req) => {
+    if (!rateLimit(req, 'cards:list', 120, 60000)) return tooOften;
+    const now = Date.now();
+    if (!cardsCache.rows || now - cardsCache.at > 15000) {
+      cardsCache.rows = q.cardsPublic.all(300).map((r) => {
+        let card = {};
+        try { card = JSON.parse(r.data); } catch (e) { card = {}; }
+        return { id: r.id, userId: r.user_id, card, updatedAt: r.updated_at };
+      });
+      cardsCache.at = now;
+    }
+    return { status: 200, body: { rows: cardsCache.rows } };
+  },
+
+  'POST /api/cards': async (req, body) => {
+    const u = auth(req);
+    if (!u) return { status: 401, body: { error: 'Нужен вход' } };
+    if (!rateLimit(req, 'cards:put:' + u.id, 30, 60000)) return tooOften;
+    const id = cardStr(body.id, 64);
+    if (!/^[A-Za-z0-9_.:-]{3,64}$/.test(id)) return { status: 400, body: { error: 'Неверный номер карточки' } };
+    const card = cleanCard(body.card);
+    if (!card.name) return { status: 400, body: { error: 'У карточки должно быть имя' } };
+    const data = JSON.stringify(card);
+    if (data.length > 400 * 1024) return { status: 413, body: { error: 'Карточка слишком большая' } };
+    const ex = q.cardGet.get(id);
+    if (ex && ex.user_id !== u.id) return { status: 403, body: { error: 'Это чужая карточка' } };
+    if (ex) q.cardUpd.run(data, id);
+    else {
+      if (q.cardsMine.all(u.id).length >= 3) return { status: 409, body: { error: 'Больше трёх карточек на аккаунт нельзя' } };
+      q.cardIns.run(id, u.id, data);
+    }
+    cardsCache.at = 0;
+    return { status: 200, body: { ok: true, id } };
+  },
+
+  'POST /api/cards/delete': async (req, body) => {
+    const u = auth(req);
+    if (!u) return { status: 401, body: { error: 'Нужен вход' } };
+    const id = cardStr(body.id, 64);
+    const r = q.cardDel.run(id, u.id);
+    cardsCache.at = 0;
+    return { status: 200, body: { ok: true, removed: Number(r.changes) || 0 } };
+  },
+
+  /* Рубильник владельца: скрытая карточка исчезает из каталога у всех,
+     но остаётся у автора — это не удаление работы, а снятие с витрины. */
+  'POST /api/admin/cards/hide': async (req, body) => {
+    if (!isAdmin(req)) return { status: 403, body: { error: 'Только владелец площадки' } };
+    const id = cardStr(body.id, 64);
+    if (!q.cardGet.get(id)) return { status: 404, body: { error: 'Карточка не найдена' } };
+    q.cardHide.run(body.hidden === false ? 0 : 1, id);
+    cardsCache.at = 0;
+    return { status: 200, body: { ok: true, id, hidden: body.hidden !== false } };
+  },
+
+  'GET /api/admin/cards': async (req) => {
+    if (!isAdmin(req)) return { status: 403, body: { error: 'Только владелец площадки' } };
+    return { status: 200, body: { rows: q.cardsAll.all() } };
+  },
 
   /* ── Рейтинг блогеров ──
      Публичная ручка: её видит и тот, кто ещё не вошёл (каталог тоже
@@ -2785,9 +2936,10 @@ const handler = async (req, res) => {
     /* Фото паспорта и селфи в /api/kyc/submit в общий лимит 64 КБ не влезают.
        Но большой буфер — только для вошедших: токен проверяем ДО чтения
        тела, чтобы аноним не заставлял сервер глотать по полтора мегабайта. */
-    const isKycSubmit = url.pathname === '/api/kyc/submit';
-    if (isKycSubmit && !auth(req)) return send(res, 401, { error: 'Нужен вход' });
-    const maxBody = isKycSubmit ? 1500 * 1024 : undefined;
+    const isBig = req.method === 'POST'
+      && (url.pathname === '/api/kyc/submit' || url.pathname === '/api/cards');
+    if (isBig && !auth(req)) return send(res, 401, { error: 'Нужен вход' });
+    const maxBody = isBig ? 1500 * 1024 : undefined;
     const body = req.method === 'POST' ? await readBody(req, maxBody) : {};
     const out = await handler(req, body, url);
     send(res, out.status, out.body);
