@@ -82118,5 +82118,77 @@ try{
 })();
 </script>
 
+<style id="bp-glogin-ui-css">
+/* ══ КНОПКА GOOGLE ВЕРНУЛАСЬ НА ЭКРАН ВХОДА ═════════════════════════
+   Ряд соцкнопок был скрыт слоем bp-auth-socials: обе кнопки тогда
+   ничего не делали, и честнее было их убрать. Google теперь работает
+   по-настоящему, поэтому ряд возвращаем — и на входе, и в регистрации.
+   Кнопка Телеграма вне Телеграма всё ещё заглушка: там её не
+   показываем, и Google занимает всю ширину.
+   Откат: удалить style#bp-glogin-ui-css и script#bp-glogin-ui.       */
+html #formLogin .auth-or{ display:flex }
+html #formLogin .auth-socials{ display:grid }
+html #formLogin.bp-tg-in .auth-soc-btn[onclick*="loginGoogle"]{ display:flex }
+html:not(.bp-in-tg) .auth-socials{ grid-template-columns:1fr }
+html:not(.bp-in-tg) .auth-soc-btn[onclick*="loginTelegram"]{ display:none }
+/* Пометка «скоро» и приглушённый цвет — не про Google: он работает.
+   Вне Телеграма помечать больше нечего (кнопка Телеграма скрыта),
+   внутри Телеграма работают обе. */
+html .auth-soc-btn[onclick*="loginGoogle"], html .auth-soc-btn[onclick*="bpGLoginReg"],
+html.bp-in-tg .auth-soc-btn{ opacity:1!important }
+html .auth-soc-btn[onclick*="loginGoogle"]::after, html .auth-soc-btn[onclick*="bpGLoginReg"]::after,
+html.bp-in-tg .auth-soc-btn::after{ content:none }
+/* Разделителей «или» стало два: свой перед кнопкой и чужой из блока
+   #bpAuthExtra, который встаёт следом. Оставляем один — верхний. */
+html #bpAuthExtra .bp-auth-or{ display:none }
+</style>
+<script id="bp-glogin-ui">
+(function(){
+'use strict';
+if(window.__bpGLoginUI) return; window.__bpGLoginUI = 1;
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'glogin-ui'); }catch(_){} }
+
+try{
+  var tg = window.Telegram && window.Telegram.WebApp;
+  if(tg && tg.initData) document.documentElement.classList.add('bp-in-tg');
+}catch(e){ E(e); }
+
+/* Тот же ряд — в регистрацию. Отдельную разметку не заводим: копируем
+   готовую, иначе при следующей правке формы разъедутся. */
+function toReg(){
+  try{
+    var reg = document.getElementById('formRegister');
+    var log = document.getElementById('formLogin');
+    if(!reg || !log || reg.querySelector('.auth-socials')) return;
+    var or = log.querySelector('.auth-or');
+    var soc = log.querySelector('.auth-socials');
+    if(!or || !soc) return;
+    var orC = or.cloneNode(true);
+    var socC = soc.cloneNode(true);
+    var g = socC.querySelector('[onclick*="loginGoogle"]');
+    if(g) g.setAttribute('onclick', 'bpGLoginReg()');
+    var bottom = reg.querySelector('.auth-bottom');
+    if(bottom){ reg.insertBefore(orC, bottom); reg.insertBefore(socC, bottom); }
+    else { reg.appendChild(orC); reg.appendChild(socC); }
+  }catch(e){ E(e); }
+}
+
+/* В регистрации сначала спрашиваем, кто человек: от этого зависит,
+   каким откроется приложение, а переспросить потом негде. */
+window.bpGLoginReg = function(){
+  try{
+    if(typeof _regRole === 'undefined' || !_regRole){
+      try{ showAuthToast('Сначала выберите, кто вы — блогер или рекламодатель', 'err'); }catch(e){ E(e); }
+      return;
+    }
+  }catch(e){ E(e); }
+  try{ loginGoogle(); }catch(e){ E(e); }
+};
+
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', toReg);
+else toReg();
+})();
+</script>
+
 </body>
 </html>
