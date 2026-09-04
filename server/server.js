@@ -743,15 +743,15 @@ let whLog = [];
 
 /* ── HTTP-обвязка ──────────────────────────────────────────────────── */
 
-function send(res, status, body) {
+function send(res, status, body, extra) {
   const txt = JSON.stringify(body);
-  res.writeHead(status, {
+  res.writeHead(status, Object.assign({
     'Content-Type': 'application/json; charset=utf-8',
     'Access-Control-Allow-Origin': ORIGIN,
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Admin-Key',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Admin-Key, X-Admin-Session',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Cache-Control': 'no-store',
-  });
+  }, extra || {}));
   res.end(txt);
 }
 
@@ -824,10 +824,85 @@ setInterval(() => {
   for (const [ip, rec] of adminMiss) if (now - rec.at > ADMIN_MISS_WINDOW) adminMiss.delete(ip);
 }, 5 * 60 * 1000).unref();
 
+/* ── Сессия владельца ──
+   Раньше ключ спрашивали дважды: отдельно приложение, отдельно пульт
+   выплат на своей странице. Теперь ключ вводится ОДИН раз (а тому, кто
+   вошёл своей почтой из ADMIN_EMAIL, — вообще не нужен): сервер ставит
+   куку, и обе страницы работают по ней.
+   Кука подписана ключом владельца, поэтому её не подделать и хранить
+   её негде — состояние в самой куке. HttpOnly: скрипту страницы она
+   не видна. SameSite=Strict: чужой сайт её не приложит.
+   Отдельная страховка от подделки запроса с чужого сайта — заголовок
+   X-Admin-Session на всём, что меняет данные: поставить его из чужой
+   формы нельзя, а наши страницы ставят его всегда. */
+const ADMIN_SESSION_MS = 12 * 60 * 60 * 1000;
+function adminSign(exp) {
+  return crypto.createHmac('sha256', ADMIN_KEY || 'нет-ключа').update('adm:' + exp).digest('hex').slice(0, 32);
+}
+function cookieOf(req, name) {
+  const raw = String(req.headers.cookie || '');
+  for (const part of raw.split(';')) {
+    const i = part.indexOf('=');
+    if (i < 0) continue;
+    if (part.slice(0, i).trim() === name) return decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return '';
+}
+function adminCookie(req, exp) {
+  const https = /^https:/i.test(String(ENV.PUBLIC_URL || ''))
+    || String(req.headers['x-forwarded-proto'] || '') === 'https';
+  return 'bp_admin=' + encodeURIComponent(exp + '.' + adminSign(exp))
+    + '; Path=/; HttpOnly; SameSite=Strict; Max-Age=' + Math.floor(ADMIN_SESSION_MS / 1000)
+    + (https ? '; Secure' : '');
+}
+/* Билет на один переход. Пульт выплат Телеграм открывает во ВНЕШНЕМ
+   браузере — куки приложения там нет, и ключ спросили бы снова. Поэтому
+   приложение берёт у сервера короткий подписанный билет и открывает
+   пульт по ссылке с ним; пульт сразу меняет билет на сессию и стирает
+   его из адреса. Билет живёт две минуты и срабатывает один раз. */
+const TICKET_MS = 2 * 60 * 1000;
+const ticketsUsed = new Map();
+function ticketSign(exp, nonce) {
+  return crypto.createHmac('sha256', ADMIN_KEY || 'нет-ключа')
+    .update('tkt:' + exp + ':' + nonce).digest('hex').slice(0, 32);
+}
+function ticketMake() {
+  const exp = Date.now() + TICKET_MS;
+  const nonce = crypto.randomBytes(9).toString('hex');
+  return exp + '.' + nonce + '.' + ticketSign(exp, nonce);
+}
+function ticketOk(raw) {
+  if (!ADMIN_KEY) return false;
+  const parts = String(raw || '').split('.');
+  if (parts.length !== 3) return false;
+  const exp = Number(parts[0]);
+  if (!Number.isFinite(exp) || exp <= Date.now()) return false;
+  const a = Buffer.from(parts[2], 'utf8'), b = Buffer.from(ticketSign(exp, parts[1]), 'utf8');
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return false;
+  /* второй раз тот же билет не пройдёт */
+  const now = Date.now();
+  for (const [k, t] of ticketsUsed) if (t < now) ticketsUsed.delete(k);
+  if (ticketsUsed.has(parts[1])) return false;
+  ticketsUsed.set(parts[1], exp);
+  return true;
+}
+function adminCookieOk(req) {
+  if (!ADMIN_KEY) return false;
+  const raw = cookieOf(req, 'bp_admin');
+  const i = raw.indexOf('.');
+  if (i < 0) return false;
+  const exp = Number(raw.slice(0, i));
+  if (!Number.isFinite(exp) || exp <= Date.now()) return false;
+  const a = Buffer.from(raw.slice(i + 1), 'utf8'), b = Buffer.from(adminSign(exp), 'utf8');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
 function isAdmin(req) {
   /* Сначала вошедший владелец: ему перебирать нечего. */
   const u = auth(req);
   if (u && u.is_admin) return true;
+  /* Сессия, выданная после единственного ввода ключа. */
+  if (adminCookieOk(req)
+      && (req.method === 'GET' || String(req.headers['x-admin-session'] || '') === '1')) return true;
   const given = String(req.headers['x-admin-key'] || '');
   if (!given) return false;
   if (adminBlocked(req)) return false;
@@ -2622,6 +2697,50 @@ const routes = {
   /* Приложение спрашивает, показывать ли админ-разделы, и может один раз
      обменять ключ владельца на постоянные права для своего аккаунта —
      чтобы дальше ключ уже нигде не вводить. */
+  /* Один вход на всё: ключ (или уже выполненный вход владельца) в обмен
+     на сессию. После этого ни приложение, ни пульт выплат ключ не
+     спрашивают, пока сессия не кончилась. */
+  'POST /api/admin/session': async (req, body) => {
+    if (!rateLimit(req, 'admsess', 20, 60000)) return tooOften;
+    const u = auth(req);
+    let pass = !!(u && u.is_admin);
+    /* переход из приложения во внешний браузер */
+    if (!pass && body && body.ticket) pass = ticketOk(body.ticket);
+    if (!pass) {
+      if (adminBlocked(req)) {
+        return { status: 429, body: { error: 'Слишком много попыток — подождите десять минут' } };
+      }
+      const given = String((body && body.key) || req.headers['x-admin-key'] || '');
+      const a = Buffer.from(given, 'utf8'), b = Buffer.from(ADMIN_KEY, 'utf8');
+      pass = !!(b.length && a.length === b.length && crypto.timingSafeEqual(a, b));
+      if (!pass) { adminMissed(req); return { status: 403, body: { error: 'Ключ владельца не подошёл' } }; }
+    }
+    const until = Date.now() + ADMIN_SESSION_MS;
+    return {
+      status: 200,
+      body: {
+        ok: true, until,
+        by: (u && u.is_admin) ? 'аккаунт' : (body && body.ticket ? 'билет' : 'ключ'),
+        /* билет отдаём только приложению — чтобы открыть пульт без ключа */
+        ticket: (body && body.wantTicket) ? ticketMake() : undefined,
+      },
+      headers: { 'Set-Cookie': adminCookie(req, until) },
+    };
+  },
+
+  /* Проверка: пустит ли сервер без ключа. Страница пульта спрашивает это
+     первым делом и показывает поле ключа, только если ответ «нет». */
+  'GET /api/admin/session': async (req) => ({
+    status: 200,
+    body: { ok: isAdmin(req), until: 0 },
+  }),
+
+  'POST /api/admin/logout': async () => ({
+    status: 200,
+    body: { ok: true },
+    headers: { 'Set-Cookie': 'bp_admin=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0' },
+  }),
+
   'GET /api/admin/whoami': async (req) => {
     const u = auth(req);
     if (!u) return { status: 401, body: { error: 'Нужен вход' } };
@@ -2778,17 +2897,29 @@ async function handleVerifyCallback(req, res, url) {
         }),
       });
       if (!tok.access_token) throw new Error((tok.error_description || tok.error) || 'TikTok не выдал доступ');
-      const me = await ask(
-        cfg.userInfo + '?fields=open_id,display_name,profile_deep_link,follower_count',
-        { headers: { Authorization: 'Bearer ' + tok.access_token } });
-      const d = me.data && me.data.user;
+      const scope = String(cfg.scope || '');
+      const fields = ['open_id', 'display_name'];
+      if (/user\.info\.profile/.test(scope)) fields.push('username', 'profile_deep_link');
+      if (/user\.info\.stats/.test(scope)) fields.push('follower_count');
+      const head = { headers: { Authorization: 'Bearer ' + tok.access_token } };
+      let me = await ask(cfg.userInfo + '?fields=' + fields.join(','), head);
+      let d = me.data && me.data.user;
+      if (!d && /scope/i.test(String((me.error && (me.error.message || me.error.code)) || ''))) {
+        /* Права уже, чем мы просили: берём только то, что дают всем. */
+        me = await ask(cfg.userInfo + '?fields=open_id,display_name', head);
+        d = me.data && me.data.user;
+      }
       if (!d) {
         const why = (me.error && (me.error.message || me.error.code)) || '';
         throw new Error('TikTok не отдал данные аккаунта' + (why ? ': ' + why : ''));
       }
       channel = {
         id: d.open_id, title: d.display_name || '',
-        url: d.profile_deep_link || '', subs: Number(d.follower_count) || 0,
+        /* Ссылку строим из ника, если площадка не дала прямую. Без прав на
+           профиль ссылки нет вовсе — канал всё равно подтверждён, адрес
+           допишет сам блогер. */
+        url: d.profile_deep_link || (d.username ? 'https://www.tiktok.com/@' + d.username : ''),
+        subs: Number(d.follower_count) || 0,
       };
     }
 
@@ -2942,7 +3073,7 @@ const handler = async (req, res) => {
     const maxBody = isBig ? 1500 * 1024 : undefined;
     const body = req.method === 'POST' ? await readBody(req, maxBody) : {};
     const out = await handler(req, body, url);
-    send(res, out.status, out.body);
+    send(res, out.status, out.body, out.headers);
   } catch (e) {
     if (e && e.httpStatus) return send(res, e.httpStatus, { error: e.message });
     console.error('[http]', e);
