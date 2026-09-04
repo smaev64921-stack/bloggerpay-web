@@ -13970,7 +13970,10 @@ function showVerifyPicker() {
       <span class="st2-val" id="st2Bal">0 ₽</span>
       <span class="st2-arr"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span>
     </div>
-    <div class="st2-row" onclick="goTo('withdraw')" role="button" tabindex="0">
+    <!-- Раньше строка вела на экран вывода, а он целиком занят маршрутом
+         проверки личности — нажатие на «реквизиты» выглядело как переброс
+         на вывод и на документы. Открываем именно реквизиты. -->
+    <div class="st2-row" onclick="if(window.bpKycPayout){bpKycPayout()}else{goTo('withdraw')}" role="button" tabindex="0">
       <span class="st2-ico violet"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></span>
       <span class="st2-t"><span class="st2-n">Реквизиты для выплат</span><span class="st2-s" id="st2PayoutSub">Куда приходят деньги при выводе</span></span>
       <span class="st2-val" id="st2Payout">Не добавлены</span>
@@ -38654,6 +38657,18 @@ function shrinkDoc(file, cb){
 window.bpKycIdent = function(){
   if(!phoneOk()){ bpKycPhone(); return; }
   var idn = (kyc() && kyc().identity) || {};
+  /* Документы уже у оператора — показываем состояние, а не пустую форму
+     с кнопкой «Отправить». Раньше экран не смотрел на статус вовсе:
+     человек, отправивший паспорт вчера, видел ту же анкету и решал, что
+     ничего не ушло. Правка анкеты остаётся, пока открыто окно правки. */
+  var EDIT_WINDOW = 3600000;                 /* час на правку после отправки */
+  var sentAt = Number(idn.at) || 0;
+  var canStillEdit = sentAt > 0 && (Date.now() - sentAt) < EDIT_WINDOW;
+  if(idn.status === 'pending' && idn.sent && !canStillEdit){
+    checking(true);
+    try{ pollIdentity(true); }catch(e){}
+    return;
+  }
   var card = sheet(
     '<div class="kyc-hero"><div class="kyc-hero-ic">' + I.hShield + '</div>' +
     '<div class="kyc-h1">Проверка личности</div>' +
@@ -38853,7 +38868,7 @@ function checking(sent){
       '<div class="kyc-stat-i load"></div>' +
       '<div class="kyc-stat-t">' + (sent ? 'Документы у оператора' : 'Заявка сохранена') + '</div>' +
       '<div class="kyc-stat-s">' + (sent
-        ? 'Оператор сверит данные с фото и подтвердит личность. Статус обновится на этом экране, реквизиты можно заполнить уже сейчас.'
+        ? 'Оператор сверит данные с фото и подтвердит личность — обычно в течение дня. Статус обновится сам, заходить и проверять не нужно. Реквизиты для выплат откроются сразу после проверки.'
         : 'Сейчас нет связи с сервером — документы отправятся автоматически, как только она появится.') + '</div>' +
     '</div>' +
     '<button class="kyc-ghost" onclick="bpKycClose()" style="margin-top:18px">Закрыть</button>'
@@ -38913,7 +38928,11 @@ function pollIdentity(force){
 /* ═══ 3. РЕКВИЗИТЫ — СВОЯ форма ═══ */
 window.bpKycPayout = function(){
   if(!phoneOk()){ bpKycPhone(); return; }
-  if(!idOk() && !idPending()){ bpKycIdent(); return; }
+  /* Пока личность не подтверждена, реквизиты не спрашиваем: вывод всё
+     равно закрыт, а экран вывода прямо обещает «откроется после
+     проверки». Раньше сюда пускали и во время проверки — и два экрана
+     говорили человеку разное. */
+  if(!idOk()){ bpKycIdent(); return; }
   var k = kyc();
   var pv = k.payout || {};
   var method = pv.method || 'card';
@@ -77701,7 +77720,14 @@ function onPage(page){
   if(p === 'balance' || p === 'withdraw' || p === 'topup' || p === 'home' || p === 'profile'){
     reprobe(); pullMoney(false);
   }
-  if(p === 'withdraw' || p === 'balance') pullKyc(false);
+  /* Профиль тоже спрашивает: чек-лист «Заполнить профиль» показывает
+     состояние документов, а раньше брал его только из этого браузера —
+     отправил с телефона, на компьютере снова «подтвердите личность». */
+  if(p === 'withdraw' || p === 'balance' || p === 'profile' || p === 'settings'){
+    pullKyc(false).then(function(changed){
+      if(changed && typeof window.bpPf2RenderDone === 'function') window.bpPf2RenderDone();
+    }).catch(function(){});
+  }
 }
 var og = window.goTo;
 if(typeof og === 'function' && !og.__bpPull){
@@ -78761,11 +78787,9 @@ function render(card){
      не очевидно. Кнопка возвращает туда, откуда пришли. */
   var backBtn = card.querySelector('#pay2Back');
   if(backBtn) backBtn.addEventListener('click', function(){
-    try{
-      if(typeof window.bpKycIdent === 'function' && !(k.identity && k.identity.status === 'verified')){
-        window.bpKycIdent(); return;
-      }
-    }catch(e){ E(e); }
+    /* «Назад» именно закрывает. Раньше при неподтверждённой личности она
+       открывала форму документов — получалась петля: реквизиты → назад →
+       документы → мимо карточки → снова реквизиты. */
     try{ if(typeof window.bpKycClose === 'function') window.bpKycClose(); }catch(e){ E(e); }
   });
 
@@ -80125,11 +80149,20 @@ function todo(){
   if(!isAdv()){
     items.push({ key:'niche', ok:hasNiche, t:'Выбрать тематику', s:'До четырёх направлений — по ним вас находят', go:'edit' });
     items.push({ key:'plat', ok:pls.length > 0, t:'Добавить площадки', s:'Ссылки на каналы, где выходит реклама', go:'edit' });
-    items.push({ key:'card', ok:myCards().length > 0, t:'Разместить карточку в каталоге', s:'Без неё рекламодатели вас не увидят', go:'card' });
+    /* Шага «разместить карточку» здесь больше нет: карточка — не пункт
+       анкеты, а отдельная работа со своим экраном и своей подсказкой. */
     items.push({ key:'city', ok:!!u.city, t:'Указать город', s:'Нужен для локальных кампаний', go:'edit' });
     items.push({ key:'kyc', ok:id.status === 'verified', pending:id.status === 'pending', t: id.status === 'pending' ? 'Личность на проверке' : 'Подтвердить личность',
       s: id.status === 'pending' ? 'Документы на проверке у оператора' : (id.status === 'rejected' ? 'Оператор вернул документы — посмотрите почему' : 'Понадобится для вывода денег'), go:'kyc' });
-    items.push({ key:'payout', ok:!!(k.payout && k.payout.done), t:'Указать реквизиты', s:'Куда приходят деньги за сделки', go:'payout' });
+    /* Реквизиты имеет смысл спрашивать только после подтверждённой
+       личности: до неё вывод всё равно закрыт, а экран вывода прямо
+       обещает «откроется после проверки». Раньше чек-лист звал заполнять
+       их раньше — два экрана говорили разное. */
+    var idDone = id.status === 'verified';
+    items.push({ key:'payout', ok:!!(k.payout && k.payout.done), lock:!idDone,
+      t:'Указать реквизиты',
+      s: idDone ? 'Куда приходят деньги за сделки' : 'Откроется после проверки личности',
+      go: idDone ? 'payout' : 'kyc' });
   } else {
     var c = company();
     items.push({ key:'company', ok:!!(c && c.name && c.inn), t:'Заполнить данные компании', s: (c && c.name) ? 'ИНН не указан — нужен для счетов' : 'Нужны для счетов и закрывающих', go:'company' });
@@ -80253,6 +80286,7 @@ function animStats(){
   });
 }
 
+window.bpPf2RenderDone = function(){ try{ renderDone(); }catch(e){ E(e); } };
 function renderDone(){
   var u = me(), host = $('pfPromoBanner'), page = $('pg-profile'); if(!u || !page) return;
   var T = todo(), el = $('pf2Done');
@@ -80260,8 +80294,10 @@ function renderDone(){
   if(!el){ el = document.createElement('div'); el.id = 'pf2Done'; el.className = 'pf2-sec'; (host || page).parentNode === page && host ? page.insertBefore(el, host) : page.appendChild(el); }
   var pct = Math.round(T.done / T.total * 100), miss = T.items.filter(function(i){ return !i.ok; });
   var rows = miss.slice(0, 5).map(function(i){
+    var quiet = i.pending || i.lock;
     return '<button type="button" class="pf2-todo" onclick="bpPf2Go(\'' + i.go + '\')">'
-      + '<span class="i"' + (i.pending ? ' style="color:var(--t3);border-color:var(--brd2);background:none"' : '') + '>' + (i.pending ? '…' : '!') + '</span>'
+      + '<span class="i"' + (quiet ? ' style="color:var(--t3);border-color:var(--brd2);background:none"' : '') + '>'
+      + (i.pending ? '…' : (i.lock ? '\u00b7' : '!')) + '</span>'
       + '<span class="t"><b>' + esc(i.t) + '</b><span>' + esc(i.s) + '</span></span>' + ARR + '</button>';
   }).join('');
   el.innerHTML = '<div class="pf2-card">'

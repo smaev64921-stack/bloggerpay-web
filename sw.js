@@ -69,6 +69,10 @@ self.addEventListener('fetch', function (e) {
   var url;
   try { url = new URL(req.url); } catch (err) { return; }
   if (url.origin !== self.location.origin) return;
+  /* Ответы кассы не кэшируем вовсе. Это и свежесть (статус проверки
+     личности, баланс, каталог), и чужие данные: копия ответа /api/me
+     осталась бы в кэше устройства после смены аккаунта. */
+  if (url.pathname.indexOf('/api/') === 0) return;
 
   e.respondWith(
     fetch(req)
