@@ -39185,6 +39185,11 @@ else setTimeout(boot, 0);
 
   /* ── Шлюз: гостю показываем, зачем нужен аккаунт, а не пустой экран ── */
   window.bpGuestGate = function(action){
+    /* Своя чистка вместо esc(): этой функции в слое нет, и шторка падала
+       на первой же строке. Заметить было негде — её никто не вызывал. */
+    var safe = String(action == null ? '' : action)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').slice(0, 80) || 'продолжить';
     var old = document.getElementById('bpGateSheet'); if(old) old.remove();
     var ov = document.createElement('div');
     ov.id = 'bpGateSheet'; ov.className = 'own-card-sheet';
@@ -39193,7 +39198,7 @@ else setTimeout(boot, 0);
         '<div class="ocs-sheet">'
       +   '<div class="ocs-grip"></div>'
       +   '<div class="ocs-ttl">Нужен аккаунт</div>'
-      +   '<div class="ocs-sub">Чтобы ' + esc(action || 'продолжить') + ', войдите или зарегистрируйтесь. Регистрация занимает минуту.</div>'
+      +   '<div class="ocs-sub">Чтобы ' + safe + ', войдите или зарегистрируйтесь. Это займёт минуту.</div>'
       +   '<div class="ocs-acts" style="margin-top:14px">'
       +     '<button class="ocs-b ocs-b-main" onclick="document.getElementById(\'bpGateSheet\').remove();bpLeaveGuest(\'register\')">Создать аккаунт</button>'
       +     '<button class="ocs-b" onclick="document.getElementById(\'bpGateSheet\').remove();bpLeaveGuest(\'login\')">У меня уже есть аккаунт</button>'
@@ -80769,7 +80774,9 @@ function repaint(){
   }catch(e){ E(e); }
 }
 function apply(rows){
-  var u = me(); if(!u) return;
+  /* У гостя нет своей записи — все карточки для него чужие. */
+  var u = me() || (window.bpIsGuest ? { id: null } : null);
+  if(!u) return;
   var my = mySrvId();
   var list = cards(), changed = false, seen = {};
   var byId = {};
@@ -80811,7 +80818,11 @@ function pull(force){
   try{
     var S = srv();
     if(!S || typeof S.raw !== 'function' || !S.configured || !S.configured()) return;
-    if(!me()) return;
+    /* Гость каталог ВИДИТ: ручка /api/cards открыта без входа, и вся
+       разница только в том, что своих карточек у гостя нет. Раньше здесь
+       стояло «нет человека — не ходим на сервер», и гость получал пустой
+       экран вместо витрины. */
+    if(!me() && !window.bpIsGuest) return;
     if(_pull.busy) return;
     if(!force && Date.now() - _pull.at < 10000) return;
     _pull.busy = true; _pull.at = Date.now();
@@ -83214,6 +83225,209 @@ try{
 setInterval(function(){ if(!document.hidden) fix(); }, 3000);
 })();
 </script>
+
+<script id="bp-guest2">
+/* ══ ГОСТЬ: СМОТРЕТЬ БЕЗ РЕГИСТРАЦИИ ═══════════════════════════════
+   На последнем экране знакомства кнопка «Начать» приводит человека сюда
+   без аккаунта. Он должен увидеть, ради чего аккаунт заводить: каталог
+   блогеров и задания рекламодателей. Аккаунт спрашиваем только тогда,
+   когда он хочет что-то СДЕЛАТЬ — написать блогеру, вступить в задание,
+   открыть кошелёк.
+
+   Ничего нового не рисуем: шторка «Нужен аккаунт» (bpGuestGate) была
+   написана давно и просто никем не вызывалась, а витрину рисуют те же
+   функции, что и для вошедшего.
+
+   Гость — это «нажал Начать» И «не вошёл». Как только человек вошёл,
+   метка снимается и слой замолкает.
+   Откат: удалить script#bp-guest2.                                   */
+(function(){
+'use strict';
+if(window.__bpGuest2) return; window.__bpGuest2 = 1;
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'guest'); }catch(_){} }
+
+function logged(){
+  try{ return typeof currentUser !== 'undefined' && !!currentUser; }catch(e){ return false; }
+}
+function wanted(){
+  try{ return localStorage.getItem('bp_guest') === '1'; }catch(e){ return false; }
+}
+function drop(){ try{ localStorage.removeItem('bp_guest'); }catch(e){} }
+
+/* Читают и слой каталога, и шторки. */
+Object.defineProperty(window, 'bpIsGuest', {
+  get: function(){ return !!(wanted() && !logged()); },
+  configurable: true,
+});
+
+/* ── что гостю можно ───────────────────────────────────────────────
+   Главная с каталогом, задания и сам экран входа. Всё остальное —
+   деньги, сделки, переписка, свой профиль — без аккаунта не имеет
+   смысла: там нечего показать. */
+var OPEN = { home: 1, tasks: 1, auth: 1 };
+var WHY = {
+  profile: 'открыть профиль',
+  favorites: 'сохранять блогеров',
+  balance: 'пользоваться кошельком',
+  topup: 'пополнить счёт',
+  withdraw: 'выводить деньги',
+  chats: 'переписываться',
+  campaigns: 'запускать задания',
+  settings: 'менять настройки',
+  'add-blogger-card': 'разместить свою карточку',
+  company: 'заполнить данные компании',
+};
+
+function gateSheet(why){
+  try{
+    if(typeof window.bpGuestGate === 'function'){ window.bpGuestGate(why); return; }
+  }catch(e){ E(e); }
+  try{ showAuthToast('Нужен аккаунт — войдите или зарегистрируйтесь', 'err'); }catch(e){}
+}
+
+/* ── витрина заданий ──
+   Задания ездят между устройствами конвертами, а те требуют входа.
+   Для гостя сервер отдаёт ту же витрину отдельной открытой ручкой —
+   только текст объявления, без чьих-либо номеров. */
+function loadTasks(){
+  try{
+    var S = window.bpSrv;
+    if(!S || !S.configured || !S.configured() || typeof S.raw !== 'function') return;
+    S.raw('GET', '/api/tasks/public').then(function(j){
+      var rows = (j && j.rows) || [];
+      if(!rows.length) return;
+      var list = rows.map(function(r){
+        return {
+          id: r.id, ownerId: 'srv:public', status: 'active',
+          name: r.title, title: r.title,
+          desc: r.desc, description: r.desc,
+          budget: r.budget, perBlogger: r.perBlogger, price: r.perBlogger,
+          slots: r.slots, platform: r.platform, format: r.format,
+          topics: r.topics || [], advertiserName: r.advertiser,
+          createdAt: r.at, _public: true,
+        };
+      });
+      /* Пишем напрямую: у гостя нет сессии, отправлять это обратно
+         некуда, а очередь bpData только мешала бы. */
+      try{ window.localStorage.setItem('bp_campaigns', JSON.stringify(list)); }catch(e){ E(e); }
+      try{ if(typeof window.bpTasksRender === 'function') window.bpTasksRender(); }catch(e){}
+    }).catch(function(){});
+  }catch(e){ E(e); }
+}
+
+/* ── вход в приложение без аккаунта ─────────────────────────────── */
+function open(){
+  if(!window.bpIsGuest) return;
+  var auth = document.getElementById('pg-auth');
+  if(!auth || !auth.classList.contains('on')) return;    /* уже внутри */
+  try{ document.documentElement.classList.add('bp-guest'); }catch(e){}
+  try{ enterApp(); }catch(e){ E(e); return; }
+  try{ if(typeof window.bpCardsPull === 'function') window.bpCardsPull(); }catch(e){}
+  loadTasks();
+  banner();
+}
+
+/* Полоса вверху главной: человек должен понимать, что он ещё не вошёл,
+   а не удивляться потом пустому профилю. */
+function banner(){
+  try{
+    if(!window.bpIsGuest) { var old = document.getElementById('bpGuestBar'); if(old) old.remove(); return; }
+    var home = document.getElementById('pg-home');
+    if(!home || document.getElementById('bpGuestBar')) return;
+    var bar = document.createElement('div');
+    bar.id = 'bpGuestBar';
+    bar.innerHTML = '<span>Вы смотрите без аккаунта</span>'
+      + '<button type="button" onclick="bpLeaveGuest(\'register\')">Создать аккаунт</button>';
+    home.insertBefore(bar, home.firstChild);
+  }catch(e){ E(e); }
+}
+
+/* ── шлюз ──────────────────────────────────────────────────────── */
+function gateFn(name, why){
+  try{
+    var o = window[name];
+    if(typeof o !== 'function' || o.__bpGuest) return;
+    var w = function(){
+      if(window.bpIsGuest){ gateSheet(why); return; }
+      return o.apply(this, arguments);
+    };
+    w.__bpGuest = 1;
+    window[name] = w;
+  }catch(e){ E(e); }
+}
+
+function hook(){
+  /* Переходы по разделам. Экран входа гостю открыт — он же выход
+     из гостя. */
+  try{
+    var g = window.goTo;
+    if(typeof g === 'function' && !g.__bpGuest){
+      var w = function(page){
+        var p = String(page || '');
+        if(window.bpIsGuest && !OPEN[p]){
+          gateSheet(WHY[p] || 'продолжить');
+          return;
+        }
+        var r = g.apply(this, arguments);
+        if(p === 'home') setTimeout(banner, 60);
+        return r;
+      };
+      w.__bpGuest = 1;
+      window.goTo = w;
+    }
+  }catch(e){ E(e); }
+
+  gateFn('addToCamp', 'написать блогеру');
+  gateFn('bpTaskJoin', 'вступить в задание');
+  gateFn('bpVerifyOwn', 'подтвердить свой канал');
+  gateFn('toggleFav', 'сохранять блогеров');
+  gateFn('bpKycIdent', 'подтвердить личность');
+  gateFn('bpKycPayout', 'указать реквизиты');
+
+  /* Человек вошёл — гостя больше нет. */
+  try{
+    var enter = window.enterApp;
+    if(typeof enter === 'function' && !enter.__bpGuest){
+      var we = function(){
+        var r = enter.apply(this, arguments);
+        try{
+          if(logged()){
+            drop();
+            document.documentElement.classList.remove('bp-guest');
+            var b = document.getElementById('bpGuestBar'); if(b) b.remove();
+          }
+        }catch(e){ E(e); }
+        return r;
+      };
+      we.__bpGuest = 1;
+      window.enterApp = we;
+    }
+  }catch(e){ E(e); }
+}
+
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', hook);
+else hook();
+/* initApp уводит на экран входа сам; входим гостем сразу после него. */
+setTimeout(open, 700);
+setTimeout(open, 2000);
+})();
+</script>
+
+<style id="bp-guest2-css">
+html #bpGuestBar{
+  display:flex; align-items:center; gap:10px; margin:0 0 12px;
+  padding:10px 12px; border-radius:14px;
+  background:var(--acc-bg,rgba(47,108,224,.16));
+  border:1px solid var(--acc-br,rgba(47,108,224,.42));
+  font-size:12.5px; color:var(--t1,#fff);
+}
+html #bpGuestBar span{ flex:1; line-height:1.4 }
+html #bpGuestBar button{
+  flex-shrink:0; border:none; border-radius:10px; padding:8px 12px;
+  background:var(--acc,#2f6ce0); color:#fff; font:inherit; font-size:12px;
+  font-weight:700; cursor:pointer;
+}
+</style>
 
 </body>
 </html>

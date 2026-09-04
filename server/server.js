@@ -711,6 +711,10 @@ const q = {
     FROM sync WHERE ver > ? AND (a_id = ? OR b_id = ? OR (b_id IS NULL AND kind = 'camp'))
     ORDER BY ver ASC LIMIT ?`),
   syncMax: db.prepare('SELECT COALESCE(MAX(ver), 0) AS v FROM sync'),
+  /* Задания — единственные конверты без адресата: их и так видит каждый
+     вошедший. Для витрины гостя берём те же строки. */
+  publicCamps: db.prepare(`SELECT rid, data, updated_at FROM sync
+    WHERE kind = 'camp' AND b_id IS NULL ORDER BY ver DESC LIMIT ?`),
   cardGet: db.prepare('SELECT * FROM cards WHERE id = ?'),
   cardsMine: db.prepare('SELECT id FROM cards WHERE user_id = ?'),
   cardIns: db.prepare('INSERT INTO cards (id, user_id, data) VALUES (?,?,?)'),
@@ -1897,6 +1901,39 @@ const routes = {
 
   /* since — последний виденный номер; отдаём до 200 конвертов новее.
      Если их больше, more:true — клиент придёт ещё раз. */
+  /* ── Витрина заданий для гостя ──
+     Человек, который ещё не завёл аккаунт, должен увидеть, ради чего его
+     заводить. Отдаём только то, что и так написано в самом объявлении:
+     что сделать, за сколько, на какой площадке. Ни номеров людей, ни
+     внутренних полей, ни черновиков — они сюда не попадают, потому что
+     черновики вообще не уезжают на сервер. */
+  'GET /api/tasks/public': async (req) => {
+    if (!rateLimit(req, 'tasks:pub', 60, 60000)) return tooOften;
+    const rows = q.publicCamps.all(60);
+    const out = [];
+    for (const r of rows) {
+      let d = null;
+      try { d = JSON.parse(r.data); } catch (e) { continue; }
+      if (!d || String(d.status || '') !== 'active') continue;
+      const title = cardStr(d.title || d.name, 120);
+      if (!title) continue;
+      out.push({
+        id: String(r.rid).slice(0, 80),
+        title,
+        desc: cardStr(d.desc || d.description, 400),
+        budget: Number(d.budget) || 0,
+        perBlogger: Number(d.perBlogger || d.price) || 0,
+        slots: Number(d.slots) || 0,
+        platform: cardStr(d.platform, 24),
+        format: cardStr(d.format, 40),
+        topics: Array.isArray(d.topics) ? d.topics.slice(0, 6).map((t) => cardStr(t, 40)) : [],
+        advertiser: cardStr(d.advertiserName, 60),
+        at: r.updated_at,
+      });
+    }
+    return { status: 200, body: { rows: out } };
+  },
+
   'GET /api/sync/pull': async (req, body, url) => {
     const u = auth(req);
     if (!u) return { status: 401, body: { error: 'Нужен вход' } };

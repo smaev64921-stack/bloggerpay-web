@@ -122,6 +122,33 @@ try {
   ok(page.body.rows.length === 3 && page.body.more === true, 'порция из трёх и признак «есть ещё»', { n: page.body.rows.length, more: page.body.more });
   const rest = await api('GET', '/api/sync/pull?since=' + page.body.ver + '&limit=100', null, blg.token);
   ok(rest.body.more === false && rest.body.rows.every((r) => r.ver > page.body.ver), 'остаток без повторов', { n: rest.body.rows.length });
+  /* ── витрина заданий для гостя ──
+     Ручка открыта без входа, поэтому проверяем не только «что-то
+     вернулось», а ЧТО именно: не утекают ли номера людей и не попадают
+     ли туда черновики. */
+  await api('POST', '/api/sync/put', {
+    kind: 'camp', rid: 'camp_pub_1', shared: true,
+    data: { id: 'camp_pub_1', status: 'active', title: 'Ролик про сервис',
+      desc: 'снять обзор', budget: 5000, perBlogger: 5000, slots: 1,
+      platform: 'youtube', topics: ['Игры'], ownerId: '#srv:' + adv.id,
+      advertiserName: 'Рекламодатель' },
+  }, adv.token);
+  await api('POST', '/api/sync/put', {
+    kind: 'camp', rid: 'camp_pub_2', shared: true,
+    data: { id: 'camp_pub_2', status: 'draft', title: 'Черновик', budget: 1 },
+  }, adv.token);
+
+  const pubRes = await fetch(BASE + '/api/tasks/public');
+  const shop = await pubRes.json();
+  ok(pubRes.status === 200, 'витрина заданий открыта без входа', pubRes.status);
+  const one = (shop.rows || []).find((r) => r.id === 'camp_pub_1');
+  ok(!!one, 'опубликованное задание в витрине есть', shop.rows);
+  ok(!(shop.rows || []).some((r) => r.id === 'camp_pub_2'), 'черновик в витрину не попал');
+  ok(one && one.title === 'Ролик про сервис' && one.perBlogger === 5000,
+    'текст и цена на месте', one);
+  const leak = JSON.stringify(shop.rows || []);
+  ok(leak.indexOf('#srv:') < 0 && leak.indexOf('ownerId') < 0,
+    'номеров людей в витрине нет', leak.slice(0, 160));
 } catch (e) {
   failed++; console.log('  FAIL исключение: ' + e.message);
 } finally {
