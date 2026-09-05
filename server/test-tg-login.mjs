@@ -127,11 +127,24 @@ try {
   const good = tgReply();
   const okRes = await fetch(BASE + '/api/auth/telegram/callback?' + asQuery(st.body.nonce, good),
     { redirect: 'manual' });
-  const loc = okRes.headers.get('location') || '';
-  /* Успех возвращает переходом, а не страницей «Вы вошли»: лишняя
-     остановка посреди дороги — это и есть «долго грузит». */
-  ok(okRes.status === 302 && loc.indexOf('tglogin=' + st.body.nonce) > 0,
-    'верная подпись пускает и сразу возвращает в приложение', { status: okRes.status, loc: loc.slice(0, 90) });
+  const okTxt = await okRes.text();
+  /* Возврат приходит в ОКНО, которое открыла кнопка входа, а не в ту
+     вкладку, где человек ждёт. Раньше сервер отвечал ему переходом на
+     приложение — окно поднимало все пять мегабайт и первым забирало
+     вход себе, а ждущая вкладка две минуты крутила точки. Теперь оно
+     получает страничку, которая только будит ждущего и закрывается. */
+  ok(okRes.status === 200 && /Готово|Возвращаемся/.test(okTxt),
+    'верная подпись отдаёт страницу возврата, а не переход в приложение',
+    { status: okRes.status, len: okTxt.length });
+  ok(okTxt.length < 4000, 'страница возврата крошечная', okTxt.length);
+  ok(/postMessage/.test(okTxt) && /bpAuthReady/.test(okTxt) && /BroadcastChannel/.test(okTxt),
+    'она будит ждущую вкладку тремя способами');
+  ok(/bpAuthWaiting/.test(okTxt),
+    'и сама смотрит, ждёт ли её живая вкладка, — иначе уходит в приложение');
+  ok(!/api\/auth\/telegram\/pending/.test(okTxt),
+    'сама вход не забирает — метка остаётся тому, кто ждёт');
+  ok(okTxt.indexOf('tglogin=' + st.body.nonce) > 0,
+    'если ждать некому — уходит в приложение, как раньше');
 
   const got = await api('GET', '/api/auth/telegram/pending?nonce=' + st.body.nonce);
   ok(got.status === 200 && got.body.state === 'ok' && got.body.token, 'сессия отдана приложению', got.body);
@@ -142,8 +155,12 @@ try {
   ok(me.status === 200 && meJ.user && /telegram\.local$/.test(meJ.user.email),
     'сессия рабочая, аккаунт заведён по Телеграму', meJ.user);
 
+  /* Метка живёт ещё минуту после первой выдачи. Пока она сгорала сразу,
+     вход был гонкой двух окон: проигравшему сервер отвечал «не найден»,
+     и человек смотрел на «Заканчиваем вход» до победного конца. */
   const twice = await api('GET', '/api/auth/telegram/pending?nonce=' + st.body.nonce);
-  ok(twice.status === 404, 'метка забирается один раз');
+  ok(twice.status === 200 && twice.body.token === got.body.token,
+    'ту же метку можно забрать второй раз — гонки окон больше нет', twice.status);
 
   /* ── второй вход тем же человеком — тот же аккаунт, а не второй ── */
   const st2 = await api('GET', '/api/auth/telegram/start');

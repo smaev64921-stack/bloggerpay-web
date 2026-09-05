@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Каталог блогеров</title>
+<style>
+:root{
+  --bg:#0A0A0C;
+  --surface:#131418;
+  --surface-2:#1B1D22;
+  --surface-3:#23262C;
+  --stroke:rgba(255,255,255,.08);
+  --stroke-2:rgba(255,255,255,.17);
+  --text:#F3F4F6;
+  --muted:#8C919B;
+  --muted-2:#666B75;
+  --ok:#31C06A;
+  --danger:#FF4D4F;
+  --gold:#F2C14E;
+  --tg:#31A6E8;--yt:#FF3B30;--tt:#25F4EE;--ig:#E1306C;
+  --r-card:18px;--r-pill:999px;
+  --sheet-pad:calc(14px + env(safe-area-inset-bottom));
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  font-size:15px;line-height:1.4;-webkit-font-smoothing:antialiased;overscroll-behavior-y:none}
+body.locked{overflow:hidden}
+button,input,select{font:inherit;color:inherit}
+button{background:none;border:0;cursor:pointer;padding:0}
+:focus-visible{outline:2px solid var(--text);outline-offset:2px;border-radius:10px}
+.num{font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.page{transition:filter .22s ease,opacity .22s ease}
+body.sheet-open .page{filter:blur(9px);opacity:.55;pointer-events:none}
+.wrap{max-width:1240px;margin:0 auto;padding:0 14px}
+
+/* ───────── навигация ───────── */
+.nav{display:flex;align-items:center;gap:10px;padding:14px 0 10px}
+.logo{display:flex;align-items:center;gap:9px;font-weight:750;letter-spacing:-.025em;font-size:17px;flex:0 0 auto}
+.logo i{width:27px;height:27px;border-radius:9px;display:grid;place-items:center;
+  background:linear-gradient(150deg,#9B84FF,#5B3BE8);font-style:normal;font-size:13px;font-weight:800;color:#fff}
+.tabs{display:flex;gap:2px;margin-left:8px;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tabs a{padding:7px 12px;border-radius:var(--r-pill);font-size:13.5px;font-weight:550;color:var(--muted);
+  text-decoration:none;white-space:nowrap}
+.tabs a.on{background:var(--surface-3);color:var(--text)}
+.balance{margin-left:auto;display:flex;align-items:center;gap:8px;background:var(--surface);
+  border:1px solid var(--stroke);border-radius:var(--r-pill);padding:7px 13px;font-size:13px;font-weight:650;flex:0 0 auto}
+.balance small{color:var(--muted);font-weight:500}
+@media(max-width:560px){.tabs{order:3;width:100%;margin:6px 0 0}.nav{flex-wrap:wrap}}
+
+h1{font-size:26px;line-height:1.12;letter-spacing:-.035em;margin:6px 0 6px;font-weight:780}
+.lede{color:var(--muted);font-size:13.5px;margin:0 0 12px;max-width:58ch}
+
+.kpis{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;margin-bottom:12px;scrollbar-width:none}
+.kpis::-webkit-scrollbar{display:none}
+.kpi{flex:0 0 auto;background:var(--surface);border:1px solid var(--stroke);border-radius:14px;padding:9px 13px;min-width:106px}
+.kpi .v{font-weight:700;font-size:16px;letter-spacing:-.03em}
+.kpi .k{font-size:11px;color:var(--muted-2);margin-top:1px}
+.kpi.free .v{color:var(--ok)}
+
+/* ───────── поиск / чипы ───────── */
+.search{position:relative;margin-bottom:10px}
+.search .ico{position:absolute;left:15px;top:50%;transform:translateY(-50%);opacity:.42;pointer-events:none}
+.search input{width:100%;height:48px;border-radius:var(--r-pill);background:var(--surface);
+  border:1px solid var(--stroke);padding:0 46px;font-size:15px;transition:border-color .15s}
+.search input::placeholder{color:var(--muted-2)}
+.search input:focus{outline:none;border-color:var(--stroke-2)}
+.search input::-webkit-search-cancel-button{display:none}
+.search .clear{position:absolute;right:9px;top:50%;transform:translateY(-50%);width:30px;height:30px;
+  border-radius:50%;display:none;place-items:center;color:var(--muted);background:var(--surface-2)}
+.search.filled .clear{display:grid}
+
+.chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;margin-bottom:9px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 14px;
+  border-radius:var(--r-pill);background:var(--surface);border:1px solid var(--stroke);
+  font-size:13.5px;font-weight:550;color:var(--muted);white-space:nowrap;transition:.16s}
+.chip svg{width:15px;height:15px;flex:0 0 auto}
+.chip[aria-pressed="true"]{background:var(--surface-3);border-color:var(--stroke-2);color:var(--text)}
+.chip[data-p="tg"][aria-pressed="true"]{color:#fff;border-color:rgba(49,166,232,.6);background:rgba(49,166,232,.15)}
+.chip[data-p="yt"][aria-pressed="true"]{color:#fff;border-color:rgba(255,59,48,.6);background:rgba(255,59,48,.14)}
+.chip[data-p="tt"][aria-pressed="true"]{color:#fff;border-color:rgba(37,244,238,.5);background:rgba(37,244,238,.12)}
+.chip[data-p="ig"][aria-pressed="true"]{color:#fff;border-color:rgba(225,48,108,.6);background:rgba(225,48,108,.14)}
+.chip.preset{height:33px;font-size:13px;background:transparent;border-style:dashed}
+.chip.preset[aria-pressed="true"]{background:var(--surface-3);border-style:solid;color:var(--text)}
+.chip.preset .cnt{color:var(--muted-2);font-weight:500}
+
+.bar{display:flex;align-items:center;gap:8px;margin:12px 0 14px}
+.bar .count{font-size:13px;color:var(--muted);white-space:nowrap}
+.bar .count b{color:var(--text);font-weight:650}
+.bar .right{margin-left:auto;display:flex;gap:8px;align-items:center}
+.mini{height:36px;padding:0 13px;border-radius:var(--r-pill);background:var(--surface);
+  border:1px solid var(--stroke);font-size:13px;font-weight:550;color:var(--muted);
+  display:inline-flex;align-items:center;gap:7px;transition:.15s}
+.mini:active{background:var(--surface-2)}
+.mini.on{color:var(--text);border-color:var(--stroke-2);background:var(--surface-3)}
+.mini .badge{min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--text);color:#0A0A0C;
+  font-size:11px;font-weight:750;display:grid;place-items:center}
+.mini .badge[hidden]{display:none}
+select.mini{-webkit-appearance:none;appearance:none;padding-right:28px;
+  background-image:url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238C919B' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 11px center}
+select.mini option{background:#16171B;color:#F3F4F6}
+.viewtog{display:inline-flex;background:var(--surface);border:1px solid var(--stroke);border-radius:var(--r-pill);padding:3px;gap:2px}
+.viewtog button{width:32px;height:28px;border-radius:var(--r-pill);display:grid;place-items:center;color:var(--muted-2)}
+.viewtog button[aria-pressed="true"]{background:var(--surface-3);color:var(--text)}
+
+/* ───────── карточки ───────── */
+.grid{display:grid;gap:10px;grid-template-columns:1fr;padding-bottom:8px}
+@media(min-width:640px){.grid{grid-template-columns:1fr 1fr;gap:12px}}
+@media(min-width:1000px){.grid{grid-template-columns:repeat(3,1fr)}}
+.card{position:relative;background:var(--surface);border:1px solid var(--stroke);border-radius:var(--r-card);
+  padding:13px;display:flex;flex-direction:column;gap:11px;overflow:hidden;
+  transition:border-color .16s,box-shadow .16s;animation:pop .26s ease both}
+.card[hidden]{display:none}
+@keyframes pop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.card::before{content:"";position:absolute;inset:0 0 auto;height:2px;background:var(--plt,transparent);opacity:.7}
+@media(hover:hover){.card:hover{border-color:var(--stroke-2)}}
+.card.picked{border-color:rgba(255,255,255,.55);box-shadow:0 0 0 1px rgba(255,255,255,.18)}
+
+.head{display:flex;gap:11px;align-items:flex-start;padding-right:30px}
+.ava{position:relative;flex:0 0 auto;width:50px;height:50px;border-radius:16px;display:grid;place-items:center;
+  font-weight:750;font-size:16px;letter-spacing:-.03em;color:#EDEEF0;
+  background:var(--avaBg,var(--surface-2));border:1px solid var(--stroke)}
+.ava .plt{position:absolute;right:-5px;bottom:-5px;width:21px;height:21px;border-radius:50%;
+  display:grid;place-items:center;background:var(--bg);box-shadow:0 0 0 2px var(--surface)}
+.ava .plt svg{width:13px;height:13px}
+.who{min-width:0;flex:1}
+.name{display:flex;align-items:center;gap:5px;font-weight:680;letter-spacing:-.02em;font-size:15.5px}
+.name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ver{flex:0 0 auto;width:15px;height:15px;color:var(--ok)}
+.handle{color:var(--muted);font-size:13px;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.meta{display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin-top:5px;font-size:12.5px;color:var(--muted)}
+.meta .star{color:var(--gold)}
+.meta b{color:var(--text);font-weight:650}
+.dot{opacity:.32}
+.free{color:var(--ok);font-weight:600}
+.fav{position:absolute;top:11px;right:11px;width:30px;height:30px;border-radius:10px;display:grid;place-items:center;
+  color:var(--muted-2);background:var(--surface-2);border:1px solid var(--stroke);transition:.15s}
+.fav[aria-pressed="true"]{color:var(--gold);border-color:rgba(242,193,78,.4);background:rgba(242,193,78,.1)}
+
+.tags{display:flex;flex-wrap:wrap;gap:6px}
+.tag{font-size:12px;color:var(--muted);background:var(--surface-2);border-radius:8px;padding:3px 8px}
+
+.trust{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--muted);
+  border-top:1px solid var(--stroke);border-bottom:1px solid var(--stroke);padding:8px 0;overflow-x:auto;scrollbar-width:none}
+.trust::-webkit-scrollbar{display:none}
+.trust span{white-space:nowrap}
+.trust b{color:var(--text);font-weight:650}
+.trust .up{color:var(--ok);font-weight:650}
+.trust .down{color:var(--muted);font-weight:650}
+
+.stats{display:grid;grid-template-columns:repeat(3,1fr);background:var(--surface-2);border-radius:13px;padding:9px 4px}
+.stats>div{text-align:center;position:relative}
+.stats>div+div::before{content:"";position:absolute;left:0;top:3px;bottom:3px;width:1px;background:var(--stroke)}
+.stats .v{font-weight:680;font-size:14.5px;letter-spacing:-.025em}
+.stats .k{font-size:11px;color:var(--muted-2);margin-top:1px}
+
+.fmt{display:flex;gap:5px;overflow-x:auto;scrollbar-width:none}
+.fmt::-webkit-scrollbar{display:none}
+.fmt button{flex:0 0 auto;height:29px;padding:0 11px;border-radius:var(--r-pill);background:var(--surface-2);
+  font-size:12.5px;font-weight:550;color:var(--muted);border:1px solid transparent;transition:.15s}
+.fmt button[aria-pressed="true"]{background:var(--surface-3);color:var(--text);border-color:var(--stroke-2)}
+
+.buy{display:flex;align-items:flex-end;gap:10px;margin-top:auto}
+.price{line-height:1.14;min-width:0}
+.price b{display:block;font-weight:780;font-size:19.5px;letter-spacing:-.035em;color:#fff}
+.price small{color:var(--muted);font-size:12px}
+.price .deal{color:var(--ok);font-weight:650}
+.add{margin-left:auto;height:38px;padding:0 15px;border-radius:var(--r-pill);background:#F3F4F6;color:#0A0A0C;
+  font-weight:680;font-size:14px;border:1px solid transparent;white-space:nowrap;transition:.16s}
+.add:active{background:#D8D9DD}
+.card.picked .add{background:transparent;color:var(--danger);border-color:rgba(255,77,79,.65)}
+.card.over .price b{color:var(--danger)}
+
+.grid.list{grid-template-columns:1fr;gap:8px}
+.grid.list .card{flex-direction:row;align-items:center;gap:12px;padding:11px 12px}
+.grid.list .trust,.grid.list .fmt,.grid.list .tags,.grid.list .stats,.grid.list .fav{display:none}
+.grid.list .head{flex:1;min-width:0;padding-right:0}
+.grid.list .buy{margin:0;flex:0 0 auto}
+.grid.list .price b{font-size:16px}
+
+.sk{background:var(--surface);border:1px solid var(--stroke);border-radius:var(--r-card);height:250px;position:relative;overflow:hidden}
+.sk::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.045),transparent);animation:shine 1.1s linear infinite}
+@keyframes shine{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+
+.empty{display:none;text-align:center;padding:42px 16px 34px;border:1px dashed var(--stroke);border-radius:var(--r-card);background:var(--surface)}
+.empty.on{display:block}
+.empty h3{margin:0 0 6px;font-size:16.5px;font-weight:680;letter-spacing:-.02em}
+.empty p{margin:0 0 14px;color:var(--muted);font-size:13.5px}
+.btn-w{height:40px;padding:0 20px;border-radius:var(--r-pill);background:#F3F4F6;color:#0A0A0C;font-weight:680;font-size:14px}
+.more{margin:12px auto 0;display:block;height:44px;padding:0 22px;border-radius:var(--r-pill);
+  background:var(--surface);border:1px solid var(--stroke);font-weight:600;font-size:14px}
+.more[hidden]{display:none}
+.more:active{background:var(--surface-2)}
+.foot{padding:20px 0 6px;text-align:center;color:var(--muted-2);font-size:12px}
+.spacer{height:0}
+.spacer.on{height:86px}
+
+/* ───────── панель кампании ───────── */
+.tray{position:fixed;left:10px;right:10px;bottom:calc(10px + env(safe-area-inset-bottom));z-index:40;
+  background:rgba(27,29,34,.98);border:1px solid var(--stroke-2);border-radius:20px;padding:11px 12px;
+  transform:translateY(150%);transition:transform .28s cubic-bezier(.2,.8,.25,1);box-shadow:0 14px 40px rgba(0,0,0,.55)}
+.tray.on{transform:none}
+@media(min-width:640px){.tray{left:auto;right:16px;width:440px}}
+.tray .row1{display:flex;align-items:center;gap:11px}
+.tray .n{width:36px;height:36px;border-radius:12px;background:var(--text);color:#0A0A0C;display:grid;place-items:center;
+  font-weight:800;font-size:15px;flex:0 0 auto}
+.tray .tx{min-width:0;line-height:1.2}
+.tray .tx b{font-size:14.5px;font-weight:680;letter-spacing:-.02em;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tray .tx small{color:var(--muted);font-size:12px}
+.tray .go{margin-left:auto;height:38px;padding:0 15px;border-radius:var(--r-pill);background:#F3F4F6;color:#0A0A0C;
+  font-weight:700;font-size:14px;white-space:nowrap}
+.tray .x{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;color:var(--muted);background:rgba(255,255,255,.06);flex:0 0 auto}
+.cap{margin-top:9px}
+.cap .line{display:flex;align-items:center;justify-content:space-between;font-size:11.5px;color:var(--muted);margin-bottom:5px}
+.cap .line button{color:var(--text);font-weight:600;text-decoration:underline;text-underline-offset:2px}
+.cap .track{height:6px;border-radius:3px;background:rgba(255,255,255,.09);overflow:hidden}
+.cap .fill{height:100%;border-radius:3px;background:var(--text);transition:width .3s}
+.cap.over .fill{background:var(--danger)}
+.cap.over .line b{color:var(--danger)}
+
+/* ───────── шторки ───────── */
+.scrim{position:fixed;inset:0;background:rgba(6,6,8,.55);z-index:50;opacity:0;pointer-events:none;transition:opacity .24s}
+.scrim.on{opacity:1;pointer-events:auto}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:60;background:#111216;border-radius:22px 22px 0 0;
+  border-top:1px solid var(--stroke-2);transform:translateY(101%);
+  transition:transform .3s cubic-bezier(.2,.8,.25,1);max-height:88vh;display:flex;flex-direction:column}
+.sheet.on{transform:none}
+@media(min-width:720px){.sheet{left:50%;right:auto;width:560px;transform:translate(-50%,101%)}.sheet.on{transform:translate(-50%,0)}}
+.sheet .grab{width:38px;height:4px;border-radius:2px;background:rgba(255,255,255,.22);margin:9px auto 3px;flex:0 0 auto}
+.sheet .sh{display:flex;align-items:center;gap:10px;padding:8px 16px 10px;flex:0 0 auto}
+.sheet .sh h2{margin:0;font-size:17px;font-weight:700;letter-spacing:-.025em}
+.sheet .sh .x{margin-left:auto;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;color:var(--muted);background:var(--surface-2)}
+.sheet .body{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:2px 16px 12px;overscroll-behavior:contain}
+.sheet .sf{flex:0 0 auto;display:flex;gap:9px;padding:11px 16px var(--sheet-pad);border-top:1px solid var(--stroke);background:#111216}
+.sheet .sf .btn-w{flex:1}
+.sheet .sf .ghost{height:40px;padding:0 16px;border-radius:var(--r-pill);border:1px solid var(--stroke);color:var(--muted)}
+
+.fgroup{margin-bottom:16px}
+.fgroup h4{margin:0 0 8px;font-size:12px;font-weight:650;letter-spacing:.04em;text-transform:uppercase;color:var(--muted-2)}
+.opts{display:flex;flex-wrap:wrap;gap:7px}
+.opt{height:34px;padding:0 13px;border-radius:var(--r-pill);background:var(--surface-2);border:1px solid transparent;
+  font-size:13px;font-weight:550;color:var(--muted);transition:.15s}
+.opt[aria-pressed="true"]{background:var(--surface-3);border-color:var(--stroke-2);color:var(--text)}
+.sw{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--stroke)}
+.sw .lb{font-size:14px;font-weight:550}
+.sw .lb small{display:block;color:var(--muted-2);font-size:12px;font-weight:400}
+.sw button{margin-left:auto;width:46px;height:27px;border-radius:14px;background:var(--surface-3);position:relative;transition:background .18s;flex:0 0 auto}
+.sw button::after{content:"";position:absolute;top:3px;left:3px;width:21px;height:21px;border-radius:50%;background:var(--muted);transition:transform .18s,background .18s}
+.sw button[aria-pressed="true"]{background:rgba(49,192,106,.28)}
+.sw button[aria-pressed="true"]::after{transform:translateX(19px);background:var(--ok)}
+
+.pf-top{display:flex;gap:13px;align-items:center;margin-bottom:14px}
+.pf-top .ava{width:62px;height:62px;border-radius:19px;font-size:19px}
+.pf-name{font-size:19px;font-weight:750;letter-spacing:-.03em;display:flex;align-items:center;gap:6px}
+.pf-sub{color:var(--muted);font-size:13px;margin-top:2px}
+.pf-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:4px}
+.pf-stats div{background:var(--surface-2);border-radius:13px;padding:10px 8px;text-align:center}
+.pf-stats .v{font-weight:700;font-size:15px;letter-spacing:-.03em}
+.pf-stats .k{font-size:10.5px;color:var(--muted-2);margin-top:2px}
+.pf-h{font-size:12px;font-weight:650;letter-spacing:.04em;text-transform:uppercase;color:var(--muted-2);margin:16px 0 9px}
+.rows{display:flex;flex-direction:column;gap:1px;background:var(--stroke);border-radius:13px;overflow:hidden}
+.row{display:flex;align-items:center;gap:10px;background:var(--surface-2);padding:11px 12px;font-size:13.5px}
+.row .rk{color:var(--muted);min-width:0}
+.row .rk b{color:var(--text);font-weight:600;display:block}
+.row .rk small{font-size:11.5px;color:var(--muted-2)}
+.row .rv{margin-left:auto;font-weight:650;text-align:right;white-space:nowrap}
+.row .rv small{color:var(--muted);font-weight:400;font-size:12px;display:block}
+.row .mini-add{margin-left:auto;height:30px;padding:0 12px;border-radius:var(--r-pill);background:var(--surface-3);
+  font-size:12.5px;font-weight:600;border:1px solid var(--stroke)}
+.audi{display:flex;flex-direction:column;gap:9px}
+.abar{display:flex;align-items:center;gap:10px;font-size:13px}
+.abar .al{width:74px;color:var(--muted);flex:0 0 auto}
+.abar .track{flex:1;height:7px;border-radius:4px;background:var(--surface-3);overflow:hidden}
+.abar .fill{height:100%;border-radius:4px;background:var(--plt,#6E737D)}
+.abar .av{width:42px;text-align:right;font-weight:600;flex:0 0 auto}
+.mini-ava{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;font-size:12px;font-weight:700;
+  background:var(--avaBg,var(--surface-3));flex:0 0 auto}
+
+.capin{display:flex;gap:8px;margin-top:4px}
+.capin input{flex:1;height:46px;border-radius:14px;background:var(--surface-2);border:1px solid var(--stroke);
+  padding:0 14px;font-size:16px;font-weight:650}
+.capin input:focus{outline:none;border-color:var(--stroke-2)}
+
+.toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));transform:translate(-50%,16px);
+  background:#EDEEF1;color:#0A0A0C;font-weight:650;font-size:13.5px;padding:10px 16px;border-radius:var(--r-pill);
+  z-index:70;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+
+<div class="page" id="page">
+<div class="wrap">
+
+  <div class="nav">
+    <div class="logo"><i>B</i>BloggerPay</div>
+    <nav class="tabs">
+      <a href="#" class="on">Каталог</a><a href="#">Мои кампании</a><a href="#">Задания</a><a href="#">Кошелёк</a>
+    </nav>
+    <div class="balance"><small>Баланс</small><span class="num">128 400 ₽</span></div>
+  </div>
+
+  <h1>Каталог блогеров</h1>
+  <p class="lede">Цены и охваты — от авторов напрямую. Деньги резервируются на площадке и уходят автору только после выхода публикации.</p>
+
+  <div class="kpis">
+    <div class="kpi"><div class="v num" id="kTotal">0</div><div class="k">авторов подходит</div></div>
+    <div class="kpi free"><div class="v num" id="kFree">0</div><div class="k">свободны на неделе</div></div>
+    <div class="kpi"><div class="v num" id="kCpm">— ₽</div><div class="k">средний CPM</div></div>
+    <div class="kpi"><div class="v num" id="kReach">—</div><div class="k">суммарный охват</div></div>
+  </div>
+
+  <div class="search" id="searchWrap">
+    <svg class="ico" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg>
+    <input id="q" type="search" placeholder="Имя, ник или тематика" autocomplete="off" enterkeyhint="search">
+    <button class="clear" id="clearQ" aria-label="Очистить поиск">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+
+  <div class="chips" id="platforms"></div>
+  <div class="chips" id="presets"></div>
+
+  <div class="bar">
+    <div class="count"><b id="shown">0</b> из <span class="num" id="total">0</span></div>
+    <div class="right">
+      <button class="mini" id="openFilters">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 6h18M6 12h12M10 18h4"/></svg>
+        Фильтры<span class="badge" id="fBadge" hidden>0</span>
+      </button>
+      <select class="mini" id="sort" aria-label="Сортировка">
+        <option value="rating">По рейтингу</option>
+        <option value="cheap">Сначала дешевле</option>
+        <option value="rich">Сначала дороже</option>
+        <option value="reach">По охвату</option>
+        <option value="cpm">Выгодный CPM</option>
+        <option value="er">По вовлечённости</option>
+        <option value="trust">По надёжности</option>
+      </select>
+      <div class="viewtog" id="viewTog">
+        <button data-v="grid" aria-pressed="true" aria-label="Плитками"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg></button>
+        <button data-v="list" aria-pressed="false" aria-label="Списком"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="4" width="18" height="4" rx="2"/><rect x="3" y="10" width="18" height="4" rx="2"/><rect x="3" y="16" width="18" height="4" rx="2"/></svg></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid" id="grid"></div>
+
+  <div class="empty" id="empty">
+    <h3>Никто не подошёл под фильтры</h3>
+    <p>Уберите площадку, расширьте бюджет или сократите запрос.</p>
+    <button class="btn-w" id="resetEmpty">Показать всех</button>
+  </div>
+
+  <button class="more" id="more" hidden>Показать ещё</button>
+  <div class="foot">Данные обновлены сегодня в 09:40 · охваты подтверждены статистикой авторов</div>
+  <div class="spacer" id="spacer"></div>
+</div>
+</div>
+
+<div class="tray" id="tray">
+  <div class="row1">
+    <div class="n num" id="trayN">0</div>
+    <div class="tx"><b id="trayTitle">0 авторов</b><small id="traySub">охват — · — ₽</small></div>
+    <button class="go" id="trayGo">В кампанию</button>
+    <button class="x" id="trayClear" aria-label="Очистить выбор">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+  <div class="cap" id="cap">
+    <div class="line"><span id="capText">Бюджет кампании</span><button id="capEdit">изменить</button></div>
+    <div class="track"><div class="fill" id="capFill" style="width:0%"></div></div>
+  </div>
+</div>
+
+<div class="scrim" id="scrim"></div>
+
+<section class="sheet" id="fSheet" aria-hidden="true">
+  <div class="grab"></div>
+  <div class="sh"><h2>Фильтры</h2><button class="x" data-close aria-label="Закрыть">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="body">
+    <div class="fgroup"><h4>Бюджет на размещение</h4><div class="opts" id="fBudget"></div></div>
+    <div class="fgroup"><h4>Подписчики</h4><div class="opts" id="fSubs"></div></div>
+    <div class="fgroup"><h4>Рейтинг</h4><div class="opts" id="fRating"></div></div>
+    <div class="fgroup"><h4>Тематика</h4><div class="opts" id="fTags"></div></div>
+    <div class="sw"><div class="lb">Только свободные<small>готовы взять заказ на этой неделе</small></div><button id="swFree" aria-pressed="false"></button></div>
+    <div class="sw"><div class="lb">Только верифицированные<small>статистика подтверждена площадкой</small></div><button id="swVer" aria-pressed="false"></button></div>
+    <div class="sw"><div class="lb">Только избранные<small>те, кого вы отметили звездой</small></div><button id="swFav" aria-pressed="false"></button></div>
+  </div>
+  <div class="sf"><button class="ghost" id="fReset">Сбросить</button><button class="btn-w" id="fApply">Показать</button></div>
+</section>
+
+<section class="sheet" id="pSheet" aria-hidden="true">
+  <div class="grab"></div>
+  <div class="sh"><h2>Профиль автора</h2><button class="x" data-close aria-label="Закрыть">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="body" id="pBody"></div>
+  <div class="sf"><button class="ghost" id="pClose2">Закрыть</button><button class="btn-w" id="pAdd">Добавить в кампанию</button></div>
+</section>
+
+<section class="sheet" id="cSheet" aria-hidden="true">
+  <div class="grab"></div>
+  <div class="sh"><h2>Бюджет кампании</h2><button class="x" data-close aria-label="Закрыть">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="body">
+    <p style="color:var(--muted);font-size:13.5px;margin:0 0 12px">Каталог подсветит красным, если подборка выйдет за эту сумму.</p>
+    <div class="opts" id="capQuick"></div>
+    <div class="capin"><input id="capInput" type="text" inputmode="numeric" placeholder="Своя сумма, ₽"></div>
+  </div>
+  <div class="sf"><button class="ghost" id="capOff">Без ограничения</button><button class="btn-w" id="capSave">Сохранить</button></div>
+</section>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ═══ площадки ═══ */
+const ICON={
+ tg:'<svg viewBox="0 0 24 24" fill="#31A6E8"><path d="M23.9 3.6 20.3 20.5c-.3 1.2-1 1.5-2 .9l-5.5-4-2.7 2.6c-.3.3-.6.6-1.2.6l.4-5.6L19.4 5.8c.4-.4-.1-.6-.7-.2L5.9 13.5.4 11.8c-1.2-.4-1.2-1.2.3-1.8L22.3 1.8c1-.4 1.9.2 1.6 1.8z"/></svg>',
+ yt:'<svg viewBox="0 0 24 24" fill="#FF3B30"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.6 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>',
+ tt:'<svg viewBox="0 0 24 24" fill="#EDEEF0"><path d="M16.6 0h-3.3v16.1a2.8 2.8 0 1 1-2.8-2.8c.3 0 .6 0 .8.1V10a6.1 6.1 0 1 0 5.3 6V7.7a7.3 7.3 0 0 0 4.3 1.4V5.8a4.2 4.2 0 0 1-4.3-4.2V0z"/></svg>',
+ ig:'<svg viewBox="0 0 24 24" fill="none" stroke="#E1306C" stroke-width="2.2"><rect x="2.5" y="2.5" width="19" height="19" rx="5.5"/><circle cx="12" cy="12" r="4.2"/><circle cx="17.6" cy="6.4" r="1.3" fill="#E1306C" stroke="none"/></svg>'};
+const PLT={tg:{n:'Telegram',c:'#31A6E8'},yt:{n:'YouTube',c:'#FF3B30'},tt:{n:'TikTok',c:'#25F4EE'},ig:{n:'Instagram',c:'#E1306C'}};
+const FORMATS={
+ tg:[{k:'Пост 24 ч',pm:1,vm:1},{k:'Пост 48 ч',pm:1.3,vm:1.18},{k:'Нативный',pm:1.75,vm:1.3}],
+ yt:[{k:'Интеграция 60 с',pm:1,vm:1},{k:'Преролл',pm:.65,vm:.8},{k:'Обзор целиком',pm:2.4,vm:1.35}],
+ tt:[{k:'Ролик',pm:1,vm:1},{k:'Серия из 3',pm:2.6,vm:2.7},{k:'Дуэт',pm:.8,vm:.9}],
+ ig:[{k:'Reels',pm:1,vm:1},{k:'Сторис ×3',pm:.55,vm:.6},{k:'Пост в ленте',pm:.85,vm:.7}]};
+const VER='<svg class="ver" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.2l2.4 1.9 3-.3.9 2.9 2.5 1.7L19.6 12l1.2 2.8-2.5 1.7-.9 2.9-3-.3L12 21.8l-2.4-1.9-3 .3-.9-2.9-2.5-1.7L4.4 12 3.2 9.2l2.5-1.7.9-2.9 3 .3L12 2.2zm-1 12.4 5-5-1.4-1.4-3.6 3.6-1.6-1.6L8 11.6l3 3z"/></svg>';
+
+/* ═══ данные ═══ */
+const DATA=[
+ {n:"Алина Ковалёва",h:"@alina.beauty",p:"tg",ver:1,free:1,resp:"~40 мин",r:4.9,deals:64,subs:128000,views:41000,er:6.4,price:45000,tags:["Бьюти","Лайфстайл"],w:82,age:"25–34",geo:"Москва 34% · СПб 12%",ontime:98,again:81,trend:12,
+  last:[{b:"Ozon",d:"12 авг",v:44000,c:2.4},{b:"Золотое яблоко",d:"3 авг",v:39000,c:2.1},{b:"Letu",d:"22 июл",v:41000,c:1.9}]},
+ {n:"Максим Дорохов",h:"@dorohov",p:"yt",ver:1,free:0,resp:"~3 ч",r:4.8,deals:112,subs:940000,views:310000,er:3.1,price:280000,tags:["Техно","Обзоры"],w:24,age:"18–24",geo:"Россия 78% · Казахстан 7%",ontime:96,again:74,trend:8,
+  last:[{b:"МТС",d:"14 авг",v:342000,c:1.6},{b:"DNS",d:"29 июл",v:298000,c:1.4},{b:"Т-Банк",d:"11 июл",v:311000,c:1.8}]},
+ {n:"Настя Лунь",h:"@lunnaya",p:"tt",ver:0,free:1,resp:"~1 ч",r:4.6,deals:23,subs:76000,views:190000,er:11.2,price:28000,tags:["Юмор","Танцы"],w:64,age:"13–17",geo:"Россия 71% · Беларусь 9%",ontime:91,again:52,trend:26,
+  last:[{b:"Яндекс Еда",d:"16 авг",v:243000,c:3.1},{b:"Rostic's",d:"2 авг",v:187000,c:2.6}]},
+ {n:"Иван Проценко",h:"@proc.finance",p:"tg",ver:1,free:1,resp:"~25 мин",r:5.0,deals:87,subs:64000,views:29000,er:9.8,price:62000,tags:["Финансы","Инвестиции"],w:31,age:"25–34",geo:"Москва 41% · СПб 15%",ontime:100,again:89,trend:5,
+  last:[{b:"Т-Инвестиции",d:"18 авг",v:31000,c:4.2},{b:"Сбер",d:"5 авг",v:28000,c:3.7},{b:"БКС",d:"20 июл",v:29000,c:3.9}]},
+ {n:"Дарья Мельник",h:"@daria.fit",p:"ig",ver:1,free:0,resp:"~2 ч",r:4.7,deals:41,subs:212000,views:58000,er:4.2,price:71000,tags:["Спорт","ЗОЖ"],w:74,age:"25–34",geo:"Россия 66% · Германия 8%",ontime:94,again:68,trend:-4,
+  last:[{b:"Спортмастер",d:"9 авг",v:61000,c:1.7},{b:"Herbalife",d:"25 июл",v:55000,c:1.5}]},
+ {n:"Кирилл Ветров",h:"@vetrov.auto",p:"yt",ver:0,free:1,resp:"~5 ч",r:4.4,deals:19,subs:158000,views:74000,er:5.0,price:54000,tags:["Авто","Обзоры"],w:11,age:"35–44",geo:"Россия 84%",ontime:88,again:47,trend:15,
+  last:[{b:"Авито Авто",d:"13 авг",v:81000,c:2.2},{b:"Shell",d:"1 авг",v:69000,c:1.8}]},
+ {n:"Соня Град",h:"@sonyagrad",p:"tt",ver:1,free:1,resp:"~50 мин",r:4.9,deals:56,subs:410000,views:520000,er:8.7,price:96000,tags:["Мода","Бьюти"],w:88,age:"18–24",geo:"Россия 62% · Казахстан 11%",ontime:97,again:83,trend:19,
+  last:[{b:"Lamoda",d:"17 авг",v:612000,c:2.8},{b:"Gloria Jeans",d:"6 авг",v:498000,c:2.3},{b:"Wildberries",d:"24 июл",v:521000,c:2.5}]},
+ {n:"Артём Белый",h:"@belyi.games",p:"tg",ver:0,free:0,resp:"~6 ч",r:4.3,deals:12,subs:31000,views:14000,er:7.1,price:16000,tags:["Игры","Киберспорт"],w:18,age:"18–24",geo:"Россия 73%",ontime:83,again:41,trend:3,
+  last:[{b:"VK Play",d:"10 авг",v:16000,c:3.4},{b:"Steam-ключи",d:"27 июл",v:13000,c:2.9}]},
+ {n:"Лера Синицына",h:"@lera.food",p:"ig",ver:1,free:1,resp:"~1 ч",r:4.8,deals:73,subs:187000,views:63000,er:5.6,price:58000,tags:["Еда","Рецепты"],w:79,age:"25–34",geo:"Москва 28% · регионы 60%",ontime:95,again:77,trend:9,
+  last:[{b:"Вкусвилл",d:"15 авг",v:69000,c:2.6},{b:"Магнит",d:"4 авг",v:60000,c:2.2}]},
+ {n:"Павел Ремез",h:"@remez.build",p:"yt",ver:1,free:1,resp:"~4 ч",r:4.5,deals:34,subs:96000,views:47000,er:4.9,price:39000,tags:["Ремонт","DIY"],w:29,age:"35–44",geo:"Россия 88%",ontime:92,again:63,trend:7,
+  last:[{b:"Леруа Мерлен",d:"12 авг",v:52000,c:2.0},{b:"Petrovich",d:"30 июл",v:45000,c:1.7}]},
+ {n:"Юля Кот",h:"@yulyakot",p:"tt",ver:0,free:0,resp:"~2 ч",r:4.2,deals:8,subs:52000,views:88000,er:12.4,price:14000,tags:["Юмор","Пранки"],w:57,age:"13–17",geo:"Россия 69%",ontime:79,again:38,trend:31,
+  last:[{b:"Тануки",d:"8 авг",v:104000,c:2.7}]},
+ {n:"Глеб Сомов",h:"@somov.travel",p:"tg",ver:1,free:1,resp:"~35 мин",r:4.7,deals:48,subs:83000,views:36000,er:8.2,price:41000,tags:["Путешествия","Лайфстайл"],w:52,age:"25–34",geo:"Москва 31% · СПб 14%",ontime:96,again:72,trend:11,
+  last:[{b:"Островок",d:"14 авг",v:39000,c:3.0},{b:"Аэрофлот",d:"31 июл",v:35000,c:2.4}]},
+ {n:"Марина Ясная",h:"@yasnaya.mom",p:"ig",ver:1,free:1,resp:"~1,5 ч",r:4.9,deals:91,subs:143000,views:52000,er:6.9,price:66000,tags:["Дети","Семья"],w:91,age:"25–34",geo:"Россия 81%",ontime:99,again:86,trend:6,
+  last:[{b:"Детский мир",d:"19 авг",v:57000,c:2.9},{b:"Pampers",d:"7 авг",v:51000,c:2.5},{b:"Ozon",d:"21 июл",v:49000,c:2.2}]},
+ {n:"Тимур Асланов",h:"@aslanov.tech",p:"yt",ver:1,free:0,resp:"~8 ч",r:4.6,deals:38,subs:520000,views:165000,er:3.8,price:190000,tags:["Техно","Гаджеты"],w:22,age:"25–34",geo:"Россия 74% · Казахстан 9%",ontime:93,again:70,trend:-2,
+  last:[{b:"Xiaomi",d:"11 авг",v:181000,c:1.5},{b:"Мегафон",d:"26 июл",v:158000,c:1.3}]},
+ {n:"Ника Орлова",h:"@nika.psy",p:"tg",ver:0,free:1,resp:"~3 ч",r:4.4,deals:27,subs:44000,views:21000,er:10.3,price:23000,tags:["Психология","Лайфстайл"],w:76,age:"25–34",geo:"Москва 26% · регионы 62%",ontime:90,again:59,trend:14,
+  last:[{b:"Ясно",d:"16 авг",v:23000,c:4.0},{b:"Alter",d:"2 авг",v:20000,c:3.5}]}
+];
+DATA.forEach((b,i)=>{b.id='b'+i;b.fmt=0});
+
+/* ═══ утилиты ═══ */
+const money=v=>Math.round(v).toLocaleString('ru-RU').replace(/\u00A0/g,' ');
+const shortNum=v=>v>=1e6?(v/1e6).toFixed(v%1e6?1:0).replace('.',',')+' млн':v>=1e3?Math.round(v/1e3)+' тыс':String(Math.round(v));
+const initials=n=>n.split(' ').map(w=>w[0]).slice(0,2).join('');
+const dec=v=>String(v).replace('.',',');
+const fmtOf=b=>FORMATS[b.p][b.fmt];
+const priceOf=b=>Math.round(b.price*fmtOf(b).pm/500)*500;
+const viewsOf=b=>Math.round(b.views*fmtOf(b).vm);
+const cpmOf=b=>Math.round(priceOf(b)/(viewsOf(b)/1000));
+const trustOf=b=>b.ontime*.6+b.again*.4;
+const buzz=ms=>{try{navigator.vibrate&&navigator.vibrate(ms)}catch(e){}};
+const MARKET={};
+Object.keys(PLT).forEach(p=>{
+  const arr=DATA.filter(b=>b.p===p).map(b=>Math.round(b.price/(b.views/1000)));
+  MARKET[p]=arr.reduce((a,c)=>a+c,0)/arr.length;
+});
+const dealPct=b=>Math.round((1-cpmOf(b)/MARKET[b.p])*100);
+
+const ALL_TAGS=[...new Set(DATA.flatMap(b=>b.tags))].sort((a,b)=>a.localeCompare(b,'ru'));
+const BUDGETS=[{k:'Любой',v:null},{k:'до 30 тыс',v:[0,30000]},{k:'30–80 тыс',v:[30000,80000]},{k:'80–200 тыс',v:[80000,200000]},{k:'200 тыс+',v:[200000,1e9]}];
+const SUBS=[{k:'Любые',v:null},{k:'до 50 тыс',v:[0,50000]},{k:'50–200 тыс',v:[50000,200000]},{k:'200 тыс – 1 млн',v:[200000,1e6]},{k:'1 млн+',v:[1e6,1e9]}];
+const RATINGS=[{k:'Любой',v:0},{k:'4,0+',v:4},{k:'4,5+',v:4.5},{k:'4,8+',v:4.8}];
+const PRESETS=[
+ {id:'free',k:'Свободны сейчас',f:b=>b.free},
+ {id:'cpm',k:'CPM до 300 ₽',f:b=>cpmOf(b)<=300},
+ {id:'cheap',k:'До 50 тыс ₽',f:b=>priceOf(b)<=50000},
+ {id:'big',k:'Охват 200 тыс+',f:b=>b.subs>=200000},
+ {id:'trust',k:'Ни одного срыва',f:b=>b.ontime>=95}
+];
+
+const S={plats:new Set(),presets:new Set(),q:'',sort:'rating',view:'grid',limit:9,
+  fBudget:0,fSubs:0,fRating:0,fTags:new Set(),onlyFree:false,onlyVer:false,onlyFav:false,
+  picked:new Set(),fav:new Set(),cap:null};
+
+/* ═══ чипы ═══ */
+const platBox=document.getElementById('platforms');
+platBox.innerHTML='<button class="chip" data-p="all" aria-pressed="true">Все площадки</button>'+
+  Object.keys(PLT).map(k=>`<button class="chip" data-p="${k}" aria-pressed="false">${ICON[k]}${PLT[k].n}</button>`).join('');
+platBox.addEventListener('click',e=>{
+  const c=e.target.closest('.chip'); if(!c) return;
+  c.dataset.p==='all' ? S.plats.clear() : (S.plats.has(c.dataset.p)?S.plats.delete(c.dataset.p):S.plats.add(c.dataset.p));
+  platBox.querySelectorAll('.chip').forEach(x=>x.setAttribute('aria-pressed',x.dataset.p==='all'?S.plats.size===0:S.plats.has(x.dataset.p)));
+  S.limit=9; apply();
+});
+
+const presetBox=document.getElementById('presets');
+presetBox.innerHTML=PRESETS.map(p=>`<button class="chip preset" data-id="${p.id}" aria-pressed="false">${p.k} <span class="cnt" data-cnt="${p.id}"></span></button>`).join('');
+presetBox.addEventListener('click',e=>{
+  const c=e.target.closest('.chip'); if(!c) return;
+  const id=c.dataset.id;
+  S.presets.has(id)?S.presets.delete(id):S.presets.add(id);
+  c.setAttribute('aria-pressed',S.presets.has(id)); S.limit=9; buzz(6); apply();
+});
+
+/* ═══ карточки ═══ */
+const grid=document.getElementById('grid');
+grid.innerHTML=Array.from({length:6},()=>'<div class="sk"></div>').join('');
+
+function cardHTML(b){
+  const d=dealPct(b);
+  return `
+  <button class="fav" data-act="fav" aria-pressed="false" aria-label="В избранное">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.6l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5-5.8-3-5.8 3 1.1-6.5L2.6 9.4l6.5-.9L12 2.6z"/></svg>
+  </button>
+  <div class="head" data-act="open">
+    <div class="ava">${initials(b.n)}<span class="plt">${ICON[b.p]}</span></div>
+    <div class="who">
+      <div class="name"><span>${b.n}</span>${b.ver?VER:''}</div>
+      <div class="handle">${b.h}</div>
+      <div class="meta"><span class="star">★</span><b class="num">${dec(b.r.toFixed(1))}</b>
+        <span class="dot">·</span><span class="num">${b.deals} сделок</span>
+        <span class="dot">·</span><span>отвечает ${b.resp}</span>
+        ${b.free?'<span class="dot">·</span><span class="free">свободен</span>':''}</div>
+    </div>
+  </div>
+  <div class="tags">${b.tags.map(t=>`<span class="tag">${t}</span>`).join('')}</div>
+  <div class="trust">
+    <span><b class="num">${b.ontime}%</b> в срок</span><span class="dot">·</span>
+    <span><b class="num">${b.again}%</b> заказали снова</span><span class="dot">·</span>
+    <span>охват <b class="${b.trend>=0?'up':'down'} num">${b.trend>=0?'+':''}${b.trend}%</b> за месяц</span>
+  </div>
+  <div class="stats">
+    <div><div class="v num">${shortNum(b.subs)}</div><div class="k">подписчиков</div></div>
+    <div><div class="v num" data-f="views">${shortNum(viewsOf(b))}</div><div class="k">просмотров</div></div>
+    <div><div class="v num">${dec(b.er)}%</div><div class="k">вовлечённость</div></div>
+  </div>
+  <div class="fmt">${FORMATS[b.p].map((f,i)=>`<button data-act="fmt" data-i="${i}" aria-pressed="${i===b.fmt}">${f.k}</button>`).join('')}</div>
+  <div class="buy">
+    <div class="price">
+      <b class="num" data-f="price">от ${money(priceOf(b))} ₽</b>
+      <small class="num" data-f="cpm">CPM ${money(cpmOf(b))} ₽${d>=12?` · <span class="deal">−${d}% к рынку</span>`:''}</small>
+    </div>
+    <button class="add" data-act="pick">Добавить</button>
+  </div>`;
+}
+
+const nodes=new Map();
+function build(){
+  grid.innerHTML='';
+  DATA.forEach(b=>{
+    const el=document.createElement('article');
+    el.className='card'; el.dataset.id=b.id;
+    el.style.setProperty('--plt',PLT[b.p].c);
+    el.style.setProperty('--avaBg',PLT[b.p].c+'22');
+    el.innerHTML=cardHTML(b);
+    nodes.set(b.id,el); grid.appendChild(el);
+  });
+  apply();
+}
+
+/* ═══ фильтр + сортировка ═══ */
+function pass(b){
+  if(S.plats.size&&!S.plats.has(b.p)) return false;
+  for(const id of S.presets){ const p=PRESETS.find(x=>x.id===id); if(p&&!p.f(b)) return false; }
+  if(S.onlyFree&&!b.free) return false;
+  if(S.onlyVer&&!b.ver) return false;
+  if(S.onlyFav&&!S.fav.has(b.id)) return false;
+  if(b.r<RATINGS[S.fRating].v) return false;
+  const bu=BUDGETS[S.fBudget].v; if(bu&&(priceOf(b)<bu[0]||priceOf(b)>bu[1])) return false;
+  const su=SUBS[S.fSubs].v; if(su&&(b.subs<su[0]||b.subs>su[1])) return false;
+  if(S.fTags.size&&!b.tags.some(t=>S.fTags.has(t))) return false;
+  const q=S.q.trim().toLowerCase();
+  if(q&&!(b.n+' '+b.h+' '+b.tags.join(' ')+' '+PLT[b.p].n).toLowerCase().includes(q)) return false;
+  return true;
+}
+const SORTS={
+  rating:(a,b)=>b.r-a.r||b.deals-a.deals,
+  cheap:(a,b)=>priceOf(a)-priceOf(b),
+  rich:(a,b)=>priceOf(b)-priceOf(a),
+  reach:(a,b)=>viewsOf(b)-viewsOf(a),
+  cpm:(a,b)=>cpmOf(a)-cpmOf(b),
+  er:(a,b)=>b.er-a.er,
+  trust:(a,b)=>trustOf(b)-trustOf(a)
+};
+const activeFilters=()=>(S.fBudget?1:0)+(S.fSubs?1:0)+(S.fRating?1:0)+(S.fTags.size?1:0)+(S.onlyFree?1:0)+(S.onlyVer?1:0)+(S.onlyFav?1:0);
+
+function apply(){
+  const list=DATA.filter(pass).sort(SORTS[S.sort]);
+  const vis=new Set(list.slice(0,S.limit).map(b=>b.id));
+  list.forEach((b,i)=>nodes.get(b.id).style.order=i);
+  DATA.forEach(b=>nodes.get(b.id).hidden=!vis.has(b.id));
+  document.getElementById('shown').textContent=vis.size;
+  document.getElementById('total').textContent=list.length;
+  document.getElementById('empty').classList.toggle('on',list.length===0);
+  const more=document.getElementById('more');
+  more.hidden=list.length<=vis.size;
+  more.textContent=`Показать ещё ${Math.min(9,list.length-vis.size)}`;
+  const cpms=list.map(cpmOf), reach=list.reduce((s,b)=>s+viewsOf(b),0);
+  document.getElementById('kTotal').textContent=list.length;
+  document.getElementById('kFree').textContent=list.filter(b=>b.free).length;
+  document.getElementById('kCpm').textContent=cpms.length?money(cpms.reduce((a,c)=>a+c,0)/cpms.length)+' ₽':'— ₽';
+  document.getElementById('kReach').textContent=reach?shortNum(reach):'—';
+  const bd=document.getElementById('fBadge');
+  bd.hidden=!activeFilters(); bd.textContent=activeFilters();
+  document.getElementById('openFilters').classList.toggle('on',!!activeFilters());
+  PRESETS.forEach(p=>{
+    const el=presetBox.querySelector(`[data-cnt="${p.id}"]`);
+    if(el) el.textContent=DATA.filter(p.f).length;
+  });
+}
+
+/* ═══ клики по карточке ═══ */
+grid.addEventListener('click',e=>{
+  const card=e.target.closest('.card'); if(!card) return;
+  const b=DATA.find(x=>x.id===card.dataset.id);
+  const f=e.target.closest('[data-act="fmt"]');
+  if(f){
+    b.fmt=+f.dataset.i;
+    card.querySelectorAll('[data-act="fmt"]').forEach(x=>x.setAttribute('aria-pressed',x===f));
+    refreshPrice(b,card); if(S.picked.has(b.id)) tray();
+    return;
+  }
+  if(e.target.closest('[data-act="fav"]')){
+    S.fav.has(b.id)?S.fav.delete(b.id):S.fav.add(b.id);
+    card.querySelector('[data-act="fav"]').setAttribute('aria-pressed',S.fav.has(b.id));
+    buzz(6); if(S.onlyFav) apply();
+    return;
+  }
+  if(e.target.closest('[data-act="pick"]')) return togglePick(b,card);
+  if(e.target.closest('[data-act="open"]')) openProfile(b);
+});
+function refreshPrice(b,card){
+  const d=dealPct(b);
+  card.querySelector('[data-f="price"]').textContent='от '+money(priceOf(b))+' ₽';
+  card.querySelector('[data-f="cpm"]').innerHTML='CPM '+money(cpmOf(b))+' ₽'+(d>=12?` · <span class="deal">−${d}% к рынку</span>`:'');
+  card.querySelector('[data-f="views"]').textContent=shortNum(viewsOf(b));
+}
+function togglePick(b,card){
+  const on=S.picked.has(b.id);
+  on?S.picked.delete(b.id):S.picked.add(b.id);
+  if(card){card.classList.toggle('picked',!on);card.querySelector('[data-act="pick"]').textContent=!on?'Убрать':'Добавить'}
+  buzz(!on?12:6); tray();
+}
+function syncCards(){
+  DATA.forEach(b=>{
+    const el=nodes.get(b.id); if(!el) return;
+    const on=S.picked.has(b.id);
+    el.classList.toggle('picked',on);
+    el.querySelector('[data-act="pick"]').textContent=on?'Убрать':'Добавить';
+    el.querySelector('[data-act="fav"]').setAttribute('aria-pressed',S.fav.has(b.id));
+  });
+}
+
+/* ═══ панель кампании ═══ */
+const trayEl=document.getElementById('tray'), spacer=document.getElementById('spacer');
+const plural=(n,f)=>n%10===1&&n%100!==11?f[0]:[2,3,4].includes(n%10)&&![12,13,14].includes(n%100)?f[1]:f[2];
+function tray(){
+  const pk=DATA.filter(b=>S.picked.has(b.id));
+  trayEl.classList.toggle('on',pk.length>0);
+  spacer.classList.toggle('on',pk.length>0);
+  if(!pk.length) return;
+  const sum=pk.reduce((s,b)=>s+priceOf(b),0), reach=pk.reduce((s,b)=>s+viewsOf(b),0);
+  document.getElementById('trayN').textContent=pk.length;
+  document.getElementById('trayTitle').textContent=`${pk.length} ${plural(pk.length,['автор','автора','авторов'])} · ${money(sum)} ₽`;
+  document.getElementById('traySub').textContent=`охват ${shortNum(reach)} · CPM ${money(sum/(reach/1000))} ₽`;
+  const cap=document.getElementById('cap');
+  if(S.cap){
+    const pct=Math.min(100,sum/S.cap*100), over=sum>S.cap;
+    cap.classList.toggle('over',over);
+    document.getElementById('capFill').style.width=pct+'%';
+    document.getElementById('capText').innerHTML=over
+      ? `Превышение бюджета на <b class="num">${money(sum-S.cap)} ₽</b>`
+      : `Осталось <b class="num">${money(S.cap-sum)} ₽</b> из ${money(S.cap)} ₽`;
+    DATA.forEach(b=>nodes.get(b.id).classList.toggle('over',S.picked.has(b.id)&&over));
+  }else{
+    cap.classList.remove('over');
+    document.getElementById('capFill').style.width='0%';
+    document.getElementById('capText').textContent='Бюджет кампании не задан';
+    DATA.forEach(b=>nodes.get(b.id).classList.remove('over'));
+  }
+}
+document.getElementById('trayClear').addEventListener('click',()=>{S.picked.clear();syncCards();tray()});
+document.getElementById('trayGo').addEventListener('click',()=>{
+  toast(`В кампанию добавлено: ${S.picked.size} ${plural(S.picked.size,['автор','автора','авторов'])}`);buzz(18);
+});
+
+/* ═══ шторки ═══ */
+const scrim=document.getElementById('scrim');
+let openSheet=null,scrollY=0;
+function sheetOpen(el){scrollY=window.scrollY;openSheet=el;el.classList.add('on');el.setAttribute('aria-hidden','false');
+  scrim.classList.add('on');document.body.classList.add('sheet-open','locked')}
+function sheetClose(){if(!openSheet)return;openSheet.classList.remove('on');openSheet.setAttribute('aria-hidden','true');
+  openSheet=null;scrim.classList.remove('on');document.body.classList.remove('sheet-open','locked');window.scrollTo(0,scrollY)}
+scrim.addEventListener('click',sheetClose);
+document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',sheetClose));
+document.getElementById('pClose2').addEventListener('click',sheetClose);
+document.addEventListener('keydown',e=>{if(e.key==='Escape')sheetClose()});
+
+/* ── фильтры ── */
+function opts(box,items,get,set,multi){
+  box.innerHTML=items.map((it,i)=>`<button class="opt" data-i="${i}" aria-pressed="${multi?get(it.k||it):get(i)}">${it.k||it}</button>`).join('');
+  box.addEventListener('click',e=>{
+    const b=e.target.closest('.opt'); if(!b) return;
+    set(+b.dataset.i,items[+b.dataset.i]);
+    box.querySelectorAll('.opt').forEach((x,i)=>x.setAttribute('aria-pressed',multi?get(items[i].k||items[i]):get(i)));
+  });
+}
+opts(document.getElementById('fBudget'),BUDGETS,i=>S.fBudget===i,i=>S.fBudget=i);
+opts(document.getElementById('fSubs'),SUBS,i=>S.fSubs===i,i=>S.fSubs=i);
+opts(document.getElementById('fRating'),RATINGS,i=>S.fRating===i,i=>S.fRating=i);
+opts(document.getElementById('fTags'),ALL_TAGS,t=>S.fTags.has(t),(i,t)=>{S.fTags.has(t)?S.fTags.delete(t):S.fTags.add(t)},true);
+[['swFree','onlyFree'],['swVer','onlyVer'],['swFav','onlyFav']].forEach(([id,key])=>{
+  const b=document.getElementById(id);
+  b.addEventListener('click',()=>{S[key]=!S[key];b.setAttribute('aria-pressed',S[key]);buzz(8)});
+});
+document.getElementById('openFilters').addEventListener('click',()=>sheetOpen(document.getElementById('fSheet')));
+document.getElementById('fApply').addEventListener('click',()=>{S.limit=9;apply();sheetClose()});
+document.getElementById('fReset').addEventListener('click',()=>{
+  S.fBudget=0;S.fSubs=0;S.fRating=0;S.fTags.clear();S.onlyFree=false;S.onlyVer=false;S.onlyFav=false;
+  document.querySelectorAll('#fBudget .opt,#fSubs .opt,#fRating .opt').forEach(x=>x.setAttribute('aria-pressed',x.dataset.i==='0'));
+  document.querySelectorAll('#fTags .opt').forEach(x=>x.setAttribute('aria-pressed','false'));
+  ['swFree','swVer','swFav'].forEach(id=>document.getElementById(id).setAttribute('aria-pressed','false'));
+  apply();
+});
+
+/* ── бюджет кампании ── */
+const CAPS=[50000,100000,250000,500000,1000000];
+document.getElementById('capQuick').innerHTML=CAPS.map(v=>`<button class="opt" data-v="${v}" aria-pressed="false">${money(v)} ₽</button>`).join('');
+document.getElementById('capQuick').addEventListener('click',e=>{
+  const b=e.target.closest('.opt'); if(!b) return;
+  document.querySelectorAll('#capQuick .opt').forEach(x=>x.setAttribute('aria-pressed',x===b));
+  document.getElementById('capInput').value=money(+b.dataset.v);
+});
+document.getElementById('capInput').addEventListener('input',e=>{
+  const raw=e.target.value.replace(/\D/g,'');
+  e.target.value=raw?money(+raw):'';
+  document.querySelectorAll('#capQuick .opt').forEach(x=>x.setAttribute('aria-pressed','false'));
+});
+document.getElementById('capEdit').addEventListener('click',()=>{
+  document.getElementById('capInput').value=S.cap?money(S.cap):'';
+  sheetOpen(document.getElementById('cSheet'));
+});
+document.getElementById('capSave').addEventListener('click',()=>{
+  const raw=document.getElementById('capInput').value.replace(/\D/g,'');
+  S.cap=raw?+raw:null; tray(); sheetClose();
+  toast(S.cap?`Бюджет: ${money(S.cap)} ₽`:'Бюджет снят');
+});
+document.getElementById('capOff').addEventListener('click',()=>{S.cap=null;tray();sheetClose();toast('Бюджет снят')});
+
+/* ── профиль ── */
+let current=null;
+function openProfile(b){
+  current=b;
+  const similar=DATA.filter(x=>x.id!==b.id&&(x.p===b.p||x.tags.some(t=>b.tags.includes(t))))
+    .sort((x,y)=>y.r-x.r).slice(0,3);
+  document.getElementById('pBody').innerHTML=`
+    <div class="pf-top">
+      <div class="ava" style="--avaBg:${PLT[b.p].c}22">${initials(b.n)}<span class="plt">${ICON[b.p]}</span></div>
+      <div>
+        <div class="pf-name">${b.n}${b.ver?VER:''}</div>
+        <div class="pf-sub">${b.h} · ${PLT[b.p].n} · отвечает ${b.resp}</div>
+        <div class="meta" style="margin-top:5px"><span class="star">★</span><b class="num">${dec(b.r.toFixed(1))}</b>
+          <span class="dot">·</span><span class="num">${b.deals} сделок</span>${b.free?'<span class="dot">·</span><span class="free">свободен</span>':''}</div>
+      </div>
+    </div>
+    <div class="pf-stats">
+      <div><div class="v num">${shortNum(b.subs)}</div><div class="k">подписчиков</div></div>
+      <div><div class="v num">${shortNum(viewsOf(b))}</div><div class="k">просмотров</div></div>
+      <div><div class="v num">${dec(b.er)}%</div><div class="k">вовлечённость</div></div>
+      <div><div class="v num">${money(cpmOf(b))} ₽</div><div class="k">CPM</div></div>
+    </div>
+
+    <div class="pf-h">Надёжность</div>
+    <div class="rows">
+      <div class="row"><span class="rk">Публикации в срок</span><span class="rv num">${b.ontime}%</span></div>
+      <div class="row"><span class="rk">Заказали повторно</span><span class="rv num">${b.again}%</span></div>
+      <div class="row"><span class="rk">Динамика охвата за месяц</span><span class="rv num" style="color:${b.trend>=0?'var(--ok)':'var(--muted)'}">${b.trend>=0?'+':''}${b.trend}%</span></div>
+    </div>
+
+    <div class="pf-h">Форматы и цены</div>
+    <div class="rows">${FORMATS[b.p].map(f=>{
+      const pr=Math.round(b.price*f.pm/500)*500, vw=Math.round(b.views*f.vm);
+      return `<div class="row"><span class="rk">${f.k}<small>≈ ${shortNum(vw)} просмотров</small></span>
+        <span class="rv num">${money(pr)} ₽<small>CPM ${money(pr/(vw/1000))} ₽</small></span></div>`;
+    }).join('')}</div>
+
+    <div class="pf-h">Последние размещения</div>
+    <div class="rows">${b.last.map(l=>`<div class="row"><span class="rk"><b>${l.b}</b><small>${l.d}</small></span>
+      <span class="rv num">${shortNum(l.v)}<small>CTR ${dec(l.c)}%</small></span></div>`).join('')}</div>
+
+    <div class="pf-h">Аудитория</div>
+    <div class="audi" style="--plt:${PLT[b.p].c}">
+      <div class="abar"><span class="al">Женщины</span><span class="track"><span class="fill" style="width:${b.w}%"></span></span><span class="av num">${b.w}%</span></div>
+      <div class="abar"><span class="al">Мужчины</span><span class="track"><span class="fill" style="width:${100-b.w}%"></span></span><span class="av num">${100-b.w}%</span></div>
+    </div>
+    <div class="rows" style="margin-top:9px">
+      <div class="row"><span class="rk">Ядро аудитории</span><span class="rv">${b.age}</span></div>
+      <div class="row"><span class="rk">География</span><span class="rv" style="font-weight:550">${b.geo}</span></div>
+      <div class="row"><span class="rk">Тематики</span><span class="rv" style="font-weight:550">${b.tags.join(' · ')}</span></div>
+    </div>
+
+    <div class="pf-h">Похожие авторы</div>
+    <div class="rows">${similar.map(s=>`<div class="row">
+      <span class="mini-ava" style="--avaBg:${PLT[s.p].c}22">${initials(s.n)}</span>
+      <span class="rk"><b>${s.n}</b><small>${PLT[s.p].n} · ★ ${dec(s.r.toFixed(1))} · ${money(priceOf(s))} ₽</small></span>
+      <button class="mini-add" data-sim="${s.id}">Открыть</button></div>`).join('')}</div>
+    <div style="height:4px"></div>`;
+  document.getElementById('pAdd').textContent=S.picked.has(b.id)?'Убрать из кампании':'Добавить в кампанию';
+  document.getElementById('pBody').scrollTop=0;
+  if(!document.getElementById('pSheet').classList.contains('on')) sheetOpen(document.getElementById('pSheet'));
+}
+document.getElementById('pBody').addEventListener('click',e=>{
+  const s=e.target.closest('[data-sim]'); if(!s) return;
+  openProfile(DATA.find(x=>x.id===s.dataset.sim));
+});
+document.getElementById('pAdd').addEventListener('click',()=>{
+  if(!current) return;
+  togglePick(current,nodes.get(current.id));
+  const on=S.picked.has(current.id);
+  document.getElementById('pAdd').textContent=on?'Убрать из кампании':'Добавить в кампанию';
+  toast(on?'Автор добавлен':'Автор убран');
+});
+
+/* ═══ поиск, сортировка, вид ═══ */
+const q=document.getElementById('q'), sw=document.getElementById('searchWrap');
+let td=null;
+q.addEventListener('input',()=>{
+  sw.classList.toggle('filled',q.value.length>0);
+  clearTimeout(td); td=setTimeout(()=>{S.q=q.value;S.limit=9;apply()},110);
+});
+document.getElementById('clearQ').addEventListener('click',()=>{q.value='';S.q='';sw.classList.remove('filled');apply();q.focus()});
+document.getElementById('sort').addEventListener('change',e=>{S.sort=e.target.value;apply()});
+document.getElementById('viewTog').addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  S.view=b.dataset.v;
+  document.querySelectorAll('#viewTog button').forEach(x=>x.setAttribute('aria-pressed',x===b));
+  grid.classList.toggle('list',S.view==='list');
+});
+document.getElementById('more').addEventListener('click',()=>{S.limit+=9;apply()});
+document.getElementById('resetEmpty').addEventListener('click',()=>{
+  S.plats.clear();S.presets.clear();S.q='';q.value='';sw.classList.remove('filled');S.limit=9;
+  platBox.querySelectorAll('.chip').forEach(x=>x.setAttribute('aria-pressed',x.dataset.p==='all'));
+  presetBox.querySelectorAll('.chip').forEach(x=>x.setAttribute('aria-pressed','false'));
+  document.getElementById('fReset').click();
+});
+
+/* ═══ тост ═══ */
+let tt=null;
+function toast(m){
+  const el=document.getElementById('toast');
+  el.textContent=m; el.classList.add('on');
+  clearTimeout(tt); tt=setTimeout(()=>el.classList.remove('on'),1900);
+}
+
+setTimeout(build,320);
+</script>
+</body>
+</html>

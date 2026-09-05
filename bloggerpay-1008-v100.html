@@ -82163,9 +82163,21 @@ function letIn(token, who, how){
   }catch(e){ E(e); }
   var mail = String(who.email || '').toLowerCase();
   var rec = null;
+  /* Список перечитываем с диска. Запись могло завести соседнее окно
+     приложения (возврат после входа открывается своим окном), и в памяти
+     ЭТОЙ вкладки её нет — а раз нет, заводилась вторая запись на ту же
+     почту с другим id. Дальше это расходилось в две роли, два кэша денег
+     и два места, куда писать выплату. */
+  try{ if(typeof loadUsers === 'function' && typeof users !== 'undefined') users = loadUsers(); }catch(e){ E(e); }
   try{
     rec = (typeof users !== 'undefined' && users)
-      ? users.find(function(x){ return x && String(x.email || '').toLowerCase() === mail; })
+      ? users.find(function(x){
+          if(!x) return false;
+          /* По почте — как раньше; по серверному номеру — на случай, если
+             почту у аккаунта поменяли, а человек тот же. */
+          if(mail && String(x.email || '').toLowerCase() === mail) return true;
+          return !!(who.id && x.srvId && String(x.srvId) === String(who.id));
+        })
       : null;
   }catch(e){ E(e); }
 
@@ -82213,7 +82225,10 @@ function letIn(token, who, how){
   forget();
   close();
   toast(how === 'telegram' ? 'Вы вошли через Телеграм' : 'Вы вошли через Google', 'ok');
-  setTimeout(function(){ try{ enterApp(false); }catch(e){ E(e); } }, 600);
+  /* Без паузы. Полсекунды здесь человек смотрел на форму входа, с
+     которой только что ушёл, — ровно та картинка, которая читается как
+     «опять не сработало». Обычный вход по паролю входит сразу. */
+  setTimeout(function(){ try{ enterApp(false); }catch(e){ E(e); } }, 0);
   return true;
 }
 
@@ -83438,6 +83453,204 @@ html #bpGuestBar button{
    Откат: удалить style#bp-nosaid-css.                                */
 html .blp-ver.blp-unver{ display:none!important }
 </style>
+
+<script id="bp-authwake">
+/* ══ ВХОД ДОЕЗЖАЕТ ДО ТОЙ ВКЛАДКИ, ГДЕ ЕГО ЖДУТ ═════════════════════
+   Что было. Кнопка «Войти через Телеграм» открывает окно площадки. Когда
+   человек подтверждал вход, сервер разворачивал в ЭТОМ окне всё
+   приложение целиком, оно признавало метку своей (метка лежит в общем
+   для окон хранилище) и первым забирало вход себе. Вкладке, где человек
+   смотрел на «Заканчиваем вход», не доставалось ничего: сервер отвечал
+   «метки нет», приложение молча глотало этот ответ и крутило точки две
+   минуты. Человек обновлял страницу — и оказывался внутри, потому что
+   вход давно состоялся, просто в соседнем окне.
+
+   Что теперь. Сервер отдаёт окну возврата страничку на полтора
+   килобайта, и она будит того, кто ждёт, тремя способами сразу:
+     · postMessage тому окну, которое её открыло, — мгновенно;
+     · отметкой bpAuthReady в общем хранилище — для остальных вкладок;
+     · BroadcastChannel «bp-auth» — там, где он есть.
+   Этот слой слушает все три и забирает вход в ту же секунду, не дожидаясь
+   очередного тика двухсекундного опроса. Заодно будит опрос, когда
+   человек возвращается на вкладку: браузер душит таймеры в фоне, и
+   именно поэтому ожидание растягивалось.
+
+   Метка на сервере теперь живёт ещё минуту после первой выдачи
+   (AUTH_GRACE), поэтому гонка двух окон перестала быть смертельной: даже
+   проигравший получит тот же ключ, а не «вход не найден».
+
+   Ничего чужого слой не переписывает: старые слои bp-glogin и bp-tglogin
+   работают как работали, этот просто приходит первым.
+   Откат: удалить script#bp-authwake.                                  */
+(function(){
+'use strict';
+if(window.__bpAuthWake) return; window.__bpAuthWake = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'authwake'); }catch(_){} }
+function srv(){ return window.bpSrv; }
+function ready(){
+  try{ var s = srv(); return !!(s && s.configured && s.configured() && typeof s.raw === 'function'); }
+  catch(e){ return false; }
+}
+function logged(){
+  try{ return typeof currentUser !== 'undefined' && !!currentUser; }catch(e){ return false; }
+}
+
+/* Два способа входа устроены одинаково, отличаются только именами. */
+var WAY = {
+  tg: { key: 'bp_tglogin_n', path: '/api/auth/telegram/pending', how: 'telegram',
+        shut: 'bpTgLoginClose', ov: 'tglgOv' },
+  g:  { key: 'bp_glogin_n',  path: '/api/auth/google/pending',   how: 'google',
+        shut: 'bpGLoginClose', ov: 'glgOv' },
+};
+var LIFE = 15 * 60 * 1000;
+
+function nonceOf(way){
+  try{
+    var o = JSON.parse(localStorage.getItem(way.key) || 'null');
+    if(!o || !o.n || (Date.now() - (o.at || 0)) > LIFE) return '';
+    return String(o.n);
+  }catch(e){ return ''; }
+}
+function waiting(way){ return !!document.getElementById(way.ov); }
+
+var busy = false, done = false;
+
+/* Гасим шторку и опрос ДО впуска: иначе через пару секунд тот опрос
+   получит тот же ключ (метка живёт ещё минуту) и впустит второй раз. */
+function shut(way){
+  try{ var f = window[way.shut]; if(typeof f === 'function') f(); }catch(e){ E(e); }
+}
+
+function grab(kind, nonce){
+  if(done || busy || logged()) return;
+  var way = WAY[kind]; if(!way) return;
+  var n = String(nonce || '') || nonceOf(way);
+  if(!n || !ready()) return;
+  busy = true;
+  srv().raw('GET', way.path + '?nonce=' + encodeURIComponent(n))
+    .then(function(j){
+      busy = false;
+      if(!j || j.state !== 'ok' || !j.token) return;
+      done = true;
+      shut(way);
+      try{
+        if(typeof window.bpAuthLetIn === 'function') window.bpAuthLetIn(j.token, j.user || {}, way.how);
+      }catch(e){ E(e); }
+    })
+    .catch(function(err){
+      busy = false;
+      if(err && err.status === 404) lost(way);
+    });
+}
+
+/* Метки нет: либо она просрочена, либо вход всё-таки закончился в другом
+   окне. Второе проверяется просто — там осталась копия сессии, общая на
+   всё устройство. Если она есть, человека надо впустить, а не оставлять
+   смотреть на точки: перезагружаем страницу ровно один раз. Это то же
+   самое, что владелец делал руками. */
+function lost(way){
+  if(logged() || !waiting(way)) return;
+  var keep = '';
+  try{ keep = localStorage.getItem('bp_session') || localStorage.getItem('bpSessionKeep') || ''; }catch(e){}
+  var once = '';
+  try{ once = sessionStorage.getItem('bp_authwake_reload') || ''; }catch(e){}
+  if(keep && !once){
+    try{ sessionStorage.setItem('bp_authwake_reload', '1'); }catch(e){}
+    done = true;
+    try{ location.reload(); }catch(e){ E(e); }
+    return;
+  }
+  done = true;
+  shut(way);
+  try{ showAuthToast('Вход не подтвердился — попробуйте ещё раз', 'err'); }catch(e){}
+}
+
+/* ── три голоса, которые будят вкладку ───────────────────────────── */
+try{
+  window.addEventListener('message', function(e){
+    try{
+      if(!e || e.origin !== location.origin) return;
+      var d = e.data;
+      if(!d || d.bp !== 'auth' || !WAY[d.kind]) return;
+      grab(d.kind, d.nonce);
+    }catch(err){ E(err); }
+  });
+}catch(e){ E(e); }
+
+try{
+  window.addEventListener('storage', function(e){
+    try{
+      if(!e || e.key !== 'bpAuthReady' || !e.newValue) return;
+      var o = JSON.parse(e.newValue);
+      if(o && WAY[o.kind]) grab(o.kind, o.nonce);
+    }catch(err){ E(err); }
+  });
+}catch(e){ E(e); }
+
+try{
+  if(typeof BroadcastChannel === 'function'){
+    var ch = new BroadcastChannel('bp-auth');
+    ch.onmessage = function(e){
+      try{
+        var d = e && e.data;
+        if(d && d.bp === 'auth' && WAY[d.kind]) grab(d.kind, d.nonce);
+      }catch(err){ E(err); }
+    };
+  }
+}catch(e){ E(e); }
+
+/* ── «я жду» ───────────────────────────────────────────────────────
+   Пока на экране висит шторка ожидания, вкладка каждые две секунды
+   обновляет отметку. По ней окно возврата понимает, что его ждут живьём,
+   и закрывается вместо того, чтобы разворачивать второе приложение.
+   Именно устаревание отметки отличает «вкладка ждёт» от «человек ушёл на
+   площадку прямо из этой вкладки, и возвращаться некуда». */
+setInterval(function(){
+  try{
+    if(done || logged()) return;
+    var k = null;
+    Object.keys(WAY).forEach(function(x){ if(!k && waiting(WAY[x])) k = x; });
+    if(!k) return;
+    localStorage.setItem('bpAuthWaiting', JSON.stringify({ kind: k, at: Date.now() }));
+  }catch(e){ E(e); }
+}, 2000);
+
+/* Кто бы ни впустил человека — этот слой, старый опрос или возврат по
+   адресу, — окно возврата должно об этом узнать и закрыться. Поэтому
+   отметку «забрали» ставим в одном месте: вокруг общего впуска. */
+try{
+  var let0 = window.bpAuthLetIn;
+  if(typeof let0 === 'function' && !let0.__bpWake){
+    var wrapped = function(token, who, how){
+      done = true;
+      try{
+        localStorage.setItem('bpAuthTaken', String(Date.now()));
+        localStorage.removeItem('bpAuthWaiting');
+      }catch(e){}
+      return let0.apply(this, arguments);
+    };
+    wrapped.__bpWake = 1;
+    window.bpAuthLetIn = wrapped;
+  }
+}catch(e){ E(e); }
+
+/* Возврат на вкладку: пока она была в фоне, браузер придушил её таймеры,
+   и опрос мог не сходить ни разу. Спрашиваем сразу. */
+function poke(){
+  try{
+    if(done || logged()) return;
+    Object.keys(WAY).forEach(function(k){
+      if(waiting(WAY[k])) grab(k, '');
+    });
+  }catch(e){ E(e); }
+}
+try{
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden) poke(); });
+  window.addEventListener('focus', poke);
+}catch(e){ E(e); }
+})();
+</script>
 
 </body>
 </html>

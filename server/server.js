@@ -1446,6 +1446,16 @@ const glog = new Map();           /* nonce → {at, code, token, user, done, tri
    приложение его не заберёт. Плюс хранится проверочная строка PKCE. */
 const tglog = new Map();          /* nonce → {at, code, token, user, done, tries, role, verifier} */
 const GLOG_TTL = 15 * 60 * 1000;
+/* Сколько метка живёт ПОСЛЕ того, как её первый раз забрали.
+   Раньше запись удалялась в тот же миг, и вход превращался в гонку: кто
+   первым спросил — тот и вошёл, а проигравшему приложение две минуты
+   крутило «Заканчиваем вход». Проигрывала обычно та самая вкладка, где
+   человек ждал, потому что окно возврата спрашивало раньше.
+   Минуты хватает, чтобы вход забрал тот, кому он предназначался, даже
+   если браузер придушил его таймеры или человек успел обновить
+   страницу. Дальше метка гаснет. Так же устроена касса: /api/pay/status
+   перечитываемый, и поэтому у пополнения этой болезни нет. */
+const AUTH_GRACE = 60 * 1000;
 function glogSweep() {
   const now = Date.now();
   for (const [k, v] of glog) if (now - v.at > GLOG_TTL) glog.delete(k);
@@ -2260,7 +2270,12 @@ const routes = {
     const rec = glog.get(nonce);
     if (!rec) return { status: 404, body: { error: 'Вход не найден или просрочен' } };
     if (!rec.done) return { status: 200, body: { state: 'waiting' } };
-    glog.delete(nonce);
+    /* Отдаём и помечаем выданной, но не стираем сразу — см. AUTH_GRACE. */
+    if (!rec.taken) { rec.taken = Date.now(); glog.set(nonce, rec); }
+    else if (Date.now() - rec.taken > AUTH_GRACE) {
+      glog.delete(nonce);
+      return { status: 404, body: { error: 'Вход не найден или просрочен' } };
+    }
     return { status: 200, body: { state: 'ok', token: rec.token, user: rec.user } };
   },
 
@@ -2327,7 +2342,12 @@ const routes = {
     const rec = tglog.get(nonce);
     if (!rec) return { status: 404, body: { error: 'Вход не найден или просрочен' } };
     if (!rec.done) return { status: 200, body: { state: 'waiting' } };
-    tglog.delete(nonce);
+    /* Отдаём и помечаем выданной, но не стираем сразу — см. AUTH_GRACE. */
+    if (!rec.taken) { rec.taken = Date.now(); tglog.set(nonce, rec); }
+    else if (Date.now() - rec.taken > AUTH_GRACE) {
+      tglog.delete(nonce);
+      return { status: 404, body: { error: 'Вход не найден или просрочен' } };
+    }
     return { status: 200, body: { state: 'ok', token: rec.token, user: rec.user } };
   },
 
@@ -3450,12 +3470,70 @@ const routes = {
    пару секунд, а кнопка остаётся на случай, если переход не сработал.
    Нужно для входа через Google: в том же браузере приложение подхватит
    вход по метке в адресе, и код вводить не придётся. */
-/* Успешный вход возвращаем ПЕРЕХОДОМ, а не страницей: человек и так
-   знает, что вошёл, а страница «Вы вошли» с паузой — лишняя остановка
-   посреди дороги. Так же устроен возврат после подтверждения канала. */
-function backToApp(res, goto) {
-  res.writeHead(302, { Location: goto, 'Cache-Control': 'no-store' });
-  return res.end();
+/* ── Возврат после входа: крошечная страница вместо всего приложения ──
+   Было: сервер отвечал переходом на сам сайт с меткой в адресе. Но вход
+   начинается в новом окне (его открывает кнопка «Войти через…»), значит
+   и переход приходил в НЕГО. Окно поднимало все пять мегабайт
+   приложения, признавало метку своей — метка лежит в localStorage,
+   общем для всех окон одного адреса, — и первым забирало вход себе. Той
+   вкладке, где человек смотрел на «Заканчиваем вход», не доставалось
+   ничего: сервер отвечал ей «метки нет», а приложение этот ответ молча
+   глотало и крутило точки до двух минут. Человек обновлял страницу — и
+   оказывался внутри, потому что вход давно состоялся, просто в соседнем
+   окне.
+
+   Стало: окно возврата получает страницу на полтора килобайта. Она
+   ничего не забирает, а только говорит «готово» тому, кто ждёт:
+     1) окну, которое её открыло, — postMessage;
+     2) остальным вкладкам — отметкой в localStorage и BroadcastChannel;
+   и закрывается. Вход забирает ровно та вкладка, где человек ждёт.
+
+   Если открывшего окна нет (вход шёл в этой же вкладке — так бывает,
+   когда браузер запретил всплывающее окно), ждать некому: страница
+   короткую секунду слушает ответ от других вкладок и, не дождавшись,
+   уходит в приложение сама — как раньше. */
+function authRelayPage(res, kind, state, goto) {
+  const j = (v) => JSON.stringify(String(v));
+  const code = '(function(){'
+    + 'var K=' + j(kind) + ',N=' + j(state) + ',GO=' + j(goto) + ';'
+    + 'var m=document.getElementById("m");'
+    + 'function say(t){ if(m) m.textContent=t; }'
+    + 'var msg={bp:"auth",kind:K,nonce:N};'
+    /* Отметка и вещание — для вкладок, до которых не дотянуться напрямую.
+       Имена без префикса bp_: этот префикс приложение считает своим
+       хранилищем и гоняет такие ключи на сервер. */
+    + 'try{ localStorage.setItem("bpAuthReady", JSON.stringify({kind:K,nonce:N,at:Date.now()})); }catch(e){}'
+    + 'try{ var ch=new BroadcastChannel("bp-auth"); ch.postMessage(msg); ch.close(); }catch(e){}'
+    + 'var done=false;'
+    + 'function finish(){ if(done) return; done=true;'
+    + ' say("Готово. Возвращайтесь во вкладку BloggerPay.");'
+    + ' setTimeout(function(){ try{ window.close(); }catch(e){} }, 200); }'
+    + 'try{ if(window.opener && !window.opener.closed){'
+    + '  window.opener.postMessage(msg, location.origin); finish(); return; } }catch(e){}'
+    /* Открывшего окна нет. Ждёт ли нас кто-нибудь вообще? Вкладка, которая
+       показывает «Заканчиваем вход», каждые две секунды обновляет отметку
+       bpAuthWaiting. Свежая отметка (моложе шести секунд) значит: она жива
+       и заберёт вход сама — тогда мы просто закрываемся. Отметка старая
+       или её нет — ждать некому, человек смотрит именно сюда, и мы идём в
+       приложение, как раньше. Никаких догадок по таймеру. */
+    + 'var alive=false;'
+    + 'try{ var w=JSON.parse(localStorage.getItem("bpAuthWaiting")||"null");'
+    + ' alive = !!(w && w.kind === K && (Date.now() - (w.at||0)) < 6000); }catch(e){}'
+    + 'if(alive){ finish(); return; }'
+    + 'var t=setTimeout(function(){ if(!done) location.replace(GO); }, 1200);'
+    + 'window.addEventListener("storage", function(e){'
+    + ' if(e && e.key === "bpAuthTaken"){ clearTimeout(t); finish(); } });'
+    + '})();';
+  const html = '<!doctype html><meta charset="utf-8">'
+    + '<meta name="viewport" content="width=device-width,initial-scale=1">'
+    + '<title>Готово</title>'
+    + '<style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;'
+    + 'background:#0f1115;color:#e8eaed;font:600 15px/1.55 -apple-system,Segoe UI,Roboto,sans-serif;'
+    + 'text-align:center;padding:28px}</style>'
+    + '<div id="m">Возвращаемся в BloggerPay…</div>'
+    + '<script>' + code + '</' + 'script>';
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+  return res.end(html);
 }
 
 function verifyPage(res, title, text, good, code, goto) {
@@ -3718,7 +3796,7 @@ function tgFinish(res, state, rec, fields) {
   rec.code = String(crypto.randomInt(100000, 1000000));
   tglog.set(state, rec);
 
-  return backToApp(res, APP_BASE + '?tglogin=' + encodeURIComponent(state));
+  return authRelayPage(res, 'tg', state, APP_BASE + '?tglogin=' + encodeURIComponent(state));
 }
 
 /* Страница-перекладчик: читает фрагмент и отправляет его обычным
@@ -3882,7 +3960,7 @@ async function handleGoogleCallback(req, res, url) {
     rec.code = String(crypto.randomInt(100000, 1000000));
     glog.set(state, rec);
 
-    return backToApp(res, APP_BASE + '?glogin=' + encodeURIComponent(state));
+    return authRelayPage(res, 'g', state, APP_BASE + '?glogin=' + encodeURIComponent(state));
   } catch (e) {
     return verifyPage(res, 'Не вышло войти', String((e && e.message) || e).slice(0, 160), false);
   }
