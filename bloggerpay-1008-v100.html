@@ -83701,5 +83701,712 @@ setTimeout(fix, 2200);
 })();
 </script>
 
+<style id="bp-card4-css">
+/* ══ КАРТОЧКА БЛОГЕРА ПО ЭСКИЗУ ═════════════════════════════════════
+   Владелец принёс эскиз (catalog-bloggers-v3.html) и попросил повторить
+   его в приложении один в один: корпус с цветной полоской площадки
+   сверху, квадратный аватар со значком канала, имя с галочкой, ник,
+   строка-подпись, тематики плашками, тонкая полоса фактов между
+   волосяными линиями, плитка цифр, ряд форматов с ценой и низ с ценой,
+   CPM и белой кнопкой. Плюс то, чего в эскизе не было: проценты
+   аудитории по полу. Метка «детская аудитория» по просьбе владельца
+   убрана. Меню «⋯» осталось.
+
+   Размеры, цвета и радиусы взяты из эскиза, а не придуманы:
+   карточка 18px/13px/gap 11, аватар 50×50 r16, значок канала 21px,
+   имя 15.5px/680, ник 13px, подпись 12.5px, плашка темы r8 3×8px,
+   плитка цифр r13, форматы 29px, цена 19.5px/780, кнопка 38px.
+
+   Разметку карточки НЕ меняем. За её классы держатся четырнадцать мест:
+   поиск, фильтры и сортировка читают цифры прямо из ячеек, кнопка
+   кампании ищет .blc-add[data-bid], избранное — .blc-bm, меню — .blc-rat-col,
+   переключатель каналов — значки в .blc-pr. Все они обёрнуты в try/catch
+   и при замене разметки замолчали бы молча. Поэтому вид собран
+   перестановкой (свойством order) и перекраской поверх прежних опор.
+
+   Откат: удалить style#bp-card4-css и script#bp-card4.               */
+
+/* ── корпус ─────────────────────────────────────────────────────── */
+html #catBloggerList .blc.bpc4{
+  position:relative; overflow:hidden;
+  border-radius:18px!important; padding:13px!important;
+  display:flex; flex-direction:column; gap:11px;
+  background:var(--card,#131418);
+  border:1px solid var(--brd,rgba(255,255,255,.08));
+}
+html #catBloggerList .blc.bpc4::before{
+  content:''; position:absolute; left:0; right:0; top:0; height:2px;
+  background:var(--plt,transparent); opacity:.75; z-index:2;
+}
+html #catBloggerList .blc.bpc4 .bpc4-head{ padding:0!important; margin:0!important }
+html #catBloggerList .blc.bpc4 .bpc4-low{
+  padding:0!important; display:flex; flex-direction:column; gap:11px;
+}
+html #catBloggerList .blc.bpc4 .blc-top{
+  padding:0!important; gap:11px; align-items:flex-start;
+}
+/* Место под звезду и «⋯» в правом верхнем углу. */
+html #catBloggerList .blc.bpc4 .blc-info{ min-width:0 }
+
+/* ── аватар ─────────────────────────────────────────────────────── */
+html #catBloggerList .blc.bpc4 .blc-ava{
+  position:relative; width:50px; height:50px; flex:0 0 auto;
+  border-radius:16px; overflow:visible;
+}
+html #catBloggerList .blc.bpc4 .blc-ava > img,
+html #catBloggerList .blc.bpc4 .blc-ava > div{
+  border-radius:16px!important; width:100%; height:100%; object-fit:cover;
+}
+html #catBloggerList .blc.bpc4 .bpc4-plt{
+  position:absolute; right:-5px; bottom:-5px; width:21px; height:21px;
+  border-radius:50%; display:grid; place-items:center;
+  background:var(--bg,#0a0a0c); box-shadow:0 0 0 2px var(--card,#131418);
+}
+html #catBloggerList .blc.bpc4 .bpc4-plt img{ width:12px; height:12px; display:block }
+
+/* ── имя, ник, подпись ──────────────────────────────────────────── */
+html #catBloggerList .blc.bpc4 .blc-name{
+  font-size:15.5px; font-weight:680; letter-spacing:-.02em; color:var(--t1);
+}
+html #catBloggerList .blc.bpc4 .bpc4-ok{
+  flex:0 0 auto; width:15px; height:15px; color:var(--green,#31C06A); margin-left:1px;
+}
+/* «на площадке с …» стоит в полосе фактов — в шапке он был бы вторым
+   разом того же самого. Скрываем насовсем: атрибут hidden тут не
+   работает, у .blc-since своё display из базовых стилей. */
+html #catBloggerList .blc.bpc4 .blc-since{ display:none!important }
+html #catBloggerList .blc.bpc4 .bpc4-handle{
+  font-size:13px; color:var(--t3); margin-top:1px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block;
+}
+/* Место под звезду и «⋯»: без этого длинное имя уезжает под кнопки. */
+html #catBloggerList .blc.bpc4 .blc-nr{ padding-right:72px }
+html #catBloggerList .blc.bpc4 .bpc4-meta{
+  display:flex; align-items:center; flex-wrap:wrap; gap:5px;
+  margin-top:5px; font-size:12.5px; color:var(--t3);
+}
+html #catBloggerList .blc.bpc4 .bpc4-meta b{ color:var(--t1); font-weight:650 }
+html #catBloggerList .blc.bpc4 .bpc4-meta .st{ color:var(--gold,#F2C14E) }
+html #catBloggerList .blc.bpc4 .bpc4-dot{ opacity:.32 }
+
+/* ── угол: звезда и «⋯» ─────────────────────────────────────────── */
+html #catBloggerList .blc.bpc4 .blc-rat-col{
+  position:absolute; top:11px; right:11px; z-index:3;
+  display:flex; flex-direction:row; align-items:center; gap:6px; margin:0; padding:0;
+}
+html #catBloggerList .blc.bpc4 .blc-rat,
+html #catBloggerList .blc.bpc4 .blc-deals{ display:none!important }
+html #catBloggerList .blc.bpc4 .blc-rat-col .blc-bm,
+html #catBloggerList .blc.bpc4 .blc-rat-col .bpk-btn{
+  position:static!important; margin:0!important; width:30px!important; height:30px!important;
+  border-radius:10px!important; display:grid!important; place-items:center;
+  background:var(--card2,#1B1D22)!important; border:1px solid var(--brd,rgba(255,255,255,.08))!important;
+  color:var(--t3)!important;
+}
+html #catBloggerList .blc.bpc4 .blc-rat-col .blc-bm.saved{
+  color:var(--gold,#F2C14E)!important; border-color:rgba(242,193,78,.4)!important;
+  background:rgba(242,193,78,.1)!important;
+}
+html #catBloggerList .blc.bpc4 .blc-rat-col .blc-bm svg{ width:15px; height:15px }
+
+/* ── тематики ───────────────────────────────────────────────────── */
+html #catBloggerList .blc.bpc4 .blc-cats{
+  display:flex; flex-wrap:wrap; gap:6px; margin:0; font-size:12px; line-height:1;
+}
+html #catBloggerList .blc.bpc4 .bpc4-tag{
+  padding:3px 8px; border-radius:8px; font-size:12px; line-height:1.35;
+  background:var(--card2,#1B1D22); color:var(--t3);
+}
+
+/* ── полоса фактов ──────────────────────────────────────────────── */
+html #catBloggerList .blc.bpc4 .bpc4-trust{
+  display:flex; align-items:center; gap:9px; font-size:12px; color:var(--t3);
+  border-top:1px solid var(--brd,rgba(255,255,255,.08));
+  border-bottom:1px solid var(--brd,rgba(255,255,255,.08));
+  padding:8px 0; overflow-x:auto; scrollbar-width:none;
+}
+html #catBloggerList .blc.bpc4 .bpc4-trust::-webkit-scrollbar{ display:none }
+html #catBloggerList .blc.bpc4 .bpc4-trust span{ white-space:nowrap }
+html #catBloggerList .blc.bpc4 .bpc4-trust b{ color:var(--t1); font-weight:650 }
+html #catBloggerList .blc.bpc4 .bpc4-trust .up{ color:var(--green,#31C06A); font-weight:650 }
+
+/* ── плитка цифр ────────────────────────────────────────────────── */
+html #catBloggerList .blc.bpc4 .blc-strip{
+  display:grid; grid-template-columns:repeat(3,1fr); gap:0;
+  background:var(--card2,#1B1D22); border:none; border-radius:13px;
+  padding:9px 4px; margin:0;
+}
+html #catBloggerList .blc.bpc4 .blc-strip .bls{
+  display:flex; flex-direction:column; align-items:center; gap:1px;
+  position:relative; padding:0 2px; background:none; border:none;
+}
+html #catBloggerList .blc.bpc4 .blc-strip .bls.bpc4-hide{ display:none!important }
+html #catBloggerList .blc.bpc4 .blc-strip .bls + .bls:not(.bpc4-hide)::before{
+  content:''; position:absolute; left:0; top:3px; bottom:3px; width:1px;
+  background:var(--brd,rgba(255,255,255,.08));
+}
+html #catBloggerList .blc.bpc4 .blc-strip .bls-ico{ display:none }
+html #catBloggerList .blc.bpc4 .blc-strip .bls-val{
+  order:1; font-size:14.5px; font-weight:680; letter-spacing:-.025em; color:var(--t1);
+}
+html #catBloggerList .blc.bpc4 .blc-strip .bls-lbl{
+  order:2; font-size:11px; color:var(--t3); font-weight:500;
+}
+html #catBloggerList .blc.bpc4 .blc-strip .bls-sub{ order:3; font-size:10px }
+html #catBloggerList .blc.bpc4 .blc-strip .bls-sub.bpc4-hide{ display:none!important }
+
+/* ── аудитория по полу ──
+   Этого в эскизе не было — добавлено по просьбе владельца. Полоса
+   повторяет ту, что в эскизе показана в шторке блогера. Метку
+   «Контент для детской аудитории» владелец попросил убрать. */
+html #catBloggerList .blc.bpc4 .blc-aud{ margin:0; display:flex; flex-direction:column; gap:7px }
+html #catBloggerList .blc.bpc4 .blc-aud-row{ display:flex; align-items:center; gap:9px }
+html #catBloggerList .blc.bpc4 .blc-aud-k{ font-size:11px; color:var(--t3); flex:0 0 auto }
+html #catBloggerList .blc.bpc4 .blc-aud-bar{
+  flex:1; height:6px; border-radius:3px; overflow:hidden;
+  background:var(--card3,rgba(255,255,255,.09)); position:relative;
+}
+html #catBloggerList .blc.bpc4 .blc-aud-f{
+  display:block; height:100%; border-radius:3px;
+  background:linear-gradient(90deg,#E1306C,#9B84FF);
+}
+html #catBloggerList .blc.bpc4 .blc-aud-v{
+  font-size:11.5px; color:var(--t2); font-weight:650; flex:0 0 auto;
+  font-variant-numeric:tabular-nums;
+}
+html #catBloggerList .blc.bpc4 .blc-aud-kids{ display:none!important }
+
+/* ── форматы ────────────────────────────────────────────────────── */
+html #catBloggerList .blc.bpc4 .bpc4-fmt{
+  display:flex; gap:5px; overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch;
+}
+html #catBloggerList .blc.bpc4 .bpc4-fmt::-webkit-scrollbar{ display:none }
+html #catBloggerList .blc.bpc4 .bpc4-fmt button{
+  flex:0 0 auto; height:29px; padding:0 11px; border-radius:999px;
+  background:var(--card2,#1B1D22); border:1px solid transparent;
+  font-size:12.5px; font-weight:550; color:var(--t3); cursor:pointer; white-space:nowrap;
+  transition:background .15s,color .15s,border-color .15s;
+}
+html #catBloggerList .blc.bpc4 .bpc4-fmt button[aria-pressed="true"]{
+  background:var(--card3,rgba(255,255,255,.09)); color:var(--t1);
+  border-color:var(--brd2,rgba(255,255,255,.17));
+}
+
+/* ── низ: цена и кнопка ─────────────────────────────────────────── */
+html #catBloggerList .blc.bpc4 .bpc4-buy{
+  display:flex; align-items:flex-end; gap:10px; margin-top:auto;
+}
+html #catBloggerList .blc.bpc4 .bpc4-price{ line-height:1.14; min-width:0 }
+html #catBloggerList .blc.bpc4 .bpc4-price b{
+  display:block; font-size:19.5px; font-weight:780; letter-spacing:-.035em; color:#fff;
+}
+html #catBloggerList .blc.bpc4 .bpc4-price small{
+  display:block; font-size:12px; color:var(--t3); margin-top:1px;
+}
+html #catBloggerList .blc.bpc4 .bpc4-price .bpc4-deal{ color:var(--green,#31C06A); font-weight:650 }
+/* Кнопка как на эскизе: белая таблетка. Текст ей ставят другие слои
+   («Добавить в кампанию», «Удалить», «идёт сделка №N») — не трогаем. */
+html #catBloggerList .blc.bpc4 .bpc4-buy .blc-add{
+  margin:0 0 0 auto!important; width:auto!important; flex:0 0 auto;
+  height:38px!important; padding:0 15px!important; border-radius:999px!important;
+  background:#F3F4F6!important; color:#0A0A0C!important; border:1px solid transparent!important;
+  font-size:14px!important; font-weight:680!important; white-space:nowrap;
+}
+html #catBloggerList .blc.bpc4 .bpc4-buy .blc-add:active{ background:#D8D9DD!important }
+html #catBloggerList .blc.bpc4 .blc-owner-actions{ margin:0 }
+
+/* ── ряд каналов ────────────────────────────────────────────────── */
+html #catBloggerList .blc.bpc4 .blc-pr{ margin:0; padding:0; min-height:0 }
+html #catBloggerList .blc.bpc4 .blc-pr-socs{ gap:7px }
+html #catBloggerList .blc.bpc4 .blc-pr-soc{ width:32px!important; height:32px!important }
+html #catBloggerList .blc.bpc4 .blc-pr-soc img{ width:16px!important; height:16px!important }
+html #catBloggerList .blc.bpc4 .bp-ch-line{ margin:0; font-size:12px }
+
+/* ── порядок блоков ─────────────────────────────────────────────── */
+html #catBloggerList .blc.bpc4 .bpc4-low > .blc-cats{ order:0 }
+html #catBloggerList .blc.bpc4 .bpc4-low > .bpc4-trust{ order:1 }
+html #catBloggerList .blc.bpc4 .bpc4-low > .blc-pr{ order:2 }
+html #catBloggerList .blc.bpc4 .bpc4-low > .bp-ch-line{ order:3 }
+html #catBloggerList .blc.bpc4 .bpc4-low > .blc-strip{ order:4 }
+html #catBloggerList .blc.bpc4 .bpc4-low > .blc-aud{ order:5 }
+html #catBloggerList .blc.bpc4 .bpc4-low > .bpc4-fmt{ order:6 }
+html #catBloggerList .blc.bpc4 .bpc4-low > .bpc4-buy{ order:7 }
+html #catBloggerList .blc.bpc4 .bpc4-low > .blc-owner-actions{ order:8 }
+</style>
+
+<script id="bp-card4">
+/* ══ КАРТОЧКА БЛОГЕРА ПО ЭСКИЗУ ═════════════════════════════════════
+   Пояснение — в style#bp-card4-css. Здесь сборка: перестановка узлов,
+   значок канала на аватаре, ник, подпись, тематики плашками, полоса
+   фактов, аудитория по полу, ряд форматов и строка цены.
+
+   Все цифры настоящие. Цены форматов блогер задаёт сам при публикации
+   (card.integrations), охват — его же слова (platData.reach), поэтому
+   CPM показываем только когда охват указан. «Ниже медианы» считаем по
+   живому каталогу и только если карточек на площадке хотя бы восемь.
+   Галочку у имени ставим лишь тогда, когда СЕРВЕР подтвердил вход на
+   площадку (/api/verify/of) — метка в самой карточке приходит с чужого
+   устройства и ничего не доказывает.
+
+   Чего в карточке нет и почему: «% в срок», «% заказали снова», «охват
+   +N% за месяц», «отвечает за N минут», «свободен» — таких данных нет
+   ни в карточке, ни на сервере, а придумывать числа о чужой надёжности
+   нельзя. Их место занимает полоса проверяемых фактов.
+
+   Откат: удалить script#bp-card4.                                   */
+(function(){
+'use strict';
+if(window.__bpCard4) return; window.__bpCard4 = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'card4'); }catch(_){} }
+function esc(v){ return (typeof bpEsc === 'function') ? bpEsc(v) : String(v == null ? '' : v); }
+function srv(){ return window.bpSrv; }
+function ready(){
+  try{ var x = srv(); return !!(x && x.configured && x.configured() && typeof x.raw === 'function'); }
+  catch(e){ return false; }
+}
+
+var PLAT = {
+  youtube:  { k:'yt', name:'YouTube',   col:'#FF3B30', ic:'youtube' },
+  telegram: { k:'tg', name:'Telegram',  col:'#31A6E8', ic:'telegram' },
+  instagram:{ k:'ig', name:'Instagram', col:'#E1306C', ic:'instagram' },
+  tiktok:   { k:'tt', name:'TikTok',    col:'#25F4EE', ic:'tiktok' },
+};
+var BY_CLASS = { 'ic-yt':'youtube', 'ic-tg':'telegram', 'ic-ig':'instagram', 'ic-tt':'tiktok',
+                 'syt':'youtube', 'stg':'telegram', 'sig':'instagram', 'stt':'tiktok' };
+var OK_SVG = '<svg class="bpc4-ok" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">'
+  + '<path d="M12 2.2l2.4 1.9 3-.3.9 2.9 2.5 1.7L19.6 12l1.2 2.8-2.5 1.7-.9 2.9-3-.3L12 21.8l-2.4-1.9-3 .3-.9-2.9-2.5-1.7L4.4 12 3.2 9.2l2.5-1.7.9-2.9 3 .3z"/>'
+  + '<path d="M10.6 15.4l-2.9-2.9 1.2-1.2 1.7 1.7 4-4 1.2 1.2z" fill="#0A0A0C"/></svg>';
+var STAR = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">'
+  + '<path d="M12 2.6l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5-5.8-3-5.8 3 1.1-6.5L2.6 9.4l6.5-.9L12 2.6z"/></svg>';
+
+function cards(){
+  try{ var a = JSON.parse(localStorage.getItem('bp_my_cards') || '[]'); return Array.isArray(a) ? a : []; }
+  catch(e){ return []; }
+}
+function cardOf(id){
+  var all = cards();
+  for(var i = 0; i < all.length; i++) if(String(all[i] && all[i].id) === String(id)) return all[i];
+  return null;
+}
+function num(v){
+  var n = Number(String(v == null ? '' : v).replace(/[^\d.,-]/g, '').replace(',', '.'));
+  return isFinite(n) ? n : 0;
+}
+/* Ник канала из адреса. В файле есть готовая bpHandle, но она объявлена
+   внутри чужого замыкания и снаружи не видна — поэтому свой разбор.
+   Не разобралось — ника не показываем, выдумывать нечего. */
+function handleOf(url){
+  try{
+    var u = String(url || '').trim();
+    if(!u) return '';
+    u = u.replace(/[?#].*$/, '').replace(/\/+$/, '');
+    var last = u.split('/').pop() || '';
+    last = last.replace(/^@+/, '');
+    if(!last || /^(www\.)?[a-z0-9.-]+\.[a-z]{2,}$/i.test(last)) return '';
+    if(!/^[A-Za-z0-9._-]{2,40}$/.test(last)) return '';
+    return '@' + last;
+  }catch(e){ return ''; }
+}
+function money(n){ return String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
+
+function activePlat(el, card){
+  try{
+    var on = el.querySelector('.blc-pr-soc.bp-ch-on, .blc-soc.bp-ch-on');
+    if(on){
+      var cl = String(on.className || '').split(/\s+/);
+      for(var i = 0; i < cl.length; i++) if(BY_CLASS[cl[i]]) return BY_CLASS[cl[i]];
+    }
+  }catch(e){ E(e); }
+  var pl = (card && card.platforms) || [];
+  return pl.length ? String(pl[0]) : '';
+}
+
+function fmtsOf(card, pid){
+  var out = [];
+  try{
+    var list = (card && card.integrations && card.integrations[pid]) || [];
+    var dict = (typeof ABC_FORMATS !== 'undefined' && ABC_FORMATS[pid]) || [];
+    (Array.isArray(list) ? list : []).forEach(function(it){
+      if(!it) return;
+      var price = num(it.price);
+      if(!(price > 0)) return;
+      var name = '';
+      for(var i = 0; i < dict.length; i++) if(dict[i].id === it.fmtId) name = dict[i].name;
+      out.push({ id: String(it.fmtId || ''), name: name || 'Размещение', price: price });
+    });
+  }catch(e){ E(e); }
+  out.sort(function(a, b){ return a.price - b.price; });
+  return out;
+}
+function reachOf(card, pid){
+  try{ var p = (card && card.platData && card.platData[pid]) || null; return p ? num(p.reach) : 0; }
+  catch(e){ return 0; }
+}
+function cpmOf(price, reach){ return reach > 0 ? (price / reach) * 1000 : 0; }
+
+/* Медиана CPM по площадке — по тем же карточкам, что человек видит.
+   Меньше восьми — не считаем: три цены это не рынок. */
+var _med = { at: 0, by: {} };
+function median(a){
+  if(!a.length) return 0;
+  var b = a.slice().sort(function(x, y){ return x - y; });
+  var m = Math.floor(b.length / 2);
+  return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2;
+}
+function medians(){
+  if(Date.now() - _med.at < 60000) return _med.by;
+  var by = {};
+  try{
+    cards().forEach(function(cd){
+      ((cd && cd.platforms) || []).forEach(function(pid){
+        var r = reachOf(cd, pid), fs = fmtsOf(cd, pid);
+        if(!r || !fs.length) return;
+        (by[pid] = by[pid] || []).push(cpmOf(fs[0].price, r));
+      });
+    });
+  }catch(e){ E(e); }
+  var out = {};
+  Object.keys(by).forEach(function(pid){ if(by[pid].length >= 8) out[pid] = median(by[pid]); });
+  _med = { at: Date.now(), by: out };
+  return out;
+}
+
+/* ── подтверждение канала ──
+   Спрашиваем сервер: какие площадки этот человек подтвердил входом.
+   Метка verified в самой карточке приходит с чужого устройства и
+   доказательством не является. Гостю сервер не ответит — тогда галочки
+   просто нет. Ответ помним на сеанс, запросы пускаем по одному. */
+var VER = {}, _q = [], _busy = false;
+function pump(){
+  if(_busy || !_q.length) return;
+  _busy = true;
+  var job = _q.shift();
+  srv().raw('GET', '/api/verify/of?userId=' + encodeURIComponent(job.sid))
+    .then(function(j){
+      var set = {};
+      ((j && j.rows) || []).forEach(function(r){ if(r && r.platform) set[String(r.platform)] = 1; });
+      VER[job.sid] = set;
+    })
+    .catch(function(){ VER[job.sid] = {}; })
+    .then(function(){
+      _busy = false;
+      try{ job.done(); }catch(e){ E(e); }
+      setTimeout(pump, 120);
+    });
+}
+function askVer(sid, done){
+  if(!sid || !ready()) return;
+  try{ if(!srv().token || !srv().token()) return; }catch(e){ return; }
+  if(VER[sid]) return done();
+  if(_q.some(function(x){ return x.sid === sid; })) return;
+  _q.push({ sid: sid, done: done });
+  pump();
+}
+function verified(card, pid){
+  var sid = card && card.srvId;
+  if(!sid || !VER[sid]) return false;
+  return !!VER[sid][pid];
+}
+
+/* ── подпись под именем и полоса фактов ─────────────────────────── */
+function metaHTML(el, card){
+  var out = [];
+  try{
+    var rat = el.querySelector('.blc-rat .sc'), rv = el.querySelector('.blc-rat .rv');
+    var val = rat ? (rat.textContent || '').trim() : '';
+    var cnt = rv ? num(rv.textContent) : 0;
+    /* Звезду показываем, только если отзывы есть. «★ — (0)» на каждой
+       карточке — не сведения, а шум. */
+    if(val && !/^[—-]$/.test(val) && cnt > 0){
+      out.push('<span class="st">★</span><b>' + esc(val) + '</b>'
+        + '<span class="bpc4-dot">·</span><span>' + cnt + ' отзыв' + (cnt % 10 === 1 && cnt % 100 !== 11 ? '' : (cnt % 10 >= 2 && cnt % 10 <= 4 && (cnt % 100 < 10 || cnt % 100 >= 20) ? 'а' : 'ов')) + '</span>');
+    }
+    var dl = el.querySelector('.blc-deals');
+    var deals = dl ? num(dl.textContent) : 0;
+    if(deals > 0){
+      if(out.length) out.push('<span class="bpc4-dot">·</span>');
+      out.push('<b>' + deals + '</b> сдел' + (deals % 10 === 1 && deals % 100 !== 11 ? 'ка' : (deals % 10 >= 2 && deals % 10 <= 4 && (deals % 100 < 10 || deals % 100 >= 20) ? 'ки' : 'ок')));
+    }
+    /* Нет ни отзывов, ни сделок — подписи нет вовсе. «Новый блогер» и
+       «★ — (0)» одинаково ничего не сообщают, а строку занимают. */
+  }catch(e){ E(e); }
+  return out.join(' ');
+}
+
+function trustHTML(el, card, pid){
+  var out = [];
+  try{
+    var n = ((card && card.platforms) || []).length;
+    if(n) out.push('<span><b>' + n + '</b> ' + (n === 1 ? 'канал' : (n < 5 ? 'канала' : 'каналов')) + '</span>');
+    if(verified(card, pid)) out.push('<span class="up">вход на площадку подтверждён</span>');
+    var since = el.querySelector('.blc-since');
+    var t = since ? (since.textContent || '').trim() : '';
+    if(t) out.push('<span>' + esc(t) + '</span>');
+    var subs = card && card.subsVal;
+    if(subs && subs !== '—') out.push('<span><b>' + esc(subs) + '</b> подписчиков всего</span>');
+  }catch(e){ E(e); }
+  if(!out.length) return '';
+  return out.join('<span class="bpc4-dot">·</span>');
+}
+
+/* ── цена и форматы ─────────────────────────────────────────────── */
+function paintBuy(el){
+  try{
+    var card = cardOf(el.getAttribute('data-cardid'));
+    if(!card) return;
+    var low = el.querySelector('.bpc4-low');
+    if(!low) return;
+    var pid = activePlat(el, card);
+    paintPlat(el, card, pid);
+
+    var trust = el.querySelector('.bpc4-trust');
+    var th = trustHTML(el, card, pid);
+    if(th){
+      if(!trust){
+        trust = document.createElement('div');
+        trust.className = 'bpc4-trust';
+        low.appendChild(trust);
+      }
+      if(trust.__m !== th){ trust.__m = th; trust.innerHTML = th; }
+    } else if(trust){ trust.remove(); }
+
+    var fs = pid ? fmtsOf(card, pid) : [];
+    var buy = el.querySelector('.bpc4-buy');
+    var add = el.querySelector('.blc-add');
+    if(!buy){
+      buy = document.createElement('div');
+      buy.className = 'bpc4-buy';
+      var pr = document.createElement('div');
+      pr.className = 'bpc4-price';
+      buy.appendChild(pr);
+      low.appendChild(buy);
+    }
+    if(add && add.parentElement !== buy) buy.appendChild(add);
+
+    var price = el.querySelector('.bpc4-price');
+    if(!price) return;
+    if(!fs.length){ price.innerHTML = ''; }
+    else {
+      var pick = String(el.__fmt || ''), cur = null;
+      for(var i = 0; i < fs.length; i++) if(fs[i].id === pick) cur = fs[i];
+      var one = !!cur;
+      if(!cur) cur = fs[0];
+      var reach = reachOf(card, pid);
+      var cpm = cpmOf(cur.price, reach);
+      var med = medians()[pid] || 0;
+      var win = (med && cpm && cpm < med) ? Math.round((1 - cpm / med) * 100) : 0;
+      var sub = [];
+      if(cpm) sub.push('CPM ' + money(cpm) + ' ₽');
+      if(win >= 12) sub.push('<span class="bpc4-deal">−' + win + '% к медиане</span>');
+      price.innerHTML = '<b>' + (one ? '' : 'от ') + money(cur.price) + ' ₽</b>'
+        + (sub.length ? '<small>' + sub.join(' · ') + '</small>' : '');
+    }
+
+    var row = el.querySelector('.bpc4-fmt');
+    if(fs.length < 2){ if(row) row.remove(); return; }
+    if(!row){
+      row = document.createElement('div');
+      row.className = 'bpc4-fmt';
+      row.addEventListener('click', function(ev){
+        var b = ev.target && ev.target.closest ? ev.target.closest('button[data-fmt]') : null;
+        if(!b) return;
+        ev.preventDefault(); ev.stopPropagation();
+        var id = b.getAttribute('data-fmt');
+        el.__fmt = (el.__fmt === id) ? '' : id;
+        paintBuy(el);
+      });
+      low.appendChild(row);
+    }
+    var mark = pid + '|' + fs.map(function(f){ return f.id + ':' + f.price; }).join(',') + '|' + (el.__fmt || '');
+    if(row.__m === mark) return;
+    row.__m = mark;
+    row.innerHTML = fs.map(function(f){
+      return '<button type="button" data-fmt="' + esc(f.id) + '" aria-pressed="'
+        + (String(el.__fmt || '') === f.id ? 'true' : 'false') + '">'
+        + esc(f.name) + ' · ' + money(f.price) + ' ₽</button>';
+    }).join('');
+  }catch(e){ E(e); }
+}
+
+/* Значок канала на аватаре, галочка у имени, ник и цвет полоски — всё
+   по выбранному каналу. */
+function paintPlat(el, card, pid){
+  try{
+    var P = PLAT[pid];
+    var mark = pid + '|' + (verified(card, pid) ? '1' : '0');
+    if(el.__plt === mark) return;
+    el.__plt = mark;
+    if(P) el.style.setProperty('--plt', P.col);
+
+    var ava = el.querySelector('.blc-ava');
+    if(ava && P){
+      var box = ava.querySelector('.bpc4-plt');
+      if(!box){ box = document.createElement('i'); box.className = 'bpc4-plt'; ava.appendChild(box); }
+      box.innerHTML = '<img loading="lazy" class="soc-img" alt="" src="https://cdn.jsdelivr.net/npm/simple-icons@11/icons/'
+        + P.ic + '.svg">';
+    }
+
+    var name = el.querySelector('.blc-name');
+    if(name){
+      var old = name.parentElement.querySelector('.bpc4-ok');
+      if(verified(card, pid)){
+        if(!old) name.insertAdjacentHTML('afterend', OK_SVG);
+      } else if(old){ old.remove(); }
+    }
+
+    var h = el.querySelector('.bpc4-handle');
+    if(h){
+      var pd = (card && card.platData && card.platData[pid]) || null;
+      var nick = pd ? handleOf(pd.url) : '';
+      h.textContent = nick ? (nick + ' · ' + (P ? P.name : '')) : (P ? P.name : '');
+      h.hidden = !h.textContent;
+    }
+  }catch(e){ E(e); }
+}
+
+/* ── разовая сборка ─────────────────────────────────────────────── */
+function dress(el){
+  try{
+    if(!el || el.__bpc4) return;
+    var strip = el.querySelector('.blc-strip');
+    if(!strip) return;                        /* карточка ещё не дорисована */
+    el.__bpc4 = 1;
+    el.classList.add('bpc4');
+
+    var body = el.querySelector('.blc-body');
+    if(body) body.classList.add('bpc4-head');
+    var low = strip.parentElement;
+    if(low) low.classList.add('bpc4-low');
+
+    var card = cardOf(el.getAttribute('data-cardid'));
+
+    /* Ник канала под именем — отдельной строкой, как на эскизе. */
+    try{
+      var since = el.querySelector('.blc-since');
+      if(since && !el.querySelector('.bpc4-handle')){
+        var sp = document.createElement('span');
+        sp.className = 'bpc4-handle';
+        since.parentElement.insertBefore(sp, since);
+      }
+      /* «на площадке с …» переезжает в подпись и в полосу фактов. */
+      if(since) since.hidden = true;
+    }catch(e){ E(e); }
+
+    /* Подпись под ником: рейтинг и сделки, если они есть. */
+    try{
+      var info = el.querySelector('.blc-info');
+      var html = metaHTML(el, card);
+      if(info && html && !el.querySelector('.bpc4-meta')){
+        var m = document.createElement('div');
+        m.className = 'bpc4-meta';
+        m.innerHTML = html;
+        var nr = el.querySelector('.blc-nr');
+        if(nr && nr.nextSibling) info.insertBefore(m, nr.nextSibling);
+        else info.appendChild(m);
+      }
+    }catch(e){ E(e); }
+
+    /* Звезда вместо закладки — как на эскизе; узел тот же, поэтому
+       избранное продолжает работать. Рядом остаётся меню «⋯». */
+    try{
+      var bm = el.querySelector('.blc-bm');
+      var col = el.querySelector('.blc-rat-col');
+      if(bm){
+        bm.innerHTML = STAR;
+        if(col && bm.parentElement !== col) col.insertBefore(bm, col.firstChild);
+      }
+    }catch(e){ E(e); }
+
+    /* Тематики плашками, отдельной строкой под шапкой — как на эскизе.
+       Текст остаётся прежним, поэтому поиск по тематике не ломается. */
+    try{
+      var cats = el.querySelector('.blc-cats');
+      if(cats && low && cats.parentElement !== low) low.appendChild(cats);
+      if(cats && !cats.__bpc4){
+        cats.__bpc4 = 1;
+        var t = (cats.textContent || '').trim();
+        if(t && t !== 'Тематики не указаны'){
+          var parts = t.split('·').map(function(x){ return x.trim(); }).filter(Boolean).slice(0, 6);
+          if(parts.length){
+            cats.innerHTML = parts.map(function(x){
+              return '<span class="bpc4-tag">' + esc(x) + '</span>';
+            }).join('');
+          }
+        }
+      }
+    }catch(e){ E(e); }
+
+    /* Плитка цифр: три колонки, как на эскизе. Четвёртую (CPV) прячем —
+       её место занял CPM в строке цены. Из разметки её не убираем:
+       по ней фильтрует каталог. */
+    try{
+      el.querySelectorAll('.blc-strip .bls').forEach(function(cell){
+        var lbl = cell.querySelector('.bls-lbl');
+        var name = lbl ? (lbl.textContent || '').trim().toLowerCase() : '';
+        if(name === 'cpv') cell.classList.add('bpc4-hide');
+        var sub = cell.querySelector('.bls-sub');
+        var val = ((cell.querySelector('.bls-val') || {}).textContent || '').trim();
+        if(sub){
+          var v = (sub.textContent || '').trim();
+          if(!v || v === '—' || v === '-' || !val || val === '—') sub.classList.add('bpc4-hide');
+        }
+      });
+    }catch(e){ E(e); }
+
+    /* Аудитория по полу переезжает из шапки вниз, к цифрам. */
+    try{
+      var aud = el.querySelector('.blc-aud');
+      if(aud && low && aud.parentElement !== low) low.appendChild(aud);
+      var kids = el.querySelector('.blc-aud-kids');
+      if(kids) kids.remove();
+    }catch(e){ E(e); }
+
+    /* Сменили канал — цена, форматы, значок и галочка едут за ним. */
+    try{
+      var pr = el.querySelector('.blc-pr');
+      if(pr && !pr.__bpc4){
+        pr.__bpc4 = 1;
+        pr.addEventListener('click', function(){
+          el.__plt = ''; setTimeout(function(){ paintBuy(el); }, 80);
+        }, true);
+      }
+    }catch(e){ E(e); }
+
+    paintBuy(el);
+
+    /* Спрашиваем сервер про подтверждение канала и перерисовываем. */
+    try{
+      var sid = card && card.srvId;
+      if(sid) askVer(sid, function(){ el.__plt = ''; paintBuy(el); });
+    }catch(e){ E(e); }
+  }catch(e){ E(e); }
+}
+
+function all(){
+  try{
+    var list = document.getElementById('catBloggerList');
+    if(!list) return;
+    list.querySelectorAll('.blc[data-cardid]').forEach(dress);
+  }catch(e){ E(e); }
+}
+window.bpCard4 = all;
+
+function watch(){
+  try{
+    var host = document.getElementById('catBloggerList') || document.getElementById('pg-home');
+    if(!host) return setTimeout(watch, 500);
+    var t = null;
+    new MutationObserver(function(){ clearTimeout(t); t = setTimeout(all, 260); }).observe(host, { childList: true, subtree: true });
+    all();
+  }catch(e){ E(e); }
+}
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watch);
+else watch();
+setTimeout(all, 900);
+setTimeout(all, 2200);
+})();
+</script>
+
 </body>
 </html>
