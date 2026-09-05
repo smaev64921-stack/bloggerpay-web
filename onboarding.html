@@ -540,14 +540,27 @@ body{
    а не как кнопка. И надпись шла системным шрифтом вразрядку, тогда
    как весь остальной текст-акцент набран узким гротеском. Теперь
    кнопка скруглена, а подпись — тем же шрифтом, что заголовки. */
+/* Кнопка была почти в шестьдесят пикселей высотой и забирала себе низ
+   экрана. Убавлена примерно на треть по всем размерам сразу — кегль,
+   поля, скругление и стрелка, — иначе «меньше» превращается в кнопку с
+   прежним шрифтом в тесной рамке.
+
+   Шрифт: плакатный BPHead набран узко и с большими просветами между
+   букв — на заголовке в сорок пикселей это работает, а на кнопке в
+   четырнадцать буквы схлопываются в частокол. Раньше тут стоял
+   системный шрифт капсом вразрядку — тоже мимо: капс вразрядку читается
+   по буквам, а не словом. Теперь кнопка набрана обычным шрифтом
+   интерфейса, как есть в тексте: «Далее», «Начать». Плакат остаётся
+   плакатом, кнопка — кнопкой. */
 .cta{
-  border-radius:18px !important;
-  font-family:'BPHead',Impact,'Arial Narrow',sans-serif !important;
-  font-size:20px !important;font-weight:700 !important;
-  letter-spacing:2.4px !important;
-  padding:17px 54px !important;
+  border-radius:13px !important;
+  font-family:inherit !important;
+  text-transform:none !important;
+  font-size:14.5px !important;font-weight:700 !important;line-height:1.2 !important;
+  letter-spacing:.2px !important;
+  padding:12px 34px !important;
 }
-.cta svg{stroke-width:2.4}
+.cta svg{stroke-width:2.4;width:16px;height:10px}
 
 /* ── полоски прогресса кликабельны ── */
 .bar{cursor:pointer}
@@ -620,7 +633,7 @@ body{
   .lead{font-size:12.5px;margin-top:12px}
   .tag b{font-size:14px}
   .checks li{font-size:11.5px;gap:8px}
-  .cta{padding:15px 18px;font-size:14px}
+  .cta{padding:10px 26px !important;font-size:13.5px !important}
 }
 </style>
 </head>
