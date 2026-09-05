@@ -21,10 +21,12 @@ function ok(c, name, extra) {
   if (c) { passed++; console.log('  ok  ' + name); }
   else { failed++; console.log('  FAIL ' + name + (extra ? '  ← ' + JSON.stringify(extra).slice(0, 240) : '')); }
 }
-async function api(method, p, body) {
+async function api(method, p, body, token) {
+  const h = { 'Content-Type': 'application/json' };
+  if (token) h.Authorization = 'Bearer ' + token;
   const r = await fetch(BASE + p, {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers: h,
     body: body ? JSON.stringify(body) : undefined,
   });
   const txt = await r.text();
@@ -180,6 +182,82 @@ try {
   ok(last.status === 400 && last.body.left === 0, 'ошибки считаются, попытки кончаются', last.body);
   const burnt = await api('POST', '/api/auth/telegram/claim', { nonce: st3.body.nonce, code: '000001' });
   ok(burnt.status === 429, 'после пяти ошибок метка сгорает', burnt.body);
+
+  /* ── СКЛЕЙКА АККАУНТОВ ──
+     Самая дорогая ошибка входа: человек пришёл из бота, потом сел за
+     компьютер, зарегистрировался почтой — и получил ВТОРОЙ кошелёк.
+     Лечится двумя дорогами: телеграм-аккаунту задают почту с паролем,
+     почтовому — привязывают Телеграм. */
+  const reg = await api('POST', '/api/register', {
+    email: 'sklejka@t.ru', name: 'Почтовый', role: 'blogger', password: 'пароль-подлиннее',
+  });
+  const tokA = reg.body.token;
+  ok(reg.status === 200 && !!tokA, 'почтовый аккаунт заведён', reg.body);
+
+  const m0 = await api('GET', '/api/account/methods', null, tokA);
+  ok(m0.status === 200 && m0.body.email === 'sklejka@t.ru' && m0.body.needsEmail === false
+    && m0.body.telegram === false, 'способы входа: только почта', m0.body);
+  const mNo = await api('GET', '/api/account/methods');
+  ok(mNo.status === 401, 'чужие способы входа не показываем');
+
+  const linkNoAuth = await api('GET', '/api/auth/telegram/start?link=1');
+  ok(linkNoAuth.status === 401, 'привязка без входа отбита', linkNoAuth.body);
+
+  const linkSt = await api('GET', '/api/auth/telegram/start?link=1', null, tokA);
+  ok(linkSt.status === 200 && !!linkSt.body.nonce, 'привязка началась', linkSt.body);
+  const tgNew = tgReply({ id: '424242', first_name: 'Привязка' });
+  const linkRes = await fetch(BASE + '/api/auth/telegram/callback?' + asQuery(linkSt.body.nonce, tgNew));
+  const linkTxt = await linkRes.text();
+  ok(linkRes.status === 200 && /Готово|Возвращаемся/.test(linkTxt),
+    'привязка завершилась страницей возврата', linkRes.status);
+  const linkPend = await api('GET', '/api/auth/telegram/pending?nonce=' + linkSt.body.nonce);
+  ok(linkPend.status === 200 && linkPend.body.linked === true && !linkPend.body.token,
+    'привязка не выдаёт сессию — человек уже вошёл', linkPend.body);
+  const m1 = await api('GET', '/api/account/methods', null, tokA);
+  ok(m1.body.telegram === true, 'Телеграм привязан к почтовому аккаунту', m1.body);
+
+  /* Тот же Телеграм ко ВТОРОМУ аккаунту — отказ: два кошелька молча не
+     смешиваем. */
+  const reg2 = await api('POST', '/api/register', {
+    email: 'vtoroy@t.ru', name: 'Второй', role: 'blogger', password: 'пароль-подлиннее',
+  });
+  const st2b = await api('GET', '/api/auth/telegram/start?link=1', null, reg2.body.token);
+  const busy = await fetch(BASE + '/api/auth/telegram/callback?'
+    + asQuery(st2b.body.nonce, tgReply({ id: '424242', first_name: 'Привязка' })));
+  const busyTxt = await busy.text();
+  ok(/уже занят|другому аккаунту/i.test(busyTxt), 'занятый Телеграм ко второму аккаунту не привязывается');
+  const m2 = await api('GET', '/api/account/methods', null, reg2.body.token);
+  ok(m2.body.telegram === false, 'у второго аккаунта Телеграма так и нет', m2.body);
+
+  /* Обратная дорога: телеграм-аккаунт задаёт почту и пароль. */
+  const stTg = await api('GET', '/api/auth/telegram/start');
+  await fetch(BASE + '/api/auth/telegram/callback?'
+    + asQuery(stTg.body.nonce, tgReply({ id: '909090', first_name: 'Ботовый' })));
+  const gotTg = await api('GET', '/api/auth/telegram/pending?nonce=' + stTg.body.nonce);
+  const tokB = gotTg.body.token;
+  ok(!!tokB, 'телеграм-аккаунт вошёл');
+  const mB = await api('GET', '/api/account/methods', null, tokB);
+  ok(mB.body.needsEmail === true && mB.body.email === '' && mB.body.telegram === true,
+    'у телеграм-аккаунта почты нет', mB.body);
+
+  const badMail = await api('POST', '/api/account/email', { email: 'не-почта', password: 'пароль-подлиннее' }, tokB);
+  ok(badMail.status === 400, 'кривую почту не принимаем', badMail.body);
+  const shortPass = await api('POST', '/api/account/email', { email: 'bot@t.ru', password: '123' }, tokB);
+  ok(shortPass.status === 400, 'короткий пароль не принимаем', shortPass.body);
+  const takenMail = await api('POST', '/api/account/email', { email: 'sklejka@t.ru', password: 'пароль-подлиннее' }, tokB);
+  ok(takenMail.status === 409, 'занятую почту не отдаём', takenMail.body);
+  const fake = await api('POST', '/api/account/email', { email: 'tg1@telegram.local', password: 'пароль-подлиннее' }, tokB);
+  ok(fake.status === 400, 'служебный домен не принимаем', fake.body);
+
+  const setMail = await api('POST', '/api/account/email', { email: 'bot@t.ru', password: 'пароль-подлиннее' }, tokB);
+  ok(setMail.status === 200 && setMail.body.email === 'bot@t.ru', 'почта задана', setMail.body);
+  const meB = await fetch(BASE + '/api/me', { headers: { Authorization: 'Bearer ' + tokB } }).then((r) => r.json());
+  const logIn = await api('POST', '/api/login', { email: 'bot@t.ru', password: 'пароль-подлиннее' });
+  ok(logIn.status === 200 && logIn.body.user && logIn.body.user.id === meB.user.id,
+    'вход по новой почте ведёт в ТОТ ЖЕ аккаунт, а не во второй кошелёк',
+    { было: meB.user && meB.user.id, стало: logIn.body.user && logIn.body.user.id });
+  const again = await api('POST', '/api/account/email', { email: 'bot2@t.ru', password: 'пароль-подлиннее' }, tokB);
+  ok(again.status === 400, 'вторую смену почты закрываем', again.body);
 
   /* ── без токена бота вход честно отказывает ── */
   const PORT2 = PORT + 1;

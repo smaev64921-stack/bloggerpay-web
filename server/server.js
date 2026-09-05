@@ -654,6 +654,12 @@ const q = {
   delSession: db.prepare('DELETE FROM sessions WHERE token = ?'),
   delUserSessions: db.prepare('DELETE FROM sessions WHERE user_id = ?'),
   updPass: db.prepare('UPDATE users SET pass_salt = ?, pass_hash = ? WHERE id = ?'),
+  /* Смена почты нужна ровно в одном случае: у аккаунта, заведённого
+     входом через Телеграм, почта служебная (tg<id>@telegram.local), и
+     войти с компьютера человек не может. Он задаёт настоящую почту и
+     пароль — и это становится вторым способом входа в ТОТ ЖЕ аккаунт,
+     а не вторым кошельком. */
+  updEmail: db.prepare('UPDATE users SET email = ? WHERE id = ?'),
   setAdmin: db.prepare('UPDATE users SET is_admin = ? WHERE id = ?'),
   opByKey: db.prepare('SELECT * FROM ops WHERE op_key = ?'),
   insOp: db.prepare('INSERT INTO ops (op_key, user_id, kind, result) VALUES (?,?,?,?)'),
@@ -2229,6 +2235,55 @@ const routes = {
   /* Какие способы входа настроены на сервере. Нужно интерфейсу: кнопку,
      за которой нет ключей, лучше не показывать вовсе, чем показывать и
      отвечать «не настроено» после нажатия. */
+  /* ── Способы входа в ЭТОТ аккаунт ──
+     Человеку надо видеть, чем он войдёт со второго устройства, и добавить
+     недостающее. Отдаём только своё и без лишнего. */
+  'GET /api/account/methods': async (req) => {
+    const u = auth(req);
+    if (!u) return { status: 401, body: { error: 'Нужен вход' } };
+    const temp = /@telegram\.local$/i.test(String(u.email || ''));
+    return {
+      status: 200,
+      body: {
+        /* Служебная почта — не почта: войти по ней нельзя, пароля нет. */
+        email: temp ? '' : String(u.email || ''),
+        needsEmail: temp,
+        telegram: !!u.tg_id,
+        google: !!u.google_sub,
+        canTelegram: !!(BOT_TOKEN && TG_BOT_ID),
+      },
+    };
+  },
+
+  /* ── Задать почту и пароль ──
+     Только для аккаунта со служебной почтой (заведён входом через
+     Телеграм). После этого человек входит той же почтой с компьютера и
+     попадает в ТОТ ЖЕ аккаунт, а не заводит второй кошелёк. */
+  'POST /api/account/email': async (req, body) => {
+    const u = auth(req);
+    if (!u) return { status: 401, body: { error: 'Нужен вход' } };
+    if (!rateLimit(req, 'accmail', 10, 60000)) return tooOften;
+    if (!/@telegram\.local$/i.test(String(u.email || ''))) {
+      return { status: 400, body: { error: 'У аккаунта уже есть почта' } };
+    }
+    const email = String(body.email || '').trim().toLowerCase();
+    const pass = String(body.password || '');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { status: 400, body: { error: 'Некорректный email' } };
+    if (/@telegram\.local$/i.test(email)) {
+      return { status: 400, body: { error: 'Этот адрес занят служебным входом по Телеграму' } };
+    }
+    if (pass.length < 8) return { status: 400, body: { error: 'Пароль — минимум 8 символов' } };
+    if (q.userByEmail.get(email)) return { status: 409, body: { error: 'Этот email уже зарегистрирован' } };
+    const salt = crypto.randomBytes(16).toString('hex');
+    try {
+      q.updEmail.run(email, u.id);
+      q.updPass.run(salt, scrypt(pass, salt), u.id);
+    } catch (e) {
+      return { status: 409, body: { error: 'Этот email уже зарегистрирован' } };
+    }
+    return { status: 200, body: { ok: true, email } };
+  },
+
   'GET /api/auth/methods': async () => ({
     status: 200,
     body: {
@@ -2323,7 +2378,16 @@ const routes = {
     glogSweep();
     const nonce = crypto.randomBytes(24).toString('hex');
     const role = url.searchParams.get('role') === 'advertiser' ? 'advertiser' : 'blogger';
-    tglog.set(nonce, { at: Date.now(), code: '', token: '', user: null, done: false, tries: 0, role });
+    /* Привязка, а не вход: человек уже внутри и добавляет Телеграм как
+       второй способ попасть в ЭТОТ аккаунт. Метка помнит, к кому
+       привязывать; без входа привязывать не к кому. */
+    let linkUser = null;
+    if (url.searchParams.get('link') === '1') {
+      const me = auth(req);
+      if (!me) return { status: 401, body: { error: 'Нужен вход' } };
+      linkUser = me.id;
+    }
+    tglog.set(nonce, { at: Date.now(), code: '', token: '', user: null, done: false, tries: 0, role, linkUser });
     /* origin обязан совпадать с доменом, прописанным у бота в BotFather,
        иначе Телеграм откажет. return_to — куда вернуть человека. */
     const q1 = new URLSearchParams({
@@ -2348,6 +2412,9 @@ const routes = {
       tglog.delete(nonce);
       return { status: 404, body: { error: 'Вход не найден или просрочен' } };
     }
+    /* Привязка сессию не выдаёт: человек уже вошёл, ему нужен только
+       ответ «получилось». */
+    if (rec.linkUser) return { status: 200, body: { state: 'ok', linked: true } };
     return { status: 200, body: { state: 'ok', token: rec.token, user: rec.user } };
   },
 
@@ -3777,6 +3844,31 @@ setInterval(() => { ttSyncRound().catch(() => {}); }, 30 * 60 * 1000).unref();
 function tgFinish(res, state, rec, fields) {
   const chk = tgWidgetCheck(fields);
   if (!chk.ok) return verifyPage(res, 'Не вышло войти', chk.why, false);
+
+  /* ── ПРИВЯЗКА ──
+     Человек уже внутри и добавляет Телеграм к своему аккаунту. Балансы
+     НЕ сливаем: если этот Телеграм уже заведён отдельным аккаунтом, у
+     него могут быть свои деньги и своя история, и молча склеить два
+     кошелька нельзя. Такое решение принимает человек, а не сервер. */
+  if (rec.linkUser) {
+    const mine = q.userById.get(rec.linkUser);
+    if (!mine) return verifyPage(res, 'Не вышло привязать', 'Аккаунт не найден — войдите заново.', false);
+    const taken = q.userByTg.get(String(chk.tg.id));
+    if (taken && Number(taken.id) !== Number(mine.id)) {
+      return verifyPage(res, 'Этот Телеграм уже занят',
+        'Он привязан к другому аккаунту BloggerPay. Войдите в тот аккаунт через Телеграм или напишите в поддержку.', false);
+    }
+    if (!taken) {
+      try { q.linkTg.run(String(chk.tg.id), mine.id); }
+      catch (e) { return verifyPage(res, 'Не вышло привязать', 'Попробуйте ещё раз через минуту.', false); }
+    }
+    rec.done = true;
+    rec.token = '';
+    rec.user = null;
+    rec.code = String(crypto.randomInt(100000, 1000000));
+    tglog.set(state, rec);
+    return authRelayPage(res, 'tg', state, APP_BASE + '?tglogin=' + encodeURIComponent(state));
+  }
 
   const u = tgAccount(chk.tg.id, chk.tg.name, rec.role);
   if (!u) return verifyPage(res, 'Не вышло создать аккаунт', 'Попробуйте ещё раз через минуту.', false);

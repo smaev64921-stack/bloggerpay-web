@@ -81005,6 +81005,13 @@ var DISP_KEY = 'bp_disputes_v2';
    Новый ключ = один разовый проход ленты с начала. */
 var VER_KEY = 'bpsync_ver2';         /* без префикса bp_ — мимо перехвата bpData */
 var USERS_KEY = 'bp_users';
+/* Календарь занятости. В комментарии у самого ключа (раздел «16 ·
+   КАЛЕНДАРЬ ЗАНЯТОСТИ») написано: «Ключ общий: рекламодатель обязан
+   видеть, какие дни у блогера заняты». На деле ключ никуда не уезжал и
+   жил в браузере блогера — то есть между людьми не работал вовсе.
+   Возим его общим конвертом, как задания: занятые дни блогера и должны
+   быть видны всем, кто смотрит его карточку. */
+var SLOT_KEY = 'bp_slots';
 var SNAP_KEY = 'bpsync_prof';        /* снимок профиля: по нему считаем, что изменилось */
 
 /* ── ПРОФИЛЬ ЧЕЛОВЕКА ────────────────────────────────────────────────
@@ -81100,6 +81107,39 @@ function pushProf(){
   var rid = profRid(); if(!rid) return;
   var rec = profOf(); if(!rec) return;
   put('prof', rid, rec, null, true);
+}
+
+/* Чужой календарь: полностью заменяем дни ЭТОГО блогера тем, что
+   приехало, а свои и чужие остальные не трогаем. Записи приходят уже с
+   переведёнными личностями (bloggerId = 'srv:N' → местный номер). */
+function applySlots(rid, data){
+  try{
+    if(!data || !Array.isArray(data.days)) return false;
+    var whose = data.ownerId;
+    /* Запасной путь для старых конвертов без ownerId: берём хозяина из
+       первого же дня. */
+    if(whose == null){
+      for(var i = 0; i < data.days.length; i++){
+        if(data.days[i] && data.days[i].bloggerId != null){ whose = data.days[i].bloggerId; break; }
+      }
+    }
+    if(whose == null) return false;
+    /* Свой календарь с сервера не принимаем: на этом устройстве он
+       первичен, иначе два устройства затирали бы друг друга по кругу. */
+    if(sameId(whose, myLocal())) return false;
+    var all = arr(SLOT_KEY).filter(function(sl){
+      return !(sl && sl.bloggerId != null && sameId(sl.bloggerId, whose));
+    });
+    var add = data.days.filter(function(sl){ return sl && sl.date; });
+    var next = all.concat(add);
+    var was = '';
+    try{ was = JSON.stringify(arr(SLOT_KEY)); }catch(e){}
+    var now = '';
+    try{ now = JSON.stringify(next); }catch(e){}
+    if(was === now) return false;
+    rawSet(SLOT_KEY, JSON.stringify(next));
+    return true;
+  }catch(e){ E(e); return false; }
 }
 
 function applyProf(data){
@@ -81299,6 +81339,22 @@ function pushAll(){
       if(c.status === 'draft') return;
       put('camp', String(c.id), c, null, true);
     });
+
+    /* КАЛЕНДАРЬ ЗАНЯТОСТИ — общим конвертом, одной записью на человека.
+       Шлём только СВОИ дни: чужие в нашем хранилище лежат как копии, и
+       отправлять их обратно значило бы спорить с их хозяином. */
+    (function(){
+      var rid = profRid();                    /* 'self:<серверный номер>' */
+      if(!rid) return;
+      var mine = arr(SLOT_KEY).filter(function(sl){
+        return sl && sl.bloggerId != null && sameId(sl.bloggerId, myLocal());
+      });
+      /* ownerId стоит в списке полей с личностями, поэтому уедет как
+         '#srv:N' и на чужом устройстве вернётся местным номером. По нему
+         принимающая сторона понимает, чей это календарь, даже когда
+         человек стёр все свои дни. */
+      put('slot', rid, { v: 1, ownerId: myLocal(), days: mine }, null, true);
+    })();
 
     /* ОТКЛИКИ на задания. Отправляет и блогер (свой отклик), и владелец
        задания (его решение по чужому отклику) — адресат в каждом случае
@@ -81546,6 +81602,7 @@ function pull(force){
           })) touched++;
           else if(row.kind === 'rev' && applyList(REV_KEY, 'id', row.rid, row.data)) touched++;
           else if(row.kind === 'disp' && applyList(DISP_KEY, 'id', row.rid, row.data)) touched++;
+          else if(row.kind === 'slot' && applySlots(row.rid, row.data)) touched++;
           else if(row.kind === 'prof' && applyProf(row.data)) touched++;
         }
       }catch(e){ E(e); }
@@ -81569,6 +81626,7 @@ function watched(key){
   return key === REQ_KEY || key === DEAL_KEY || key === CAMP_KEY
       || key === JOIN_KEY || key === REV_KEY || key === DISP_KEY
       || key === USERS_KEY                       /* правка профиля */
+      || key === SLOT_KEY                        /* календарь занятости */
       || key.indexOf(MSG_PREFIX) === 0;
 }
 
@@ -84408,6 +84466,402 @@ if(document.readyState === 'loading') document.addEventListener('DOMContentLoade
 else watch();
 setTimeout(all, 900);
 setTimeout(all, 2200);
+})();
+</script>
+
+<script id="bp-money-hist">
+/* ══ ИСТОРИЯ ДЕНЕГ — С СЕРВЕРА ══════════════════════════════════════
+   Баланс всегда считался на сервере, а список операций под ним рисовался
+   из массива в браузере (currentUser.topupHistory). На новом устройстве
+   этот массив пустой, и человек видел верный баланс над пустым списком:
+   деньги есть, а откуда взялись — не написано.
+
+   Журнал на сервере при этом был всё время: таблица ledger, каждое
+   движение отдельной строкой, и ручка GET /api/ledger, объявленная в
+   мосте как bpSrv.ledger(). Её просто никто не вызывал.
+
+   Теперь список строится из ответа сервера — одинаковый на всех
+   устройствах. Показываем только движения по доступным деньгам
+   (bucket = available): именно они меняют то, что человек видит на
+   балансе. Перекладывание в заморозку и обратно — внутренняя кухня
+   сделки, в списке операций ей делать нечего.
+
+   Местный массив не трогаем как источник: он остаётся запасным, если
+   сервер недоступен (и тогда список просто прежний).
+   Откат: удалить script#bp-money-hist.                              */
+(function(){
+'use strict';
+if(window.__bpMoneyHist) return; window.__bpMoneyHist = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'moneyhist'); }catch(_){} }
+function srv(){ return window.bpSrv; }
+function ready(){
+  try{
+    var x = srv();
+    return !!(x && x.configured && x.configured() && typeof x.ledger === 'function'
+      && x.token && x.token());
+  }catch(e){ return false; }
+}
+function me(){
+  try{ return (typeof currentUser !== 'undefined' && currentUser) ? currentUser : null; }
+  catch(e){ return null; }
+}
+
+/* Названия видов проводок — теми же словами, что человек видит в
+   остальном приложении. Вид приходит с сервера полем kind. */
+var TITLE = {
+  'topup':          'Пополнение баланса',
+  'hold':           'Оплата сделки',
+  'release':        'Возврат по сделке',
+  'refund':         'Возврат по сделке',
+  'payout':         'Выплата по сделке',
+  'settle':         'Расчёт по сделке',
+  'settle-payout':  'Выплата по сделке',
+  'settle-refund':  'Возврат по сделке',
+  'withdraw':       'Заявка на вывод',
+  'wd-paid':        'Вывод отправлен',
+  'wd-reject':      'Возврат по заявке на вывод',
+  'wd-cancel':      'Возврат по заявке на вывод',
+  'fee':            'Комиссия сервиса',
+  'admin_adjust':   'Правка оператором',
+};
+
+function when(v){
+  /* Сервер отдаёт «ГГГГ-ММ-ДД ЧЧ:ММ:СС». Показываем как в остальном
+     приложении — днём и месяцем. */
+  var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v || ''));
+  if(!m) return '';
+  return m[3] + '.' + m[2] + '.' + m[1];
+}
+
+function toItems(rows){
+  var out = [];
+  (rows || []).forEach(function(r){
+    if(!r || r.bucket !== 'available') return;
+    var amt = Number(r.amount) || 0;
+    if(!amt) return;
+    var kind = String(r.kind || '');
+    out.push({
+      amount: amt,
+      date: when(r.created_at),
+      ts: Date.parse(String(r.created_at || '').replace(' ', 'T') + 'Z') || 0,
+      label: TITLE[kind] || 'Операция',
+      _srv: true,
+    });
+  });
+  return out;
+}
+
+var _at = 0, _busy = false;
+function refresh(force){
+  try{
+    if(_busy || !ready()) return;
+    if(!force && Date.now() - _at < 45000) return;
+    var u = me();
+    if(!u) return;
+    _busy = true;
+    srv().ledger()
+      .then(function(j){
+        var items = toItems(j && j.rows);
+        var u2 = me();
+        if(!u2) return;
+        /* Пустой ответ не затираем: у человека мог быть местный список
+           с прошлой версии, и терять его незачем. */
+        if(!items.length) return;
+        var was = '';
+        try{ was = JSON.stringify(u2.topupHistory || []); }catch(e){}
+        var now = '';
+        try{ now = JSON.stringify(items); }catch(e){}
+        if(was === now) return;
+        u2.topupHistory = items;
+        try{ if(typeof saveUsers === 'function') saveUsers(); }catch(e){ E(e); }
+        try{ if(typeof updateBalanceUI === 'function') updateBalanceUI(); }catch(e){}
+        try{ if(typeof renderRecentTx === 'function') renderRecentTx(); }catch(e){}
+      })
+      .catch(function(){ /* нет связи — остаётся прежний список */ })
+      .then(function(){ _busy = false; _at = Date.now(); });
+  }catch(e){ _busy = false; E(e); }
+}
+window.bpMoneyHistRefresh = function(){ refresh(true); };
+
+/* Когда спрашивать: при входе и при каждом заходе на денежные экраны.
+   Чаще незачем — журнал меняется только от операций самого человека. */
+try{
+  var g = window.goTo;
+  if(typeof g === 'function' && !g.__bpMH){
+    var w = function(page){
+      var r = g.apply(this, arguments);
+      try{
+        var p = String(page || '');
+        if(p === 'balance' || p === 'topup' || p === 'withdraw') setTimeout(function(){ refresh(true); }, 120);
+      }catch(e){ E(e); }
+      return r;
+    };
+    w.__bpMH = 1;
+    window.goTo = w;
+  }
+}catch(e){ E(e); }
+
+try{
+  var enter = window.enterApp;
+  if(typeof enter === 'function' && !enter.__bpMH){
+    var we = function(){
+      var r = enter.apply(this, arguments);
+      setTimeout(function(){ refresh(true); }, 1200);
+      return r;
+    };
+    we.__bpMH = 1;
+    window.enterApp = we;
+  }
+}catch(e){ E(e); }
+
+setTimeout(function(){ refresh(true); }, 2500);
+})();
+</script>
+
+<style id="bp-acclink-css">
+/* ══ СПОСОБЫ ВХОДА ══════════════════════════════════════════════════
+   Раздел в настройках, где видно, чем человек войдёт со второго
+   устройства, и можно добавить недостающее. Пользуемся теми же
+   классами, что и остальные строки настроек (st2-*), — раздел не должен
+   выглядеть пришитым сбоку.
+   Откат: удалить style#bp-acclink-css и script#bp-acclink.          */
+html #alkSheet{
+  position:fixed; inset:0; z-index:100040; display:flex; align-items:flex-end;
+  background:rgba(4,4,6,.62); backdrop-filter:blur(2px);
+}
+html #alkSheet .alk-box{
+  width:100%; background:var(--card,#121218); border-radius:22px 22px 0 0;
+  border-top:1px solid var(--brd,rgba(255,255,255,.09));
+  padding:18px 16px calc(18px + env(safe-area-inset-bottom));
+  display:flex; flex-direction:column; gap:12px;
+  animation:alkUp .26s cubic-bezier(.2,.8,.25,1);
+}
+@keyframes alkUp{ from{ transform:translateY(24px); opacity:0 } to{ transform:none; opacity:1 } }
+html #alkSheet h3{ margin:0; font-size:17px; font-weight:800; color:var(--t1) }
+html #alkSheet p{ margin:0; font-size:13px; line-height:1.5; color:var(--t3) }
+html #alkSheet input{
+  width:100%; height:46px; box-sizing:border-box; border-radius:13px;
+  background:rgba(255,255,255,.05); border:1px solid var(--brd,rgba(255,255,255,.09));
+  color:var(--t1); font-size:15px; padding:0 14px; font-family:inherit;
+}
+html #alkSheet input:focus{ outline:none; border-color:var(--acc,#2f6ce0) }
+html #alkSheet .alk-err{ color:#ff8090; font-size:12.5px; min-height:1px }
+html #alkSheet .alk-btns{ display:flex; gap:9px; margin-top:2px }
+html #alkSheet button{
+  flex:1; height:46px; border-radius:13px; border:none; cursor:pointer;
+  font-family:inherit; font-size:15px; font-weight:700;
+}
+html #alkSheet .alk-no{ background:rgba(255,255,255,.06); color:var(--t2) }
+html #alkSheet .alk-go{ background:var(--acc,#2f6ce0); color:#fff }
+html #alkSheet .alk-go[disabled]{ opacity:.6 }
+</style>
+
+<script id="bp-acclink">
+/* ══ СПОСОБЫ ВХОДА ══════════════════════════════════════════════════
+   Зачем. Аккаунт, заведённый входом через Телеграм, живёт на служебной
+   почте вида tg12345@telegram.local — человек её не знает и войти по ней
+   не может. Сев за компьютер, он регистрируется заново и получает ВТОРОЙ
+   кошелёк, а первый с деньгами остаётся в телефоне. Обратная сторона та
+   же: у зарегистрированного почтой нет входа из бота.
+
+   Что делает раздел. Показывает, чем человек может войти, и даёт
+   добавить недостающее:
+     · «Задать почту и пароль» — для телеграм-аккаунта. После этого та же
+       почта пускает в ТОТ ЖЕ аккаунт с любого устройства;
+     · «Привязать Телеграм» — для обычного. После этого вход из бота
+       ведёт в этот же аккаунт.
+
+   Чего раздел НЕ делает: не сливает два уже существующих аккаунта. Если
+   Телеграм занят другим аккаунтом, сервер честно откажет — деньги и
+   история двух людей не должны молча смешиваться.
+   Откат: удалить script#bp-acclink.                                 */
+(function(){
+'use strict';
+if(window.__bpAccLink) return; window.__bpAccLink = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'acclink'); }catch(_){} }
+function esc(v){ return (typeof bpEsc === 'function') ? bpEsc(v) : String(v == null ? '' : v); }
+function srv(){ return window.bpSrv; }
+function ready(){
+  try{
+    var x = srv();
+    return !!(x && x.configured && x.configured() && typeof x.raw === 'function' && x.token && x.token());
+  }catch(e){ return false; }
+}
+function toast(m, k){ try{ if(typeof showToast === 'function') showToast(m, k || 'info'); }catch(e){} }
+
+var ICO = {
+  mail: '<svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="2 7 12 13 22 7"/></svg>',
+  tg:   '<svg viewBox="0 0 24 24"><path d="M21 4L3 11l6 2 2 6 3-4 5 4z"/></svg>',
+  g:    '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>',
+};
+
+var _m = null;
+
+function row(id, ico, tone, name, sub, val, onclick){
+  return '<div class="st2-row"' + (onclick ? ' role="button" tabindex="0" onclick="' + onclick + '"' : '')
+    + ' id="' + id + '">'
+    + '<span class="st2-ico ' + tone + '">' + ICO[ico] + '</span>'
+    + '<span class="st2-t"><span class="st2-n">' + esc(name) + '</span>'
+    + '<span class="st2-s">' + esc(sub) + '</span></span>'
+    + '<span class="st2-val">' + esc(val) + '</span>'
+    + (onclick ? '<span class="st2-arr"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></span>' : '')
+    + '</div>';
+}
+
+function render(){
+  try{
+    var host = document.getElementById('alkCard');
+    if(!host || !_m) return;
+    var out = [];
+    out.push(_m.needsEmail
+      ? row('alkMail', 'mail', 'blue', 'Почта и пароль', 'Чтобы входить с компьютера', 'Не заданы', 'bpAccLinkMail()')
+      : row('alkMail', 'mail', 'blue', 'Почта', 'Вход по почте и паролю', _m.email || '—', ''));
+    if(_m.canTelegram){
+      out.push(_m.telegram
+        ? row('alkTg', 'tg', 'green', 'Телеграм', 'Вход из бота ведёт сюда', 'Привязан', '')
+        : row('alkTg', 'tg', 'green', 'Телеграм', 'Чтобы входить из бота', 'Привязать', 'bpAccLinkTg()'));
+    }
+    if(_m.google) out.push(row('alkG', 'g', 'violet', 'Google', 'Вход через Google ведёт сюда', 'Привязан', ''));
+    host.innerHTML = out.join('');
+  }catch(e){ E(e); }
+}
+
+function mount(){
+  try{
+    if(document.getElementById('alkCard')) return true;
+    var page = document.getElementById('pg-settings');
+    if(!page) return false;
+    /* Встаём сразу после карточки «Аккаунт»: это про вход, ему там место. */
+    var labels = page.querySelectorAll('.st2-lbl');
+    var after = null;
+    for(var i = 0; i < labels.length; i++){
+      if((labels[i].textContent || '').trim() === 'Аккаунт'){ after = labels[i].nextElementSibling; break; }
+    }
+    var lbl = document.createElement('div');
+    lbl.className = 'st2-lbl';
+    lbl.textContent = 'Способы входа';
+    var card = document.createElement('div');
+    card.className = 'st2-card';
+    card.id = 'alkCard';
+    if(after && after.parentNode){
+      after.parentNode.insertBefore(lbl, after.nextSibling);
+      after.parentNode.insertBefore(card, lbl.nextSibling);
+    } else {
+      page.appendChild(lbl); page.appendChild(card);
+    }
+    return true;
+  }catch(e){ E(e); return false; }
+}
+
+var _at = 0;
+function load(force){
+  try{
+    if(!ready() || !mount()) return;
+    if(!force && Date.now() - _at < 20000) return;
+    _at = Date.now();
+    srv().raw('GET', '/api/account/methods')
+      .then(function(j){ if(j){ _m = j; render(); } })
+      .catch(function(){});
+  }catch(e){ E(e); }
+}
+window.bpAccLinkLoad = function(){ load(true); };
+
+/* ── шторка «почта и пароль» ─────────────────────────────────────── */
+function sheet(){
+  var ov = document.createElement('div');
+  ov.id = 'alkSheet';
+  ov.innerHTML = '<div class="alk-box" role="dialog" aria-label="Почта и пароль">'
+    + '<h3>Почта и пароль</h3>'
+    + '<p>Вы вошли через Телеграм, и почты у аккаунта нет. Задайте её — и сможете войти '
+    + 'в этот же аккаунт с компьютера. Деньги, сделки и карточка останутся те же.</p>'
+    + '<input id="alkMailIn" type="email" inputmode="email" autocomplete="email" placeholder="Почта">'
+    + '<input id="alkPassIn" type="password" autocomplete="new-password" placeholder="Пароль — минимум 8 символов">'
+    + '<div class="alk-err" id="alkErr"></div>'
+    + '<div class="alk-btns">'
+    + '<button type="button" class="alk-no" id="alkNo">Отмена</button>'
+    + '<button type="button" class="alk-go" id="alkGo">Сохранить</button>'
+    + '</div></div>';
+  document.body.appendChild(ov);
+  ov.addEventListener('click', function(e){ if(e.target === ov) ov.remove(); });
+  document.getElementById('alkNo').addEventListener('click', function(){ ov.remove(); });
+  document.getElementById('alkGo').addEventListener('click', function(){
+    var go = document.getElementById('alkGo');
+    var err = document.getElementById('alkErr');
+    var mail = (document.getElementById('alkMailIn').value || '').trim();
+    var pass = document.getElementById('alkPassIn').value || '';
+    err.textContent = '';
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)){ err.textContent = 'Проверьте адрес почты'; return; }
+    if(pass.length < 8){ err.textContent = 'Пароль — минимум 8 символов'; return; }
+    go.disabled = true;
+    srv().raw('POST', '/api/account/email', { email: mail, password: pass })
+      .then(function(){
+        ov.remove();
+        toast('Готово: теперь можно входить по почте', 'ok');
+        load(true);
+      })
+      .catch(function(e2){
+        go.disabled = false;
+        err.textContent = (e2 && e2.message) || 'Не получилось сохранить';
+      });
+  });
+  setTimeout(function(){ try{ document.getElementById('alkMailIn').focus(); }catch(e){} }, 80);
+}
+window.bpAccLinkMail = function(){ if(ready()) sheet(); };
+
+/* ── привязка Телеграма ──────────────────────────────────────────── */
+window.bpAccLinkTg = function(){
+  if(!ready()) return;
+  /* Окно открываем в том же нажатии, иначе браузер сочтёт его непрошеным. */
+  var win = null;
+  try{ win = window.open('', '_blank'); }catch(e){}
+  srv().raw('GET', '/api/auth/telegram/start?link=1')
+    .then(function(j){
+      if(!j || !j.url) throw new Error('Сервер не дал ссылку');
+      if(win && !win.closed) win.location = j.url;
+      else { try{ location.href = j.url; }catch(e){} }
+      wait(j.nonce);
+    })
+    .catch(function(e2){
+      try{ if(win && !win.closed) win.close(); }catch(_){}
+      toast((e2 && e2.message) || 'Не вышло начать привязку', 'err');
+    });
+};
+
+function wait(nonce){
+  if(!nonce) return;
+  var n = 0;
+  var t = setInterval(function(){
+    n++;
+    if(n > 60){ clearInterval(t); return; }
+    srv().raw('GET', '/api/auth/telegram/pending?nonce=' + encodeURIComponent(nonce))
+      .then(function(j){
+        if(!j || j.state !== 'ok') return;
+        clearInterval(t);
+        if(j.linked){
+          toast('Телеграм привязан к этому аккаунту', 'ok');
+          load(true);
+        }
+      })
+      .catch(function(){});
+  }, 2000);
+}
+
+/* ── подключение ─────────────────────────────────────────────────── */
+try{
+  var g = window.goTo;
+  if(typeof g === 'function' && !g.__bpALK){
+    var w = function(page){
+      var r = g.apply(this, arguments);
+      if(String(page || '') === 'settings') setTimeout(function(){ load(true); }, 120);
+      return r;
+    };
+    w.__bpALK = 1;
+    window.goTo = w;
+  }
+}catch(e){ E(e); }
+setTimeout(function(){ load(true); }, 2600);
 })();
 </script>
 
