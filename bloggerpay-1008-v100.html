@@ -83652,5 +83652,525 @@ try{
 })();
 </script>
 
+<style id="bp-card3-css">
+/* ══ КАРТОЧКА БЛОГЕРА: НОВЫЙ ВИД ═══════════════════════════════════
+   Владелец принёс эскиз (catalog-bloggers-v3.html). Взято из него
+   ровно то, что можно показать честно: ритм карточки (одна колонка,
+   равные зазоры, всё внутри без собственных отступов), квадратный
+   аватар со значком площадки, тематики плашками вместо строки текста,
+   полоса цифр как плитка с разделителями, ряд форматов размещения и
+   строка цены рядом с кнопкой.
+
+   Чего из эскиза тут НЕТ и почему: «% в срок», «% заказали снова»,
+   «охват +N% за месяц», «отвечает за N часов» и «свободен» — таких
+   данных в проекте нет ни в одном хранилище, а рисовать правдоподобные
+   цифры нельзя. Звезда рейтинга и счётчик сделок скрываются, когда они
+   пустые: «★ — (0)» и «0 сделок» на каждой карточке — это не сведения,
+   а шум. Появятся отзывы и сделки — плашки вернутся сами.
+
+   Почему поверх старой разметки, а не вместо неё: за классы карточки
+   держатся четырнадцать мест — поиск, фильтры и сортировка каталога
+   читают цифры прямо из ячеек, кнопка кампании ищет .blc-add[data-bid],
+   избранное — .blc-bm, меню «⋯» — .blc-rat-col, переключатель каналов —
+   значки в .blc-pr. Замена разметки сломала бы всё это молча: каждый
+   слой обёрнут в try/catch и просто выходит, не найдя узел. Поэтому
+   опоры сохранены до единой, а новый вид сделан перестановкой и
+   перекраской. Порядок блоков задан свойством order — узлы остаются на
+   своих местах в DOM.
+
+   Откат: удалить style#bp-card3-css и script#bp-card3.               */
+
+/* ── корпус ─────────────────────────────────────────────────────── */
+html #catBloggerList .blc.bpc3{
+  position:relative; overflow:hidden;
+  border-radius:18px; padding:13px;
+  display:flex; flex-direction:column; gap:11px;
+}
+/* Цвет площадки — двухпиксельной полоской сверху. Единственное цветное
+   пятно в карточке, поэтому по нему её и узнают в ленте. */
+html #catBloggerList .blc.bpc3::before{
+  content:''; position:absolute; left:0; right:0; top:0; height:2px;
+  background:var(--plt,transparent); opacity:.75; z-index:2;
+}
+html #catBloggerList .blc.bpc3 .bpc3-head{ padding:0!important; margin:0!important }
+html #catBloggerList .blc.bpc3 .bpc3-low{
+  padding:0!important; display:flex; flex-direction:column; gap:11px;
+}
+html #catBloggerList .blc.bpc3 .blc-top{ padding:0!important; gap:11px; align-items:flex-start }
+
+/* ── аватар ─────────────────────────────────────────────────────── */
+html #catBloggerList .blc.bpc3 .blc-ava{
+  position:relative; width:50px; height:50px; flex:0 0 auto;
+  border-radius:16px; overflow:visible;
+}
+html #catBloggerList .blc.bpc3 .blc-ava > img,
+html #catBloggerList .blc.bpc3 .blc-ava > div{
+  border-radius:16px!important; width:100%; height:100%; object-fit:cover;
+}
+html #catBloggerList .blc.bpc3 .bpc3-plt{
+  position:absolute; right:-5px; bottom:-5px; width:21px; height:21px;
+  border-radius:50%; display:grid; place-items:center;
+  background:var(--bg,#0f1115); box-shadow:0 0 0 2px var(--card,#16171b);
+}
+html #catBloggerList .blc.bpc3 .bpc3-plt img{ width:12px; height:12px; display:block }
+
+/* ── имя и подпись ──────────────────────────────────────────────── */
+html #catBloggerList .blc.bpc3 .blc-name{ font-size:15.5px; letter-spacing:-.02em }
+html #catBloggerList .blc.bpc3 .blc-since{ font-size:12.5px; color:var(--t3) }
+html #catBloggerList .blc.bpc3 .bpc3-handle{
+  display:block; font-size:13px; color:var(--t3); margin-top:1px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+/* Пустой рейтинг и ноль сделок не показываем: это не сведения, а шум. */
+html #catBloggerList .blc.bpc3 .bpc3-off{ display:none!important }
+html #catBloggerList .blc.bpc3 .blc-rat-col{
+  flex-direction:row; align-items:center; gap:6px; margin-left:auto;
+}
+
+/* ── тематики плашками ──────────────────────────────────────────── */
+html #catBloggerList .blc.bpc3 .blc-cats{
+  display:flex; flex-wrap:wrap; gap:6px; margin:0; font-size:12px; line-height:1;
+}
+html #catBloggerList .blc.bpc3 .bpc3-tag{
+  padding:4px 8px; border-radius:8px; background:var(--card2,rgba(255,255,255,.05));
+  color:var(--t2); font-size:12px; line-height:1.25;
+}
+
+/* ── полоса цифр ────────────────────────────────────────────────── */
+html #catBloggerList .blc.bpc3 .blc-strip{
+  display:grid; grid-template-columns:repeat(4,1fr); gap:0;
+  background:var(--card2,rgba(255,255,255,.05));
+  border:none; border-radius:13px; padding:9px 4px; margin:0;
+}
+html #catBloggerList .blc.bpc3 .blc-strip .bls{
+  display:flex; flex-direction:column; align-items:center; gap:1px;
+  position:relative; padding:0 2px; background:none; border:none;
+}
+html #catBloggerList .blc.bpc3 .blc-strip .bls + .bls::before{
+  content:''; position:absolute; left:0; top:3px; bottom:3px; width:1px;
+  background:var(--brd,rgba(255,255,255,.09));
+}
+html #catBloggerList .blc.bpc3 .blc-strip .bls-ico{ display:none }
+html #catBloggerList .blc.bpc3 .blc-strip .bls-val{
+  order:1; font-size:14.5px; font-weight:700; letter-spacing:-.025em; color:var(--t1);
+}
+html #catBloggerList .blc.bpc3 .blc-strip .bls-lbl{
+  order:2; font-size:11px; color:var(--t3); font-weight:500;
+}
+html #catBloggerList .blc.bpc3 .blc-strip .bls-sub{ order:3; font-size:10px }
+
+/* ── ряд каналов ────────────────────────────────────────────────── */
+html #catBloggerList .blc.bpc3 .blc-pr{ margin:0; padding:0; min-height:0 }
+html #catBloggerList .blc.bpc3 .bp-ch-line{ margin:0 }
+/* Значки каналов были с крупную кнопку и перетягивали внимание на себя.
+   Это переключатель, а не герой карточки. */
+html #catBloggerList .blc.bpc3 .blc-pr-socs{ gap:7px }
+html #catBloggerList .blc.bpc3 .blc-pr-soc{ width:34px!important; height:34px!important }
+html #catBloggerList .blc.bpc3 .blc-pr-soc img{ width:17px!important; height:17px!important }
+/* Закладка переезжает к меню «⋯» — оба действия над карточкой в одном
+   углу, как на эскизе. */
+html #catBloggerList .blc.bpc3 .blc-rat-col .blc-bm{ position:static; margin:0 }
+
+/* ── форматы размещения ─────────────────────────────────────────── */
+html #catBloggerList .blc.bpc3 .bpc3-fmt{
+  display:flex; gap:5px; overflow-x:auto; scrollbar-width:none;
+  -webkit-overflow-scrolling:touch;
+}
+html #catBloggerList .blc.bpc3 .bpc3-fmt::-webkit-scrollbar{ display:none }
+html #catBloggerList .blc.bpc3 .bpc3-fmt button{
+  flex:0 0 auto; height:29px; padding:0 11px; border-radius:999px;
+  background:var(--card2,rgba(255,255,255,.05)); border:1px solid transparent;
+  font-size:12.5px; font-weight:600; color:var(--t3); cursor:pointer;
+  white-space:nowrap; transition:background .15s,color .15s,border-color .15s;
+}
+html #catBloggerList .blc.bpc3 .bpc3-fmt button[aria-pressed="true"]{
+  background:var(--card3,rgba(255,255,255,.09)); color:var(--t1);
+  border-color:var(--brd,rgba(255,255,255,.14));
+}
+
+/* ── цена и кнопка ──────────────────────────────────────────────── */
+html #catBloggerList .blc.bpc3 .bpc3-buy{
+  display:flex; align-items:flex-end; gap:10px; margin-top:auto;
+}
+html #catBloggerList .blc.bpc3 .bpc3-price{ line-height:1.15; min-width:0 }
+html #catBloggerList .blc.bpc3 .bpc3-price b{
+  display:block; font-size:19px; font-weight:800; letter-spacing:-.03em; color:var(--t1);
+}
+html #catBloggerList .blc.bpc3 .bpc3-price small{
+  display:block; font-size:11.5px; color:var(--t3); margin-top:1px;
+}
+html #catBloggerList .blc.bpc3 .bpc3-price .bpc3-deal{ color:var(--green,#3ddc84); font-weight:700 }
+html #catBloggerList .blc.bpc3 .bpc3-buy .blc-add{
+  margin:0 0 0 auto!important; width:auto!important; flex:0 0 auto;
+  height:38px; padding:0 16px!important; border-radius:999px!important;
+  font-size:14px!important; font-weight:700!important; white-space:nowrap;
+}
+/* Своя карточка: кнопки владельца остаются снизу, как были. */
+html #catBloggerList .blc.bpc3 .blc-owner-actions{ margin:0 }
+
+/* ── порядок блоков ──
+   Узлы остаются там, где их поставили другие слои: переставляем только
+   их порядок на экране. Так ни один querySelector не промахнётся. */
+html #catBloggerList .blc.bpc3 .bpc3-low > .blc-pr{ order:1 }
+html #catBloggerList .blc.bpc3 .bpc3-low > .bp-ch-line{ order:2 }
+html #catBloggerList .blc.bpc3 .bpc3-low > .blc-strip{ order:3 }
+html #catBloggerList .blc.bpc3 .bpc3-low > .bpc3-fmt{ order:4 }
+html #catBloggerList .blc.bpc3 .bpc3-low > .bpc3-buy{ order:5 }
+html #catBloggerList .blc.bpc3 .bpc3-low > .blc-owner-actions{ order:6 }
+</style>
+
+<script id="bp-card3">
+/* ══ КАРТОЧКА БЛОГЕРА: НОВЫЙ ВИД ═══════════════════════════════════
+   Пояснение — в style#bp-card3-css. Здесь только сборка: перестановка
+   узлов, тематики плашками, значок площадки на аватаре, ряд форматов и
+   строка цены.
+
+   Цифры берём ровно те, что есть: цены форматов блогер задаёт сам при
+   публикации (card.integrations), охват — его же слова (platData.reach),
+   поэтому CPM показываем только когда охват указан. Выгоду «ниже медианы»
+   считаем по живому каталогу и только если карточек на площадке хотя бы
+   восемь — иначе «рынок» состоит из трёх человек и цифра врёт.
+
+   Идемпотентность: карточка помечается свойством __bpc3, отдельно
+   помечается перестройка тематик. Слой ждёт своей очереди: сначала
+   отрабатывают bpRestyleCards и bpEnhanceCard, потом мы.
+   Откат: удалить script#bp-card3.                                   */
+(function(){
+'use strict';
+if(window.__bpCard3) return; window.__bpCard3 = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'card3'); }catch(_){} }
+function esc(v){ return (typeof bpEsc === 'function') ? bpEsc(v) : String(v == null ? '' : v); }
+
+var PLAT = {
+  youtube:  { k:'yt', name:'YouTube',   col:'#FF0000', ic:'youtube' },
+  telegram: { k:'tg', name:'Telegram',  col:'#229ED9', ic:'telegram' },
+  instagram:{ k:'ig', name:'Instagram', col:'#E1306C', ic:'instagram' },
+  tiktok:   { k:'tt', name:'TikTok',    col:'#25F4EE', ic:'tiktok' },
+};
+var BY_CLASS = { 'ic-yt':'youtube', 'ic-tg':'telegram', 'ic-ig':'instagram', 'ic-tt':'tiktok',
+                 'syt':'youtube', 'stg':'telegram', 'sig':'instagram', 'stt':'tiktok' };
+
+function cards(){
+  try{ var a = JSON.parse(localStorage.getItem('bp_my_cards') || '[]'); return Array.isArray(a) ? a : []; }
+  catch(e){ return []; }
+}
+function cardOf(id){
+  var all = cards();
+  for(var i = 0; i < all.length; i++) if(String(all[i] && all[i].id) === String(id)) return all[i];
+  return null;
+}
+function num(v){ var n = Number(String(v == null ? '' : v).replace(/[^\d.,-]/g, '').replace(',', '.')); return isFinite(n) ? n : 0; }
+function money(n){
+  n = Math.round(Number(n) || 0);
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+
+/* Какой канал показан сейчас: переключатель каналов (слой bp-fix8-js)
+   помечает выбранный значок классом bp-ch-on. Нет переключателя —
+   берём первую площадку карточки. */
+function activePlat(el, card){
+  try{
+    var on = el.querySelector('.blc-pr-soc.bp-ch-on, .blc-soc.bp-ch-on');
+    if(on){
+      var cl = String(on.className || '').split(/\s+/);
+      for(var i = 0; i < cl.length; i++) if(BY_CLASS[cl[i]]) return BY_CLASS[cl[i]];
+    }
+  }catch(e){ E(e); }
+  var pl = (card && card.platforms) || [];
+  return pl.length ? String(pl[0]) : '';
+}
+
+function fmtsOf(card, pid){
+  var out = [];
+  try{
+    var list = (card && card.integrations && card.integrations[pid]) || [];
+    var dict = (typeof ABC_FORMATS !== 'undefined' && ABC_FORMATS[pid]) || [];
+    (Array.isArray(list) ? list : []).forEach(function(it){
+      if(!it) return;
+      var price = num(it.price);
+      if(!(price > 0)) return;
+      var name = '';
+      for(var i = 0; i < dict.length; i++) if(dict[i].id === it.fmtId) name = dict[i].name;
+      out.push({ id: String(it.fmtId || ''), name: name || 'Размещение', price: price });
+    });
+  }catch(e){ E(e); }
+  out.sort(function(a, b){ return a.price - b.price; });
+  return out;
+}
+
+function reachOf(card, pid){
+  try{
+    var p = (card && card.platData && card.platData[pid]) || null;
+    return p ? num(p.reach) : 0;
+  }catch(e){ return 0; }
+}
+function cpmOf(price, reach){ return reach > 0 ? (price / reach) * 1000 : 0; }
+
+/* ── медиана CPM по площадке ──
+   Считается по тем же карточкам, что человек видит в каталоге. Меньше
+   восьми карточек — не считаем вовсе: на трёх это не рынок, а случайные
+   три цены. Пересчитываем не чаще раза в минуту. */
+var _med = { at: 0, by: {} };
+function median(a){
+  if(!a.length) return 0;
+  var b = a.slice().sort(function(x, y){ return x - y; });
+  var m = Math.floor(b.length / 2);
+  return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2;
+}
+function medians(){
+  if(Date.now() - _med.at < 60000) return _med.by;
+  var by = {};
+  try{
+    cards().forEach(function(cd){
+      (cd && cd.platforms || []).forEach(function(pid){
+        var r = reachOf(cd, pid);
+        var fs = fmtsOf(cd, pid);
+        if(!r || !fs.length) return;
+        (by[pid] = by[pid] || []).push(cpmOf(fs[0].price, r));
+      });
+    });
+  }catch(e){ E(e); }
+  var out = {};
+  Object.keys(by).forEach(function(pid){
+    if(by[pid].length >= 8) out[pid] = median(by[pid]);
+  });
+  _med = { at: Date.now(), by: out };
+  return out;
+}
+
+/* Цвет полоски и значок на аватаре — по тому каналу, который сейчас
+   выбран. Иначе на карточке с тремя каналами человек переключает
+   Telegram, а в углу аватара остаётся YouTube. */
+function paintPlat(el, pid){
+  try{
+    var P = PLAT[pid];
+    if(!P) return;
+    if(el.__bpc3Plat === pid) return;
+    el.__bpc3Plat = pid;
+    el.style.setProperty('--plt', P.col);
+    var ava = el.querySelector('.blc-ava');
+    if(!ava) return;
+    var box = ava.querySelector('.bpc3-plt');
+    if(!box){
+      box = document.createElement('i');
+      box.className = 'bpc3-plt';
+      ava.appendChild(box);
+    }
+    /* Тем же тегом и с того же адреса, что остальные значки: слой
+       bp-soc-icons подменит его на вшитую в файл картинку. */
+    box.innerHTML = '<img loading="lazy" class="soc-img" alt="" src="https://cdn.jsdelivr.net/npm/simple-icons@11/icons/'
+      + P.ic + '.svg">';
+  }catch(e){ E(e); }
+}
+
+/* ── цена и форматы ─────────────────────────────────────────────── */
+function paintBuy(el){
+  try{
+    var card = cardOf(el.getAttribute('data-cardid'));
+    if(!card) return;
+    var low = el.querySelector('.bpc3-low');
+    if(!low) return;
+    var pid = activePlat(el, card);
+    paintPlat(el, pid);
+    var fs = pid ? fmtsOf(card, pid) : [];
+    var buy = el.querySelector('.bpc3-buy');
+    var add = el.querySelector('.blc-add');
+
+    /* Кнопка «Добавить в кампанию» переезжает в строку цены. Сам узел не
+       трогаем: его перерисовывают снаружи (paintAddBtns, updateCampUI). */
+    if(!buy){
+      buy = document.createElement('div');
+      buy.className = 'bpc3-buy';
+      var pr = document.createElement('div');
+      pr.className = 'bpc3-price';
+      buy.appendChild(pr);
+      low.appendChild(buy);
+    }
+    if(add && add.parentElement !== buy) buy.appendChild(add);
+
+    var price = el.querySelector('.bpc3-price');
+    if(!price) return;
+    if(!fs.length){ price.innerHTML = ''; }
+    else {
+      var pick = String(el.__bpc3Fmt || '');
+      var cur = null;
+      for(var i = 0; i < fs.length; i++) if(fs[i].id === pick) cur = fs[i];
+      var one = !!cur;
+      if(!cur) cur = fs[0];
+      var reach = reachOf(card, pid);
+      var cpm = cpmOf(cur.price, reach);
+      var med = medians()[pid] || 0;
+      var win = (med && cpm && cpm < med) ? Math.round((1 - cpm / med) * 100) : 0;
+      var sub = '';
+      if(cpm) sub = 'CPM ' + money(cpm) + ' ₽';
+      if(win >= 12) sub += (sub ? ' · ' : '') + '<span class="bpc3-deal">−' + win + '% к медиане</span>';
+      price.innerHTML = '<b>' + (one ? '' : 'от ') + money(cur.price) + ' ₽</b>'
+        + (sub ? '<small>' + sub + '</small>' : '');
+    }
+
+    /* Ряд форматов. Показываем, только когда их больше одного: один
+       формат — это уже сказано ценой. */
+    var row = el.querySelector('.bpc3-fmt');
+    if(fs.length < 2){ if(row) row.remove(); return; }
+    if(!row){
+      row = document.createElement('div');
+      row.className = 'bpc3-fmt';
+      row.addEventListener('click', function(ev){
+        var b = ev.target && ev.target.closest ? ev.target.closest('button[data-fmt]') : null;
+        if(!b) return;
+        ev.preventDefault(); ev.stopPropagation();
+        var id = b.getAttribute('data-fmt');
+        el.__bpc3Fmt = (el.__bpc3Fmt === id) ? '' : id;
+        paintBuy(el);
+      });
+      low.appendChild(row);
+    }
+    var mark = pid + '|' + fs.map(function(f){ return f.id + ':' + f.price; }).join(',') + '|' + (el.__bpc3Fmt || '');
+    if(row.__mark === mark) return;
+    row.__mark = mark;
+    row.innerHTML = fs.map(function(f){
+      var on = String(el.__bpc3Fmt || '') === f.id;
+      return '<button type="button" data-fmt="' + esc(f.id) + '" aria-pressed="' + (on ? 'true' : 'false') + '">'
+        + esc(f.name) + ' · ' + money(f.price) + ' ₽</button>';
+    }).join('');
+  }catch(e){ E(e); }
+}
+
+/* ── разовая перестройка карточки ───────────────────────────────── */
+function dress(el){
+  try{
+    if(!el || el.__bpc3) return;
+    var strip = el.querySelector('.blc-strip');
+    if(!strip) return;                       /* ещё не дорисована — подождём */
+    el.__bpc3 = 1;
+    el.classList.add('bpc3');
+
+    var body = el.querySelector('.blc-body');
+    if(body) body.classList.add('bpc3-head');
+    var low = strip.parentElement;
+    if(low) low.classList.add('bpc3-low');
+
+    var card = cardOf(el.getAttribute('data-cardid'));
+    paintPlat(el, activePlat(el, card));
+
+    /* Юзернейм канала не дублируем: его уже пишет строка каналов
+       («YouTube @имя · ещё 2 канала»), и там он честнее — меняется
+       вместе с выбранным каналом. */
+
+    /* Закладка переезжает к меню «⋯»: два действия над карточкой в одном
+       углу. Узел тот же самый, поэтому избранное продолжает работать. */
+    try{
+      var bm = el.querySelector('.blc-bm');
+      var col = el.querySelector('.blc-rat-col');
+      if(bm && col && bm.parentElement !== col) col.insertBefore(bm, col.firstChild);
+    }catch(e){ E(e); }
+
+    /* Пустые рейтинг и счётчик сделок прячем. */
+    try{
+      var rat = el.querySelector('.blc-rat');
+      var sc = rat && rat.querySelector('.sc');
+      if(rat && (!sc || /^[—-]?$|^0([.,]0)?$/.test((sc.textContent || '').trim()))) rat.classList.add('bpc3-off');
+      var dl = el.querySelector('.blc-deals');
+      if(dl && /(^|\D)0\s*сдел/.test(dl.textContent || '')) dl.classList.add('bpc3-off');
+    }catch(e){ E(e); }
+
+    /* Тематики — плашками. Текст остаётся тем же, поэтому поиск по
+       тематике продолжает находить карточку. */
+    try{
+      var cats = el.querySelector('.blc-cats');
+      if(cats && !cats.__bpc3){
+        cats.__bpc3 = 1;
+        var t = (cats.textContent || '').trim();
+        if(t && t !== 'Тематики не указаны'){
+          var parts = t.split('·').map(function(x){ return x.trim(); }).filter(Boolean).slice(0, 6);
+          if(parts.length){
+            cats.innerHTML = parts.map(function(x){
+              return '<span class="bpc3-tag">' + esc(x) + '</span>';
+            }).join('');
+          }
+        }
+      }
+    }catch(e){ E(e); }
+
+    /* Подписи под цифрами, где стоит прочерк, не показываем. */
+    try{
+      el.querySelectorAll('.blc-strip .bls').forEach(function(cell){
+        var sub = cell.querySelector('.bls-sub');
+        if(!sub) return;
+        var v = (sub.textContent || '').trim();
+        var val = ((cell.querySelector('.bls-val') || {}).textContent || '').trim();
+        /* «авто» под прочерком объясняло цифру, которой нет. */
+        if(!v || v === '—' || v === '-' || !val || val === '—') sub.classList.add('bpc3-off');
+      });
+    }catch(e){ E(e); }
+
+    /* Переключили канал — цена и форматы должны поехать за ним. */
+    try{
+      var pr = el.querySelector('.blc-pr');
+      if(pr && !pr.__bpc3){
+        pr.__bpc3 = 1;
+        pr.addEventListener('click', function(){ setTimeout(function(){ paintBuy(el); }, 80); }, true);
+      }
+    }catch(e){ E(e); }
+
+    paintBuy(el);
+  }catch(e){ E(e); }
+}
+
+/* ── починка фильтра по площадке ──
+   Фильтр каталога ищет в карточке значок по СТАРОМУ имени класса
+   (syt / stg / stt / sig) — так значки назывались в исходной разметке.
+   Но их давно пересобирает другой слой под новыми именами (ic-yt,
+   ic-tg…), а старую зону сносит целиком. Из-за этого фильтр не находил
+   ничего и прятал ВЕСЬ каталог: нажимаешь «YouTube» — пусто, хотя
+   блогеры с YouTube есть. Возвращаем прежнее имя вторым классом.
+
+   Делаем это на каждом проходе, а не один раз при сборке: значки
+   появляются позже самой карточки, и к первому проходу их ещё нет. */
+var OLD = { 'ic-yt':'syt', 'ic-tg':'stg', 'ic-tt':'stt', 'ic-ig':'sig' };
+function legacy(el){
+  try{
+    el.querySelectorAll('.blc-pr-soc, .blc-soc').forEach(function(ic){
+      Object.keys(OLD).forEach(function(k){
+        if(ic.classList.contains(k) && !ic.classList.contains(OLD[k])) ic.classList.add(OLD[k]);
+      });
+    });
+  }catch(e){ E(e); }
+}
+
+function all(){
+  try{
+    var list = document.getElementById('catBloggerList');
+    if(!list) return;
+    list.querySelectorAll('.blc[data-cardid]').forEach(function(el){
+      legacy(el);
+      dress(el);
+    });
+  }catch(e){ E(e); }
+}
+window.bpCard3 = all;
+
+/* Ждём своей очереди: карточку сначала перебирают bpRestyleCards
+   (120 мс) и bpEnhanceAllCards (180 мс). Наблюдатель ловит и те
+   карточки, что приезжают с сервера позже. */
+function watch(){
+  try{
+    var host = document.getElementById('catBloggerList') || document.getElementById('pg-home');
+    if(!host) return setTimeout(watch, 500);
+    var t = null;
+    new MutationObserver(function(){
+      clearTimeout(t); t = setTimeout(all, 260);
+    }).observe(host, { childList: true, subtree: true });
+    all();
+  }catch(e){ E(e); }
+}
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watch);
+else watch();
+setTimeout(all, 900);
+setTimeout(all, 2200);
+})();
+</script>
+
 </body>
 </html>
