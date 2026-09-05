@@ -357,14 +357,11 @@ body{
    Ничего не «пройдено»: это порядок, а не чей-то прогресс. */
 .rail{list-style:none;flex:1;min-height:0;margin-top:12px;
   display:flex;flex-direction:column;justify-content:center;gap:9px}
+/* Лесенку убрали: со сдвигом вправо список читался как разъехавшийся,
+   а не как порядок. Обрывки стоят ровным столбиком от одного левого
+   края — ширина у каждого своя, по длине слова, и правый край остаётся
+   рваным. Это и держит вид наклеенной бумаги. */
 .st{display:block}
-/* Лесенка: каждый следующий обрывок правее. «Идёт по шагам» видно
-   глазом, а не написано словами. */
-.st:nth-child(2){margin-left:13px}
-.st:nth-child(3){margin-left:26px}
-.st:nth-child(4){margin-left:39px}
-.st:nth-child(5){margin-left:52px}
-.st:nth-child(6){margin-left:65px}
 .plab{position:relative;display:inline-flex;align-items:baseline;gap:9px;
   padding:8px 16px 9px;box-sizing:border-box}
 .plab::before{
@@ -389,8 +386,8 @@ body{
 .plab em{position:relative;z-index:1;font-style:normal;white-space:nowrap;
   font-family:'BPHead',Impact,sans-serif;font-size:15px;font-weight:700;
   letter-spacing:.7px;text-transform:uppercase;color:var(--paper-ink)}
-.st:nth-child(2n+1) .plab{transform:rotate(-.7deg)}
-.st:nth-child(2n) .plab{transform:rotate(.6deg)}
+.st:nth-child(2n+1) .plab{transform:rotate(-.4deg)}
+.st:nth-child(2n) .plab{transform:rotate(.35deg)}
 /* Последний обрывок — итог, а не «активный шаг»: отличаем цветом чернил. */
 .st:last-child .plab em{color:var(--blue-d)}
 /* На коротком экране шесть обрывков в полный рост не помещаются и
@@ -401,11 +398,6 @@ body{
   .plab{padding:6px 13px 7px;gap:7px}
   .plab b{font-size:12.5px}
   .plab em{font-size:13px;letter-spacing:.5px}
-  .st:nth-child(2){margin-left:10px}
-  .st:nth-child(3){margin-left:20px}
-  .st:nth-child(4){margin-left:30px}
-  .st:nth-child(5){margin-left:40px}
-  .st:nth-child(6){margin-left:50px}
 }
 
 /* нижняя заметка */
@@ -440,7 +432,7 @@ body{
 .s2.go .st:nth-child(5){animation-delay:.44s}
 .s2.go .st:nth-child(6){animation-delay:.51s}
 @keyframes stIn{
-  from{opacity:0;transform:translate(-14px,-7px) rotate(-1.6deg)}
+  from{opacity:0;transform:translateY(-9px)}
   to{opacity:1;transform:none}
 }
 @media (prefers-reduced-motion:reduce){
