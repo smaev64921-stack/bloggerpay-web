@@ -133,7 +133,6 @@ select.mini option{background:#16171B;color:#F3F4F6}
 .ver{flex:0 0 auto;width:15px;height:15px;color:var(--ok)}
 .handle{color:var(--muted);font-size:13px;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .meta{display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin-top:5px;font-size:12.5px;color:var(--muted)}
-.meta .star{color:var(--gold)}
 .meta b{color:var(--text);font-weight:650}
 .dot{opacity:.32}
 .free{color:var(--ok);font-weight:600}
@@ -144,19 +143,30 @@ select.mini option{background:#16171B;color:#F3F4F6}
 .tags{display:flex;flex-wrap:wrap;gap:6px}
 .tag{font-size:12px;color:var(--muted);background:var(--surface-2);border-radius:8px;padding:3px 8px}
 
-.trust{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--muted);
-  border-top:1px solid var(--stroke);border-bottom:1px solid var(--stroke);padding:8px 0;overflow-x:auto;scrollbar-width:none}
-.trust::-webkit-scrollbar{display:none}
-.trust span{white-space:nowrap}
-.trust b{color:var(--text);font-weight:650}
-.trust .up{color:var(--ok);font-weight:650}
-.trust .down{color:var(--muted);font-weight:650}
+/* ── каналы блогера ──
+   Этого в эскизе не было, а в BloggerPay это главное: карточка — не
+   канал, а ЧЕЛОВЕК, и каналов у него может быть несколько. Поэтому ряд
+   переключателей: выбранный канал меняет и цифры, и цену, и форматы, и
+   цвет полоски сверху. Один канал — ряд не показываем. */
+.chan{display:flex;align-items:center;gap:7px;overflow-x:auto;scrollbar-width:none}
+.chan::-webkit-scrollbar{display:none}
+.chan button{flex:0 0 auto;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;
+  background:var(--surface-2);border:1px solid transparent;position:relative;transition:.15s}
+.chan button svg{width:16px;height:16px}
+.chan button[aria-pressed="true"]{border-color:var(--chc,var(--stroke-2));background:var(--surface-3)}
+.chan button .ok{position:absolute;right:-2px;bottom:-2px;width:12px;height:12px;border-radius:50%;
+  background:var(--ok);color:#08130c;display:grid;place-items:center;font-size:8px;font-weight:900;
+  box-shadow:0 0 0 2px var(--surface)}
+.chan .cn{margin-left:2px;font-size:12px;color:var(--muted);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.chan .cn b{color:var(--text);font-weight:650}
 
-.stats{display:grid;grid-template-columns:repeat(3,1fr);background:var(--surface-2);border-radius:13px;padding:9px 4px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);background:var(--surface-2);border-radius:13px;padding:9px 4px}
 .stats>div{text-align:center;position:relative}
 .stats>div+div::before{content:"";position:absolute;left:0;top:3px;bottom:3px;width:1px;background:var(--stroke)}
 .stats .v{font-weight:680;font-size:14.5px;letter-spacing:-.025em}
 .stats .k{font-size:11px;color:var(--muted-2);margin-top:1px}
+.stats .v.none{color:var(--muted-2)}
 
 .fmt{display:flex;gap:5px;overflow-x:auto;scrollbar-width:none}
 .fmt::-webkit-scrollbar{display:none}
@@ -177,7 +187,7 @@ select.mini option{background:#16171B;color:#F3F4F6}
 
 .grid.list{grid-template-columns:1fr;gap:8px}
 .grid.list .card{flex-direction:row;align-items:center;gap:12px;padding:11px 12px}
-.grid.list .trust,.grid.list .fmt,.grid.list .tags,.grid.list .stats,.grid.list .fav{display:none}
+.grid.list .chan,.grid.list .fmt,.grid.list .tags,.grid.list .stats,.grid.list .fav{display:none}
 .grid.list .head{flex:1;min-width:0;padding-right:0}
 .grid.list .buy{margin:0;flex:0 0 auto}
 .grid.list .price b{font-size:16px}
@@ -466,25 +476,102 @@ const DATA=[
  {n:"Ника Орлова",h:"@nika.psy",p:"tg",ver:0,free:1,resp:"~3 ч",r:4.4,deals:27,subs:44000,views:21000,er:10.3,price:23000,tags:["Психология","Лайфстайл"],w:76,age:"25–34",geo:"Москва 26% · регионы 62%",ontime:90,again:59,trend:14,
   last:[{b:"Ясно",d:"16 авг",v:23000,c:4.0},{b:"Alter",d:"2 авг",v:20000,c:3.5}]}
 ];
-DATA.forEach((b,i)=>{b.id='b'+i;b.fmt=0});
+DATA.forEach((b,i)=>{b.id='b'+i});
+
+/* ═══ каналы и форматы — как это устроено в BloggerPay ═══
+   Эскиз считал, что блогер = один канал с одной ценой, а цена берётся
+   умножением базовой на коэффициент формата. В приложении иначе, и
+   карточка теперь повторяет именно приложение:
+
+   · у блогера НЕСКОЛЬКО каналов, у каждого свои подписчики, просмотры,
+     ER, свой адрес и своя отметка «подтверждён входом» (platData);
+   · форматы размещения — не выдуманные коэффициенты, а список с ЯВНОЙ
+     ценой, который блогер заполняет сам при публикации карточки
+     (integrations: { канал: [ {fmtId, price} ] });
+   · названия форматов взяты из словаря приложения ABC_FORMATS слово в
+     слово — чтобы карточка и мастер говорили одинаково.
+
+   Чего в BloggerPay нет и что поэтому убрано из карточки: «% в срок»,
+   «% заказали снова», «охват +N% за месяц», «отвечает за N часов»,
+   «свободен». Таких данных нет ни в карточке, ни на сервере — рисовать
+   правдоподобные цифры о чужой надёжности нельзя. Рейтинг и число
+   сделок в приложении до каталога тоже не доезжают, поэтому в карточке
+   их нет; на странице блогера они останутся, когда появятся отзывы. */
+const FMT_NAMES={
+  tg:['Пост с закрепом','Обычный пост','Сторис','Рассылка в боте','Реакции + репост','Баннер'],
+  yt:['Реклама в начале','Реклама в середине','Реклама в конце','YouTube Shorts','Баннер'],
+  ig:['Пост в ленте','Сторис','Reels','Коллаб-пост','Баннер'],
+  tt:['Видео с интеграцией','Дуэт','Прямой эфир','Баннер'],
+};
+const FMT_IDS={
+  tg:['tg_pin','tg_post','tg_story','tg_bot','tg_react','tg_banner'],
+  yt:['yt_pre','yt_mid','yt_end','yt_shorts','yt_banner'],
+  ig:['ig_post','ig_story','ig_reels','ig_collab','ig_banner'],
+  tt:['tt_video','tt_duet','tt_live','tt_banner'],
+};
+/* Второй и третий канал — не выдумка ради красоты: в приложении карточка
+   с тремя площадками обычное дело, и без переключателя её не показать. */
+const MORE={tg:['yt','tt'],yt:['tg','ig'],tt:['ig','tg'],ig:['tt','yt']};
+const round500=v=>Math.max(500,Math.round(v/500)*500);
+
+DATA.forEach((b,i)=>{
+  const mk=(p,subs,views,er,ver,base,howMany)=>{
+    const ids=FMT_IDS[p], names=FMT_NAMES[p];
+    const fmts=[];
+    for(let k=0;k<howMany && k<ids.length;k++){
+      /* Цены заданы явно — как их вбивает блогер. Разброс между
+         форматами взят житейский: длинное дороже короткого. */
+      fmts.push({id:ids[k],name:names[k],price:round500(base*(1+k*0.45-(k?0.15:0)))});
+    }
+    return {p,subs,views,er,ver,fmts,h:b.h};
+  };
+  const list=[mk(b.p,b.subs,b.views,b.er,b.ver,b.price,2+(i%3))];
+  const add=MORE[b.p], howMore=i%3;              /* 0, 1 или 2 добавочных */
+  for(let k=0;k<howMore;k++){
+    const p=add[k], sh=k?0.22:0.45;
+    list.push(mk(p,Math.round(b.subs*sh),Math.round(b.views*sh*1.1),
+      +(b.er*(k?1.35:0.8)).toFixed(1),(i+k)%2,Math.round(b.price*sh),2+((i+k)%2)));
+  }
+  b.ch=list;
+  b.act=0;      /* какой канал показан */
+  b.pick='';    /* какой формат выбран; пусто — показываем «от …» */
+});
 
 /* ═══ утилиты ═══ */
 const money=v=>Math.round(v).toLocaleString('ru-RU').replace(/\u00A0/g,' ');
 const shortNum=v=>v>=1e6?(v/1e6).toFixed(v%1e6?1:0).replace('.',',')+' млн':v>=1e3?Math.round(v/1e3)+' тыс':String(Math.round(v));
 const initials=n=>n.split(' ').map(w=>w[0]).slice(0,2).join('');
 const dec=v=>String(v).replace('.',',');
-const fmtOf=b=>FORMATS[b.p][b.fmt];
-const priceOf=b=>Math.round(b.price*fmtOf(b).pm/500)*500;
-const viewsOf=b=>Math.round(b.views*fmtOf(b).vm);
+/* Всё считается по ВЫБРАННОМУ каналу и выбранному формату: карточка,
+   фильтры, сортировка и корзина смотрят на одни и те же числа. */
+const chOf=b=>b.ch[b.act]||b.ch[0];
+const fmtsOf=b=>chOf(b).fmts;
+const pickOf=b=>fmtsOf(b).find(f=>f.id===b.pick)||null;
+const priceOf=b=>{const f=pickOf(b); return f?f.price:Math.min(...fmtsOf(b).map(x=>x.price));};
+const viewsOf=b=>chOf(b).views;
+const subsOf=b=>chOf(b).subs;
+const erOf=b=>chOf(b).er;
 const cpmOf=b=>Math.round(priceOf(b)/(viewsOf(b)/1000));
+const cpvOf=b=>+(priceOf(b)/Math.max(1,viewsOf(b))).toFixed(2);
 const trustOf=b=>b.ontime*.6+b.again*.4;
 const buzz=ms=>{try{navigator.vibrate&&navigator.vibrate(ms)}catch(e){}};
+
+/* Ориентир рынка — МЕДИАНА, а не среднее: одна карточка с несуразной
+   ценой перекашивает среднее, и «выгода» появляется у всех подряд.
+   Считаем по площадке и только если карточек хватает — иначе «рынок»
+   состоит из трёх человек и цифра врёт. */
+const median=a=>{const x=a.slice().sort((p,q)=>p-q),m=x.length>>1;
+  return x.length%2?x[m]:(x[m-1]+x[m])/2;};
 const MARKET={};
 Object.keys(PLT).forEach(p=>{
-  const arr=DATA.filter(b=>b.p===p).map(b=>Math.round(b.price/(b.views/1000)));
-  MARKET[p]=arr.reduce((a,c)=>a+c,0)/arr.length;
+  const arr=[];
+  DATA.forEach(b=>b.ch.forEach(ch=>{
+    if(ch.p!==p||!ch.fmts.length||!ch.views) return;
+    arr.push(Math.round(Math.min(...ch.fmts.map(f=>f.price))/(ch.views/1000)));
+  }));
+  MARKET[p]=arr.length>=8?median(arr):0;
 });
-const dealPct=b=>Math.round((1-cpmOf(b)/MARKET[b.p])*100);
+const dealPct=b=>{const m=MARKET[chOf(b).p]; return m?Math.round((1-cpmOf(b)/m)*100):0;};
 
 const ALL_TAGS=[...new Set(DATA.flatMap(b=>b.tags))].sort((a,b)=>a.localeCompare(b,'ru'));
 const BUDGETS=[{k:'Любой',v:null},{k:'до 30 тыс',v:[0,30000]},{k:'30–80 тыс',v:[30000,80000]},{k:'80–200 тыс',v:[80000,200000]},{k:'200 тыс+',v:[200000,1e9]}];
@@ -526,40 +613,70 @@ presetBox.addEventListener('click',e=>{
 const grid=document.getElementById('grid');
 grid.innerHTML=Array.from({length:6},()=>'<div class="sk"></div>').join('');
 
+/* Полоса цифр: те же четыре показателя, что в карточке приложения.
+   Прочерк вместо нуля — если блогер число не указал, честнее ничего не
+   показать, чем нарисовать ноль. */
+function statsHTML(b){
+  const ch=chOf(b);
+  const cell=(v,k,none)=>`<div><div class="v num${none?' none':''}">${v}</div><div class="k">${k}</div></div>`;
+  return cell(ch.subs?shortNum(ch.subs):'—','подписчиков',!ch.subs)
+    + cell(ch.views?shortNum(ch.views):'—','просмотров',!ch.views)
+    + cell(ch.er?dec(ch.er)+'%':'—','вовлечённость',!ch.er)
+    + cell(ch.views?dec(cpvOf(b))+' ₽':'—','цена показа',!ch.views);
+}
+
+/* Подпись под именем. Раньше здесь стояли рейтинг, число сделок, время
+   ответа и «свободен» — ни одного из этих чисел у площадки нет. Ставим
+   то, что она знает наверняка: сколько каналов и сколько из них
+   подтверждено входом. Одна короткая строка, без переносов. */
+function metaHTML(b){
+  const ok=b.ch.filter(x=>x.ver).length, n=b.ch.length;
+  /* Одной строкой и одним узлом: разбитая на куски строка переносится
+     по словам и занимает два ряда вместо одного. */
+  if(n===1) return `<span>${ok?'канал подтверждён входом':'канал не подтверждён'}</span>`;
+  const word=n>=5?'каналов':'канала';
+  return `<span><b>${n}</b> ${word} · ${ok?'подтверждено '+ok:'ни один не подтверждён'}</span>`;
+}
+
+function chanHTML(b){
+  if(b.ch.length<2) return '';
+  const ch=chOf(b);
+  return `<div class="chan">${b.ch.map((x,i)=>
+      `<button data-act="ch" data-i="${i}" aria-pressed="${i===b.act}" title="${PLT[x.p].n}"
+        style="--chc:${PLT[x.p].c}">${ICON[x.p]}${x.ver?'<span class="ok">✓</span>':''}</button>`).join('')}
+    <span class="cn"><b>${PLT[ch.p].n}</b> ${ch.h}</span></div>`;
+}
+
+function priceHTML(b){
+  const d=dealPct(b), f=pickOf(b);
+  const sub=[];
+  if(viewsOf(b)) sub.push('CPM '+money(cpmOf(b))+' ₽');
+  if(d>=12) sub.push(`<span class="deal">−${d}% к медиане</span>`);
+  return `<b class="num" data-f="price">${f?'':'от '}${money(priceOf(b))} ₽</b>`
+    + (sub.length?`<small class="num" data-f="cpm">${sub.join(' · ')}</small>`:'');
+}
+
 function cardHTML(b){
-  const d=dealPct(b);
+  const ch=chOf(b);
   return `
   <button class="fav" data-act="fav" aria-pressed="false" aria-label="В избранное">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.6l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5-5.8-3-5.8 3 1.1-6.5L2.6 9.4l6.5-.9L12 2.6z"/></svg>
   </button>
   <div class="head" data-act="open">
-    <div class="ava">${initials(b.n)}<span class="plt">${ICON[b.p]}</span></div>
+    <div class="ava">${initials(b.n)}<span class="plt" data-f="plt">${ICON[ch.p]}</span></div>
     <div class="who">
-      <div class="name"><span>${b.n}</span>${b.ver?VER:''}</div>
-      <div class="handle">${b.h}</div>
-      <div class="meta"><span class="star">★</span><b class="num">${dec(b.r.toFixed(1))}</b>
-        <span class="dot">·</span><span class="num">${b.deals} сделок</span>
-        <span class="dot">·</span><span>отвечает ${b.resp}</span>
-        ${b.free?'<span class="dot">·</span><span class="free">свободен</span>':''}</div>
+      <div class="name"><span>${b.n}</span>${ch.ver?VER:''}</div>
+      <div class="handle" data-f="handle">${ch.h} · ${PLT[ch.p].n}</div>
+      <div class="meta" data-f="meta">${metaHTML(b)}</div>
     </div>
   </div>
   <div class="tags">${b.tags.map(t=>`<span class="tag">${t}</span>`).join('')}</div>
-  <div class="trust">
-    <span><b class="num">${b.ontime}%</b> в срок</span><span class="dot">·</span>
-    <span><b class="num">${b.again}%</b> заказали снова</span><span class="dot">·</span>
-    <span>охват <b class="${b.trend>=0?'up':'down'} num">${b.trend>=0?'+':''}${b.trend}%</b> за месяц</span>
-  </div>
-  <div class="stats">
-    <div><div class="v num">${shortNum(b.subs)}</div><div class="k">подписчиков</div></div>
-    <div><div class="v num" data-f="views">${shortNum(viewsOf(b))}</div><div class="k">просмотров</div></div>
-    <div><div class="v num">${dec(b.er)}%</div><div class="k">вовлечённость</div></div>
-  </div>
-  <div class="fmt">${FORMATS[b.p].map((f,i)=>`<button data-act="fmt" data-i="${i}" aria-pressed="${i===b.fmt}">${f.k}</button>`).join('')}</div>
+  ${chanHTML(b)}
+  <div class="stats" data-f="stats">${statsHTML(b)}</div>
+  <div class="fmt" data-f="fmt">${fmtsOf(b).map(f=>
+    `<button data-act="fmt" data-i="${f.id}" aria-pressed="${f.id===b.pick}">${f.name} · ${money(f.price)} ₽</button>`).join('')}</div>
   <div class="buy">
-    <div class="price">
-      <b class="num" data-f="price">от ${money(priceOf(b))} ₽</b>
-      <small class="num" data-f="cpm">CPM ${money(cpmOf(b))} ₽${d>=12?` · <span class="deal">−${d}% к рынку</span>`:''}</small>
-    </div>
+    <div class="price" data-f="buy">${priceHTML(b)}</div>
     <button class="add" data-act="pick">Добавить</button>
   </div>`;
 }
@@ -570,8 +687,8 @@ function build(){
   DATA.forEach(b=>{
     const el=document.createElement('article');
     el.className='card'; el.dataset.id=b.id;
-    el.style.setProperty('--plt',PLT[b.p].c);
-    el.style.setProperty('--avaBg',PLT[b.p].c+'22');
+    el.style.setProperty('--plt',PLT[chOf(b).p].c);
+    el.style.setProperty('--avaBg',PLT[chOf(b).p].c+'22');
     el.innerHTML=cardHTML(b);
     nodes.set(b.id,el); grid.appendChild(el);
   });
@@ -580,7 +697,8 @@ function build(){
 
 /* ═══ фильтр + сортировка ═══ */
 function pass(b){
-  if(S.plats.size&&!S.plats.has(b.p)) return false;
+  /* Блогер подходит, если ХОТЬ ОДИН его канал на выбранной площадке. */
+  if(S.plats.size&&!b.ch.some(x=>S.plats.has(x.p))) return false;
   for(const id of S.presets){ const p=PRESETS.find(x=>x.id===id); if(p&&!p.f(b)) return false; }
   if(S.onlyFree&&!b.free) return false;
   if(S.onlyVer&&!b.ver) return false;
@@ -590,7 +708,7 @@ function pass(b){
   const su=SUBS[S.fSubs].v; if(su&&(b.subs<su[0]||b.subs>su[1])) return false;
   if(S.fTags.size&&!b.tags.some(t=>S.fTags.has(t))) return false;
   const q=S.q.trim().toLowerCase();
-  if(q&&!(b.n+' '+b.h+' '+b.tags.join(' ')+' '+PLT[b.p].n).toLowerCase().includes(q)) return false;
+  if(q&&!(b.n+' '+b.h+' '+b.tags.join(' ')+' '+b.ch.map(x=>PLT[x.p].n).join(' ')).toLowerCase().includes(q)) return false;
   return true;
 }
 const SORTS={
@@ -633,10 +751,20 @@ function apply(){
 grid.addEventListener('click',e=>{
   const card=e.target.closest('.card'); if(!card) return;
   const b=DATA.find(x=>x.id===card.dataset.id);
+  const ch=e.target.closest('[data-act="ch"]');
+  if(ch){
+    /* Сменили канал — меняется всё: цифры, форматы, цена, значок на
+       аватаре и цвет карточки. Выбранный формат сбрасываем: он был от
+       другого канала. */
+    b.act=+ch.dataset.i; b.pick='';
+    redraw(b,card); if(S.picked.has(b.id)) tray();
+    return;
+  }
   const f=e.target.closest('[data-act="fmt"]');
   if(f){
-    b.fmt=+f.dataset.i;
-    card.querySelectorAll('[data-act="fmt"]').forEach(x=>x.setAttribute('aria-pressed',x===f));
+    /* Повторное нажатие снимает выбор — возвращается «от …». */
+    b.pick = b.pick===f.dataset.i ? '' : f.dataset.i;
+    card.querySelectorAll('[data-act="fmt"]').forEach(x=>x.setAttribute('aria-pressed',x.dataset.i===b.pick));
     refreshPrice(b,card); if(S.picked.has(b.id)) tray();
     return;
   }
@@ -650,10 +778,25 @@ grid.addEventListener('click',e=>{
   if(e.target.closest('[data-act="open"]')) openProfile(b);
 });
 function refreshPrice(b,card){
-  const d=dealPct(b);
-  card.querySelector('[data-f="price"]').textContent='от '+money(priceOf(b))+' ₽';
-  card.querySelector('[data-f="cpm"]').innerHTML='CPM '+money(cpmOf(b))+' ₽'+(d>=12?` · <span class="deal">−${d}% к рынку</span>`:'');
-  card.querySelector('[data-f="views"]').textContent=shortNum(viewsOf(b));
+  card.querySelector('[data-f="buy"]').innerHTML=priceHTML(b);
+  card.querySelector('[data-f="stats"]').innerHTML=statsHTML(b);
+}
+/* Полная перерисовка карточки после смены канала. Пишем не innerHTML
+   всей карточки, а по кускам: иначе слетело бы состояние избранного и
+   «Убрать», которые живут в разметке. */
+function redraw(b,card){
+  const ch=chOf(b);
+  card.style.setProperty('--plt',PLT[ch.p].c);
+  card.style.setProperty('--avaBg',PLT[ch.p].c+'22');
+  card.querySelector('[data-f="plt"]').innerHTML=ICON[ch.p];
+  card.querySelector('[data-f="handle"]').textContent=ch.h+' · '+PLT[ch.p].n;
+  card.querySelector('[data-f="meta"]').innerHTML=metaHTML(b);
+  const nm=card.querySelector('.name');
+  nm.innerHTML='<span>'+b.n+'</span>'+(ch.ver?VER:'');
+  card.querySelectorAll('[data-act="ch"]').forEach(x=>x.setAttribute('aria-pressed',+x.dataset.i===b.act));
+  card.querySelector('[data-f="fmt"]').innerHTML=fmtsOf(b).map(f=>
+    `<button data-act="fmt" data-i="${f.id}" aria-pressed="${f.id===b.pick}">${f.name} · ${money(f.price)} ₽</button>`).join('');
+  refreshPrice(b,card);
 }
 function togglePick(b,card){
   const on=S.picked.has(b.id);
@@ -797,11 +940,13 @@ function openProfile(b){
       <div class="row"><span class="rk">Динамика охвата за месяц</span><span class="rv num" style="color:${b.trend>=0?'var(--ok)':'var(--muted)'}">${b.trend>=0?'+':''}${b.trend}%</span></div>
     </div>
 
-    <div class="pf-h">Форматы и цены</div>
-    <div class="rows">${FORMATS[b.p].map(f=>{
-      const pr=Math.round(b.price*f.pm/500)*500, vw=Math.round(b.views*f.vm);
-      return `<div class="row"><span class="rk">${f.k}<small>≈ ${shortNum(vw)} просмотров</small></span>
-        <span class="rv num">${money(pr)} ₽<small>CPM ${money(pr/(vw/1000))} ₽</small></span></div>`;
+    <div class="pf-h">Форматы и цены${b.ch.length>1?' · '+PLT[chOf(b).p].n:''}</div>
+    <div class="rows">${fmtsOf(b).map(f=>{
+      /* Те же цены, что в карточке: их задал блогер, а не расчёт по
+         коэффициенту. Иначе карточка и шторка показывали бы разное. */
+      const vw=viewsOf(b);
+      return `<div class="row"><span class="rk">${f.name}<small>≈ ${shortNum(vw)} просмотров</small></span>
+        <span class="rv num">${money(f.price)} ₽<small>CPM ${money(f.price/(vw/1000))} ₽</small></span></div>`;
     }).join('')}</div>
 
     <div class="pf-h">Последние размещения</div>
