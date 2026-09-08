@@ -87172,7 +87172,12 @@ html #pg-add-blogger-card #a3 textarea{ caret-color:var(--a3-b3) }
 html #pg-add-blogger-card #a3 :focus-visible{ outline:2px solid var(--a3-t1); outline-offset:2px }
 
 /* ── шапка ─────────────────────────────────────────────────────────── */
-.a3-top{ position:sticky; top:0; z-index:6; background:var(--a3-bg) }
+/* Шапка липкая, и содержимое уезжало под неё без единого признака
+   границы — строка чипов будто обрывалась на полуслове. В приложении
+   у верхней панели всегда есть волосяная линия (.topbar), повторяем
+   её здесь. */
+.a3-top{ position:sticky; top:0; z-index:6; background:var(--a3-bg);
+  border-bottom:1px solid var(--a3-brd) }
 .a3-head{
   display:grid; grid-template-columns:36px minmax(0,1fr) auto; align-items:center; gap:12px;
   padding:16px 16px 12px;
@@ -87205,6 +87210,11 @@ html #pg-add-blogger-card #a3 :focus-visible{ outline:2px solid var(--a3-t1); ou
   transition:background .32s var(--a3-ease), box-shadow .32s var(--a3-ease) }
 .a3-seg.done{ background:rgba(47,108,224,.55) }
 .a3-seg.now{ background:var(--a3-b); box-shadow:0 0 12px rgba(47,108,224,.55) }
+/* Полоска высотой 3px пальцем не берётся — расширяем область нажатия
+   вверх и вниз прозрачным псевдоэлементом, вид не меняется. */
+button.a3-seg{ position:relative; padding:0!important }
+button.a3-seg::after{ content:''; position:absolute; left:0; right:0; top:-11px; bottom:-11px }
+button.a3-seg:active{ opacity:.55 }
 
 /* ── тело шага ─────────────────────────────────────────────────────── */
 .a3-body{ padding:14px 14px 18px }
@@ -87280,18 +87290,17 @@ html #pg-add-blogger-card #a3 :focus-visible{ outline:2px solid var(--a3-t1); ou
   box-shadow:inset 0 0 0 1px rgba(47,108,224,.3) }
 .a3-task-h{ display:flex; align-items:center; gap:12px; width:100%; padding:13px 14px; text-align:left }
 .a3-task-h:active{ background:rgba(255,255,255,.03) }
+/* Значок собирает общий слой bp-soc-icons: он подменяет адрес на
+   фирменный знак и вешает .soc-box-full, который делает плитку круглой
+   и прозрачной (border-radius/background/border/box-shadow там стоят с
+   !important). Нам остаётся только размер и подложка на те доли
+   секунды, пока подмена не случилась. */
 .a3-task-ic{
-  width:46px; height:46px; flex:0 0 auto; border-radius:14px;
-  background-repeat:no-repeat; background-position:center;
-  border:1px solid rgba(255,255,255,.12);
+  width:46px; height:46px; flex:0 0 auto; display:block;
+  border-radius:50%; overflow:hidden;
 }
-/* Фирменный чёрный TikTok (#111) на тёмной карточке пропадал: плитка
-   сливалась и с фоном, и с рамкой. В каталоге эта же беда решена
-   светлым контуром — .stt{background:#111;border:1.5px solid
-   rgba(255,255,255,.18)}. Повторяем приём здесь, чтобы три площадки
-   весили на экране одинаково. */
-.a3-task[data-p="tiktok"] .a3-task-ic{ border-color:rgba(255,255,255,.24) }
-.a3-pill i{ box-shadow:inset 0 0 0 1px rgba(255,255,255,.14) }
+.a3-task-ic:not(.soc-box-full){ background:rgba(255,255,255,.06) }
+.a3-task-ic img{ width:100%; height:100%; display:block; object-fit:contain }
 .a3-task-txt{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:2px }
 .a3-task-txt b{ font-size:13.5px; font-weight:700; letter-spacing:-.2px;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
@@ -87336,7 +87345,11 @@ html #pg-add-blogger-card #a3 :focus-visible{ outline:2px solid var(--a3-t1); ou
 .a3-money input{ width:78px; background:none; border:0; outline:none; text-align:right;
   font-size:14px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--a3-t1) }
 .a3-money input::placeholder{ color:var(--a3-t3); font-weight:500 }
-.a3-money span{ font-size:13px; color:var(--a3-t3) }
+/* Знак рубля стоял на --t3 и на подложке поля давал контраст 4.04 при
+   норме 4.5 — единственная надпись раздела, не дотянувшая до порога.
+   Токен не трогаем (он верен на своих фонах), поднимаем на ступень
+   только здесь: #8b8f9a даёт 4.87. */
+.a3-money span{ font-size:13px; color:#8b8f9a }
 
 /* живой расчёт цены за тысячу — арифметика по цифрам самого блогера */
 .a3-cpm{ display:flex; align-items:center; gap:10px; margin-top:11px; padding:10px 12px; border-radius:12px;
@@ -87451,11 +87464,14 @@ html #pg-add-blogger-card #a3 :focus-visible{ outline:2px solid var(--a3-t1); ou
    Шаг обещает «так она будет выглядеть в каталоге» — обещание должно
    быть правдой. */
 .a3-ava-wrap{ position:relative; flex:0 0 auto }
+/* Кольцо у значка на аватаре рисуем outline'ом, а не тенью: .soc-box-full
+   гасит box-shadow с !important, и тень бы не пережила подмену. */
 .a3-ava-plt{
-  position:absolute; right:-6px; bottom:-6px; width:20px; height:20px; border-radius:50%;
-  background-repeat:no-repeat; background-position:center;
-  box-shadow:0 0 0 2px var(--p-s);
+  position:absolute; right:-6px; bottom:-6px; width:20px; height:20px;
+  border-radius:50%; overflow:hidden; display:block;
+  outline:2px solid var(--p-s);
 }
+.a3-ava-plt img{ width:100%; height:100%; display:block; object-fit:contain }
 .a3-pill.on{
   background:rgba(var(--p-plt,47,108,224),.14);
   box-shadow:inset 0 0 0 1px rgba(var(--p-plt,47,108,224),.42);
@@ -87470,8 +87486,8 @@ html #pg-add-blogger-card #a3 :focus-visible{ outline:2px solid var(--a3-t1); ou
 .a3-pills{ display:flex; flex-wrap:wrap; gap:5px }
 .a3-pill{ height:29px; padding:0 10px 0 7px; border-radius:999px; display:inline-flex; align-items:center; gap:6px;
   background:var(--p-s2); color:var(--p-mu); font-size:12.5px; font-weight:600 }
-.a3-pill i{ width:16px; height:16px; border-radius:5px; display:block; flex:0 0 auto;
-  background-repeat:no-repeat; background-position:center }
+.a3-pill-ic{ width:16px; height:16px; border-radius:50%; overflow:hidden; display:block; flex:0 0 auto }
+.a3-pill-ic img{ width:100%; height:100%; display:block; object-fit:contain }
 .a3-pill b{ font-weight:700; font-variant-numeric:tabular-nums; color:inherit }
 .a3-stats{ display:grid; grid-template-columns:repeat(3,1fr); background:var(--p-s2); border-radius:13px; padding:9px 4px }
 .a3-stats > div{ text-align:center; position:relative }
@@ -87599,10 +87615,17 @@ function icoUrl(pid){
   try{ if(typeof bpUrl === 'function') u = bpUrl(u); }catch(e){}
   return u;
 }
-function icoStyle(pid, size){
-  var p = PLAT[pid];
-  return 'background-color:' + p.bg + ';background-image:url(' + icoUrl(pid) + ');'
-    + 'background-size:' + size + 'px ' + size + 'px;filter:none';
+/* Значок соцсети собираем ТАК ЖЕ, как везде в приложении: пустая
+   плитка с одним <img class="soc-img"> и адресом simple-icons внутри.
+   Дальше работает общий слой bp-soc-icons — он подменяет адрес на
+   настоящий фирменный знак (AVIF 96×96, лежит в файле), гасит подложку
+   и вешает на плитку класс .soc-box-full, который делает её КРУГЛОЙ.
+   Раньше слой рисовал значок сам: одноцветный глиф фоном на цветном
+   квадрате. Это и был чужой значок вместо фирменного, да ещё
+   квадратный. Своей разметки для значков в разделе больше нет. */
+function icoBox(pid, cls){
+  return '<span class="' + cls + '"><img class="soc-img" loading="lazy" alt="" src="'
+    + esc(icoUrl(pid)) + '"></span>';
 }
 
 /* ── Числа ────────────────────────────────────────────────────────────
@@ -88046,7 +88069,7 @@ function chanCard(pid){
   var handle = on ? handleOf(c.url) : '';
   var html = '<div class="a3-task' + (on ? ' on' : '') + (open ? ' open' : '') + (done ? ' done' : '') + '" data-p="' + pid + '">'
     + '<button type="button" class="a3-task-h" data-act="toggle" aria-expanded="' + (open ? 'true' : 'false') + '">'
-    +   '<span class="a3-task-ic" style="' + icoStyle(pid, 22) + '"></span>'
+    +   icoBox(pid, 'a3-task-ic')
     +   '<span class="a3-task-txt"><b>' + esc(p.name) + (handle ? '<em>' + esc(handle) + '</em>' : '') + '</b>'
     +     '<i class="' + (warn ? 'warn' : '') + '">' + esc(on ? chanSub(pid) : p.sub) + '</i></span>'
     +   '<span class="a3-tick">' + IC.tick + '</span>'
@@ -88106,7 +88129,11 @@ function fmtHelp(pid, low){
 function step1Html(){
   var n = S.order.length;
   return '<div class="a3-page">'
-    + '<div class="a3-intro">' + IC.info + '<div><b>Один шаг — один вопрос.</b> Сначала каналы и цены, потом тематики и аудитория, в конце — проверка. Что набрали, то сохранится: можно выйти и вернуться.</div></div>'
+    /* Было четыре строки, которые пересказывали то же, что и полоски
+       шагов со счётчиком «1 / 3» в шапке: экран начинался с абзаца, а
+       карточки каналов уезжали вниз. Оставляем два факта, которых в
+       шапке нет, — порядок шагов одной строкой и обещание черновика. */
+    + '<div class="a3-intro">' + IC.info + '<div><b>Три шага:</b> каналы и цены → тематики и аудитория → проверка. Черновик сохраняется сам — можно выйти и вернуться.</div></div>'
     + '<div class="a3-sec">Где вы публикуетесь<i' + (n ? ' class="on"' : '') + '>' + (n ? n + ' из 3' : 'можно все три') + '</i></div>'
     + '<div class="a3-list">' + ORDER.map(chanCard).join('') + '</div>'
     + '<div class="a3-need" id="a3-need" role="alert" aria-live="polite"></div>'
@@ -88198,7 +88225,7 @@ function previewHtml(){
   var pills = ready.map(function(p){
     var s = numInt(chanOf(p).subs);
     /* Главная площадка в каталоге подсвечена своим цветом (.bpc6-ch.on) */
-    return '<span class="a3-pill' + (p === mp ? ' on' : '') + '"><i style="' + icoStyle(p, 10) + '"></i>' + esc(PLAT[p].name) + (s ? ' <b>' + esc(short(s)) + '</b>' : '') + '</span>';
+    return '<span class="a3-pill' + (p === mp ? ' on' : '') + '">' + icoBox(p, 'a3-pill-ic') + esc(PLAT[p].name) + (s ? ' <b>' + esc(short(s)) + '</b>' : '') + '</span>';
   }).join('');
   var cpm = cpmText(mp);
   var byId = {}; topicsAll().forEach(function(t){ byId[t.id] = t.label; });
@@ -88214,7 +88241,7 @@ function previewHtml(){
   var priceTxt = top ? money(low) + ' – ' + money(top) + ' ₽' : money(low) + ' ₽';
   return '<div class="a3-prev" style="--p-plt:' + pl.rgb + '">'
     + '<div class="a3-prev-top"><div class="a3-ava-wrap"><div class="a3-ava">' + esc(initialsOf(name)) + ava + '</div>'
-    +   '<i class="a3-ava-plt" style="' + icoStyle(mp, 12) + '"></i></div>'
+    +   icoBox(mp, 'a3-ava-plt') + '</div>'
     +   '<div style="min-width:0;flex:1"><div class="a3-prev-name">' + esc(name) + '</div>'
     +   '<div class="a3-prev-sub">' + (handle && handle !== name ? esc(handle) + ' · ' : '') + esc(pl.name) + '</div></div></div>'
     + '<div class="a3-pills">' + pills + '</div>'
@@ -88301,7 +88328,15 @@ function ensure(){
 function headHtml(){
   var st = STEPS[step - 1];
   var segs = '';
-  for(var i = 1; i <= 3; i++) segs += '<span class="a3-seg' + (i < step ? ' done' : i === step ? ' now' : '') + '"></span>';
+  /* Пройденный шаг — кнопка возврата, текущий и будущие — просто
+     полоска. Вперёд полоской не прыгают: туда пускает только «Далее»
+     после проверки stepNeed(). */
+  for(var i = 1; i <= 3; i++){
+    var cl = 'a3-seg' + (i < step ? ' done' : i === step ? ' now' : '');
+    segs += (i < step)
+      ? '<button type="button" class="' + cl + '" data-act="step" data-step="' + i + '" aria-label="Вернуться к шагу ' + i + '"></button>'
+      : '<span class="' + cl + '"></span>';
+  }
   return '<div class="a3-top"><div class="a3-head">'
     + '<button type="button" class="a3-back" data-act="back" aria-label="Назад">' + IC.back + '</button>'
     + '<span class="a3-mid"><span class="a3-title">' + esc(S.id && step === 1 ? 'Ваша карта' : st.title) + '</span><span class="a3-sub">' + esc(st.sub) + '</span></span>'
@@ -88689,6 +88724,28 @@ function onCta(){
 function leaveTo(page){
   try{ if(typeof goTo === 'function'){ goTo(page); return; } }catch(e){}
 }
+/* После публикации раздел сам возвращает на главную — так просил
+   владелец. Зелёную плашку и отметку на кнопке держим ровно столько,
+   чтобы их успели прочитать, и уходим.
+
+   Два условия перед уходом, иначе человека выдернет с чужого экрана:
+   · раздел всё ещё открыт — если за эту секунду нажали «Открыть
+     каталог» или «назад», мы уже не здесь и трогать ничего нельзя;
+   · ничего не начали править — `dirty()` становится истинным от первой
+     же правки, и уводить человека посреди набора нельзя. */
+var _homeT = null;
+function homeAfterPublish(){
+  clearTimeout(_homeT);
+  _homeT = setTimeout(function(){
+    _homeT = null;
+    try{
+      var pg = document.getElementById('pg-add-blogger-card');
+      if(!pg || !pg.classList.contains('on')) return;
+      if(dirty()) return;
+      leaveTo('home');
+    }catch(e){ E(e); }
+  }, 1400);
+}
 function leave(){
   /* Раньше здесь звался abcBack() спрятанного старого мастера: он смотрел
      на СВОЙ номер шага и мог никуда не уйти. Уходим сами. */
@@ -88787,6 +88844,7 @@ function publish(){
        перерисовывает через шесть секунд, больше нет. */
     _saved = sign(S); S.done = 1;
     render(); scrollTop();
+    homeAfterPublish();
   }catch(e){ E(e); toast('Не удалось сохранить карту'); }
 }
 
