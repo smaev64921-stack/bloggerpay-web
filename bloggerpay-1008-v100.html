@@ -87374,6 +87374,39 @@ button.a3-seg:active{ opacity:.55 }
   border-radius:999px; border:1px solid var(--a3-brd)!important; color:var(--a3-t3); font-size:12.5px; font-weight:600 }
 .a3-ghost.sure{ color:var(--a3-bad); border-color:rgba(240,71,94,.5)!important }
 
+/* ── «Добавить канал»: неприметная кнопка, а не третий равный выбор ──
+   Свои каналы — крупными карточками, остальные площадки за ней. */
+.a3-add-ch{
+  display:block; width:100%; height:42px; margin:2px 0 12px; border-radius:12px;
+  border:1px dashed var(--a3-brd2)!important; background:transparent!important;
+  color:var(--a3-t3); font-size:13px; font-weight:600;
+  transition:color .16s var(--a3-ease), border-color .16s var(--a3-ease);
+}
+.a3-add-ch:active{ transform:scale(.99) }
+.a3-add-ch.on{ color:var(--a3-b3); border-color:rgba(47,108,224,.45)!important }
+.a3-more{ animation:a3Fold .26s cubic-bezier(.22,1,.36,1) both }
+
+/* ── Список тематик раскрывается ────────────────────────────────────
+   Тридцать чипов стеной занимали весь экран. Свёрнутый вид показывает
+   выбранное одной строкой. */
+.a3-fold{
+  background:var(--a3-card); border:1px solid var(--a3-brd); border-top-color:rgba(255,255,255,.15);
+  border-radius:18px; margin-bottom:14px; overflow:hidden;
+}
+.a3-fold-h{
+  display:flex; align-items:center; gap:10px; width:100%; padding:15px 14px; text-align:left;
+  font-size:14px; font-weight:600; color:var(--a3-t1);
+}
+.a3-fold-h:active{ background:rgba(255,255,255,.03) }
+.a3-fold-t{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.a3-fold:not(.open) .a3-fold-t:empty::before{ content:'Выберите тематики'; color:var(--a3-t3) }
+.a3-fold .a3-chev{ flex:0 0 auto; color:var(--a3-t3); transition:transform .2s var(--a3-ease) }
+.a3-fold.open .a3-chev{ transform:rotate(180deg) }
+.a3-fold-b{ display:none; padding:0 14px 14px }
+.a3-fold.open .a3-fold-b{ display:block; animation:a3Fold .26s cubic-bezier(.22,1,.36,1) both }
+@keyframes a3Fold{ from{ opacity:0; transform:translateY(-6px) } to{ opacity:1; transform:none } }
+@media (prefers-reduced-motion:reduce){ .a3-fold-b, .a3-more{ animation:none!important } }
+
 /* тематики */
 .a3-find{ position:relative; margin-bottom:11px }
 .a3-find svg{ position:absolute; left:12px; top:50%; margin-top:-8px; width:16px; height:16px;
@@ -87687,10 +87720,10 @@ function handleOf(url){
 /* Имя из профиля бывает пустым или мусорным: у входа через Телеграм его
    может не быть вовсе, и в карточке оставалась одна кавычка. Тогда берём
    ник из ссылки на канал — ровно так же поступает карточка в каталоге. */
-function nameOf(u, url){
+function nameOf(u, url, nick){
   var s = String((u && u.name) || '').trim();
   if(s.replace(/[^A-Za-zА-Яа-яЁё0-9]/g, '').length >= 2) return s;
-  return handleOf(url) || 'Блогер';
+  return nick || handleOf(url) || 'Блогер';
 }
 /* Ссылку без схемы сервер выбрасывает вместе со ВСЕЙ площадкой
    (cleanCard: if(url && !/^https?:\/\//) continue), а плейсхолдеры сами
@@ -87712,6 +87745,15 @@ function urlOk(pid, v){
     if(pid === 'tiktok')   return /(^|\.)tiktok\.com$/.test(h);
   }catch(e){ return false; }
   return false;
+}
+/* Ник канала. Сначала то, что сказала САМА площадка при входе
+   (username/title с сервера), и только потом разбор ссылки: у YouTube
+   адрес часто вида /channel/UC… — там ника нет вовсе, и карточка
+   оставалась без имени канала. */
+function nickOf(pid){
+  var c = chanOf(pid);
+  if(c && c.nick) return c.nick;
+  return handleOf(c ? c.url : '');
 }
 function fmtsOf(pid){
   try{ return (typeof ABC_FORMATS !== 'undefined' && ABC_FORMATS[pid]) || []; }catch(e){ return []; }
@@ -87782,11 +87824,12 @@ function uniq(a){
 var S = null, step = 1, opened = false, _doneT = null, _wantId = '';
 function blankChan(){
   return { url:'', subs:0, reach:0, er:0, fmts:{}, sel:{}, keep:{}, names:{},
-           touched:0, bad:0, where:0, vfy:0, wait:0 };
+           touched:0, bad:0, where:0, vfy:0, wait:0, nick:'' };
 }
 function blank(){
   return { id:'', chans:{}, order:[], topics:[], genderF:50, showGender:false,
-           kids:false, showKids:false, msg:'', open:'', find:'', tried:0, done:0 };
+           kids:false, showKids:false, msg:'', open:'', find:'', tried:0, done:0,
+           addOpen:false, topicsOpen:false };
 }
 function chanOf(pid){ return S && S.chans[pid]; }
 
@@ -87993,6 +88036,39 @@ function pullCfg(){
     }).catch(function(){});
   }catch(e){}
 }
+/* Каналы, которые человек уже подтвердил входом (в профиле они видны).
+   Раньше раздел о них не знал: канал в профиле есть, а здесь пустое поле
+   и предложение «Войти через Telegram». Забираем список у сервера и
+   подставляем ссылку, подписчиков и НИК. Ничего не затираем, если
+   человек уже вписал своё. */
+var _chanAsked = false;
+function pullChannels(){
+  if(_chanAsked || !srvOn()) return;
+  _chanAsked = true;
+  try{
+    window.bpSrv.raw('GET', '/api/verify/list').then(function(j){
+      var rows = (j && j.rows) || [];
+      if(!rows.length || !S) return;
+      var got = 0;
+      rows.forEach(function(r){
+        var pid = String((r && r.platform) || '').toLowerCase();
+        if(!PLAT[pid]) return;
+        var c = chanOf(pid);
+        if(!c){ c = S.chans[pid] = blankChan(); S.order.push(pid); }
+        if(!String(c.url || '').trim() && r.url) c.url = String(r.url);
+        if(!numInt(c.subs) && numInt(r.subs)) c.subs = numInt(r.subs);
+        if(!c.nick) c.nick = String(r.username || r.title || '').slice(0, 40);
+        c.vfy = 1;
+        got++;
+      });
+      if(got && opened){
+        if(!S.open && S.order.length === 1) S.open = S.order[0];
+        saveDraft();
+        if(step === 1) paintList();
+      }
+    }).catch(function(){});
+  }catch(e){}
+}
 function vfyOn(pid){
   if(pid !== 'youtube' && pid !== 'tiktok') return false;
   if(typeof window.bpAbcVerify !== 'function' || !srvOn()) return false;
@@ -88069,7 +88145,7 @@ function chanCard(pid){
   var p = PLAT[pid], c = chanOf(pid);
   var on = !!c, open = on && S.open === pid, done = on && chanReady(pid);
   var warn = on ? chanWarn(pid) : '';
-  var handle = on ? handleOf(c.url) : '';
+  var handle = on ? nickOf(pid) : '';
   var html = '<div class="a3-task' + (on ? ' on' : '') + (open ? ' open' : '') + (done ? ' done' : '') + '" data-p="' + pid + '">'
     + '<button type="button" class="a3-task-h" data-act="toggle" aria-expanded="' + (open ? 'true' : 'false') + '">'
     +   icoBox(pid, 'a3-task-ic')
@@ -88129,25 +88205,40 @@ function fmtHelp(pid, low){
   if(!low) return 'Поставьте цену хотя бы за один формат — без неё канал не уедет в каталог.';
   return 'В каталоге покажем «от ' + money(low) + ' ₽» — это самая низкая из ваших цен.';
 }
+/* Какие карточки каналов показываем в списке. Считается в ОДНОМ месте:
+   точечная перерисовка paintList() строила список по всем трём
+   площадкам и возвращала на экран те, что мы только что спрятали. */
+function shownChans(){
+  return S.order.length ? S.order.slice() : ORDER.slice();
+}
 function step1Html(){
-  var n = S.order.length;
+  /* Раньше здесь всегда висели ВСЕ три площадки, даже когда канал один
+     и давно заполнен: человек каждый раз выбирал заново из списка, где
+     выбирать нечего. Теперь показываем только СВОИ каналы, а остальные
+     прячем за неприметной кнопкой «Добавить канал». */
+  var mine = S.order.slice();
+  var rest = ORDER.filter(function(p){ return mine.indexOf(p) < 0; });
+  var empty = !mine.length;
+  var show = shownChans();
+  var picker = (!empty && S.addOpen && rest.length)
+    ? '<div class="a3-list a3-more">' + rest.map(chanCard).join('') + '</div>' : '';
+  var addBtn = (!empty && rest.length)
+    ? '<button type="button" class="a3-add-ch' + (S.addOpen ? ' on' : '') + '" data-act="more">'
+      + (S.addOpen ? 'Скрыть' : '+ Добавить канал') + '</button>' : '';
   return '<div class="a3-page">'
-    /* Было четыре строки, которые пересказывали то же, что и полоски
-       шагов со счётчиком «1 / 3» в шапке: экран начинался с абзаца, а
-       карточки каналов уезжали вниз. Оставляем два факта, которых в
-       шапке нет, — порядок шагов одной строкой и обещание черновика. */
     + '<div class="a3-intro">' + IC.info + '<div><b>Три шага:</b> каналы и цены → тематики и аудитория → проверка. Черновик сохраняется сам — можно выйти и вернуться.</div></div>'
-    + '<div class="a3-sec">Где вы публикуетесь<i' + (n ? ' class="on"' : '') + '>' + (n ? n + ' из 3' : 'можно все три') + '</i></div>'
-    + '<div class="a3-list">' + ORDER.map(chanCard).join('') + '</div>'
+    + '<div class="a3-sec">' + (empty ? 'Где вы публикуетесь' : 'Ваши каналы')
+    +   '<i' + (mine.length ? ' class="on"' : '') + '>' + (mine.length ? mine.length + ' из 3' : 'можно все три') + '</i></div>'
+    + '<div class="a3-list" data-mark="' + esc(show.join(',') + '|' + (S.addOpen ? 1 : 0)) + '">' + show.map(chanCard).join('') + '</div>'
+    + addBtn + picker
     + '<div class="a3-need" id="a3-need" role="alert" aria-live="polite"></div>'
     + '</div>';
 }
 
 /* ── Шаг 2 · о канале ─────────────────────────────────────────────── */
 function chipsHtml(){
-  var f = String(S.find || '').trim().toLowerCase();
-  var list = topicsAll().filter(function(t){ return !f || t.label.toLowerCase().indexOf(f) >= 0; });
-  if(!list.length) return '<div class="a3-none">Ничего не нашли. Возьмите «Другое» — рекламодатели ищут ещё и по названию канала.</div>';
+  var list = topicsAll();
+  if(!list.length) return '';
   var full = S.topics.length >= 5;
   return list.map(function(t){
     var on = S.topics.indexOf(t.id) >= 0;
@@ -88156,14 +88247,23 @@ function chipsHtml(){
   }).join('');
 }
 function step2Html(){
+  var byId = {}; topicsAll().forEach(function(t){ byId[t.id] = t.label; });
+  var chosen = S.topics.map(function(id){ return byId[id] || id; });
+  var open = S.topicsOpen || !S.topics.length;
   return '<div class="a3-page">'
     + '<div class="a3-intro">' + IC.info + '<div>По тематикам рекламодатели ищут в каталоге. Выберите <b>от 3 до 5</b> самых точных — лишние только размывают.</div></div>'
     + '<div class="a3-sec">Тематики<i' + (S.topics.length ? ' class="on"' : '') + '>' + S.topics.length + ' из 5</i></div>'
-    + '<div class="a3-group">'
-    +   '<div class="a3-find">' + IC.find + '<input data-act="find" type="search" inputmode="search" enterkeyhint="done" autocomplete="off"'
-    +     ' aria-label="Поиск тематики" placeholder="Найти тематику" value="' + esc(S.find) + '"></div>'
-    +   '<div class="a3-chips" id="a3-chips">' + chipsHtml() + '</div>'
-    +   '<div class="a3-need" id="a3-need" role="alert" aria-live="polite"></div>'
+    /* Тридцать чипов стеной занимали весь экран, и шаг начинался с
+       перечисления. Теперь это одна строка: что выбрано — видно, список
+       открывается нажатием. Поиска нет: он был нужен только потому, что
+       список был всегда развёрнут. */
+    + '<div class="a3-fold' + (open ? ' open' : '') + '">'
+    +   '<button type="button" class="a3-fold-h" data-act="topics" aria-expanded="' + (open ? 'true' : 'false') + '">'
+    +     '<span class="a3-fold-t">' + (chosen.length ? esc(chosen.join(' · ')) : 'Выберите тематики') + '</span>'
+    +     IC.chev
+    +   '</button>'
+    +   '<div class="a3-fold-b"><div class="a3-chips" id="a3-chips">' + chipsHtml() + '</div>'
+    +   '<div class="a3-need" id="a3-need" role="alert" aria-live="polite"></div></div>'
     + '</div>'
     + '<div class="a3-sec">Аудитория<i>необязательно</i></div>'
     + '<div class="a3-group">'
@@ -88174,14 +88274,6 @@ function step2Html(){
     +     '<span class="a3-gknob" style="left:' + S.genderF + '%"></span>'
     +     '<input class="a3-range" type="range" min="0" max="100" step="5" value="' + S.genderF + '" data-act="gender" aria-label="Доля женщин в аудитории"></div>'
     +     '<div class="a3-grow"><span>' + S.genderF + '% женщины</span><span>' + (100 - S.genderF) + '% мужчины</span></div></div>' : '')
-    +   '<div class="a3-sw"><div class="lb" id="a3-sw-k">Контент для детей<small>Часть рекламодателей это ограничивает</small></div>'
-    +     '<button type="button" class="a3-tg" role="switch" aria-checked="' + (S.kids ? 'true' : 'false') + '" data-act="sw" data-k="kids" aria-labelledby="a3-sw-k"></button></div>'
-    + '</div>'
-    + '<div class="a3-sec">Пара слов рекламодателю<i>необязательно</i></div>'
-    + '<div class="a3-group">'
-    +   '<div class="a3-tawrap"><textarea class="a3-ta" data-act="msg" maxlength="500" aria-label="Пара слов рекламодателю" placeholder="Коротко о канале и о том, с кем интересно работать.">' + esc(S.msg) + '</textarea>'
-    +   '<div class="a3-cnt" id="a3-cnt">' + S.msg.length + ' / 500</div></div>'
-    +   '<div class="a3-help">Видно на вашей странице, когда рекламодатель открывает её из каталога. Например: <b>«Обзоры техники, беру не больше двух интеграций в месяц»</b>.</div>'
     + '</div>'
     + '</div>';
 }
@@ -88222,9 +88314,9 @@ function previewHtml(){
     return '<div class="a3-empty"><h3>Карточки пока нет</h3><p>Вернитесь на первый шаг и добавьте канал со ссылкой и ценой.</p></div>';
   }
   var c = chanOf(mp) || {}, pl = PLAT[mp] || PLAT.youtube;
-  var name = nameOf(u, c.url);
+  var name = nameOf(u, c.url, nickOf(mp));
   var ava = (u && u.avatar) ? '<img alt="" src="' + esc(u.avatar) + '" onerror="this.remove()">' : '';
-  var handle = handleOf(c.url);
+  var handle = nickOf(mp);
   var pills = ready.map(function(p){
     var s = numInt(chanOf(p).subs);
     /* Главная площадка в каталоге подсвечена своим цветом (.bpc6-ch.on) */
@@ -88403,7 +88495,6 @@ function putFocus(){
     var f = _focus, sel = '';
     var inTask = f.p ? '.a3-task[data-p="' + f.p + '"] ' : '';
     if(f.act === 'msg') sel = '[data-act="msg"]';
-    else if(f.act === 'find') sel = '[data-act="find"]';
     else if(f.fmt) sel = inTask + '[data-fmt="' + f.fmt + '"]';
     else if(f.f) sel = inTask + '[data-f="' + f.f + '"]';
     else if(f.act === 'topic' && f.id) sel = '[data-act="topic"][data-id="' + f.id + '"]';
@@ -88433,8 +88524,15 @@ function paintList(){
   if(!root) return;
   var host = root.querySelector('.a3-list');
   if(!host) return render(false);
+  var show = shownChans();
+  /* Состав списка изменился (добавили или убрали канал) — точечной
+     перерисовкой не обойтись: меняются и заголовок, и кнопка «Добавить
+     канал», и список оставшихся площадок. */
+  var mark = show.join(',') + '|' + (S.addOpen ? 1 : 0);
+  if(host.getAttribute('data-mark') !== mark && host.getAttribute('data-mark') !== null) return render(false);
   grabFocus();
-  host.innerHTML = ORDER.map(chanCard).join('');
+  host.innerHTML = show.map(chanCard).join('');
+  host.setAttribute('data-mark', mark);
   var sec = root.querySelector('.a3-sec i');
   if(sec){ sec.textContent = S.order.length ? S.order.length + ' из 3' : 'можно все три'; sec.className = S.order.length ? 'on' : ''; }
   paintFoot();
@@ -88540,7 +88638,6 @@ function onInput(ev){
       var cnt = document.getElementById('a3-cnt'); if(cnt) cnt.textContent = S.msg.length + ' / 500';
       paintFoot(); saveDraft(); return;
     }
-    if(act === 'find'){ S.find = String(t.value || '').slice(0, 40); paintChips(); return; }
     if(act === 'gender'){
       S.genderF = Math.max(0, Math.min(100, parseInt(t.value, 10) || 0));
       var bar = root.querySelector('.a3-gbar i'), row = root.querySelector('.a3-grow');
@@ -88576,7 +88673,7 @@ function paintChanHead(pid){
     var warn = chanWarn(pid);
     var i = box.querySelector('.a3-task-txt i');
     if(i){ i.textContent = chanSub(pid); i.classList.toggle('warn', !!warn); }
-    var b = box.querySelector('.a3-task-txt b'), h = handleOf(c.url);
+    var b = box.querySelector('.a3-task-txt b'), h = nickOf(pid);
     if(b) b.innerHTML = esc(PLAT[pid].name) + (h ? '<em>' + esc(h) + '</em>' : '');
     box.classList.toggle('done', chanReady(pid));
     var inp = box.querySelector('[data-f="url"]');
@@ -88633,11 +88730,13 @@ function onClick(ev){
     if(act === 'back'){ if(step > 1){ step--; render(); scrollTop(); } else leave(); return; }
     if(act === 'step'){ step = parseInt(t.getAttribute('data-step'), 10) || 1; if(step > 3) step = 3; render(); scrollTop(); return; }
     if(act === 'tocat'){ leaveTo('home'); return; }
+    if(act === 'more'){ S.addOpen = !S.addOpen; render(false); return; }
+    if(act === 'topics'){ S.topicsOpen = !S.topicsOpen; render(false); return; }
     if(act === 'toggle'){
       var pid = t.closest('.a3-task').getAttribute('data-p');
       if(!chanOf(pid)){
         S.chans[pid] = blankChan(); S.order.push(pid);
-        S.open = pid; paintList();
+        S.open = pid; S.addOpen = false; render(false);
         var inp = root.querySelector('.a3-task[data-p="' + pid + '"] [data-f="url"]');
         if(inp) setTimeout(function(){ try{ inp.focus(); }catch(e){} }, 90);
         return;
@@ -88696,7 +88795,16 @@ function onClick(ev){
       if(S.topics.indexOf(id) >= 0) S.topics = S.topics.filter(function(x){ return x !== id; });
       else if(S.topics.length < 5) S.topics.push(id);
       else { need('Больше пяти тематик не выбрать — снимите лишнюю'); return; }
-      paintChips(); return;
+      S.topicsOpen = true;
+      paintChips();
+      var head = root.querySelector('.a3-fold-t');
+      if(head){
+        var byId = {}; topicsAll().forEach(function(x){ byId[x.id] = x.label; });
+        head.textContent = S.topics.length
+          ? S.topics.map(function(x){ return byId[x] || x; }).join(' · ')
+          : 'Выберите тематики';
+      }
+      return;
     }
     if(act === 'sw'){
       var k = t.getAttribute('data-k'); if(!k) return;
@@ -88766,7 +88874,7 @@ function publish(){
     var ready = readyChans(), mp = mainPid();
     /* Пустое или мусорное имя из профиля в каталог не пускаем: там его
        всё равно подменяет карточка, а в записи оставалась одна кавычка. */
-    var name = nameOf(u, (chanOf(mp) || {}).url);
+    var name = nameOf(u, (chanOf(mp) || {}).url, nickOf(mp));
     var initials = initialsOf(name);
     var colors = ['#2f6ce0,#1b49a8','#06b6d4,#3b82f6','#f6a823,#f0642a','#6366f1,#818cf8','#e8305a,#c2569c'];
     var col = colors[Math.abs(String(name).split('').reduce(function(a, ch){ return a + ch.charCodeAt(0); }, 0)) % colors.length];
@@ -88884,14 +88992,17 @@ function open(){
     var d = loadDraft(card ? card.id : '');
     if(d && sign(d) !== _saved){ d.id = S.id; S = d; }
     step = 1; S.done = 0; S.tried = 0; S.find = '';
+    S.addOpen = false; S.topicsOpen = !S.topics.length;
     S.open = S.order.length === 1 ? S.order[0] : '';
     if(foot) foot.style.display = '';
     render(); scrollTop();
     pullCfg();
+    pullChannels();
   }catch(e){ E(e); }
 }
 function close(){
   try{
+    _chanAsked = false;
     if(_doneT){ clearTimeout(_doneT); _doneT = null; }
     if(S) saveDraft();
     if(foot){ foot.style.display = 'none'; foot.classList.remove('typing'); }
