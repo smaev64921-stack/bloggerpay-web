@@ -84271,22 +84271,22 @@ html #catBloggerList .blc.bpc5 .bpc5-msg::before{
 
 /* ── панель сделки ──────────────────────────────────────────────── */
 html #catBloggerList .blc.bpc5 .bpc5-deal{ display:flex; flex-direction:column; gap:9px }
-html #catBloggerList .blc.bpc5 .bpc5-fmt{
+html #catBloggerList .blc.bpc5.bpc6 .bpc5-fmt{
   display:flex; gap:6px; overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch;
 }
-html #catBloggerList .blc.bpc5 .bpc5-fmt::-webkit-scrollbar{ display:none }
-html #catBloggerList .blc.bpc5 .bpc5-fmt button{
+html #catBloggerList .blc.bpc5.bpc6 .bpc5-fmt::-webkit-scrollbar{ display:none }
+html #catBloggerList .blc.bpc5.bpc6 .bpc5-fmt button{
   flex:0 0 auto; height:30px; padding:0 12px; border-radius:999px;
   background:rgba(255,255,255,.05); border:1px solid var(--brd,rgba(255,255,255,.07));
   font-size:12.5px; font-weight:600; color:var(--t3); cursor:pointer; white-space:nowrap;
   transition:background .15s,color .15s,border-color .15s;
 }
-html #catBloggerList .blc.bpc5 .bpc5-fmt button b{ color:var(--t2); font-weight:800 }
-html #catBloggerList .blc.bpc5 .bpc5-fmt button[aria-pressed="true"]{
+html #catBloggerList .blc.bpc5.bpc6 .bpc5-fmt button b{ color:var(--t2); font-weight:800 }
+html #catBloggerList .blc.bpc5.bpc6 .bpc5-fmt button[aria-pressed="true"]{
   background:var(--plt-a,rgba(255,255,255,.1)); color:var(--t1);
   border-color:var(--plt,rgba(255,255,255,.2));
 }
-html #catBloggerList .blc.bpc5 .bpc5-fmt button[aria-pressed="true"] b{ color:var(--t1) }
+html #catBloggerList .blc.bpc5.bpc6 .bpc5-fmt button[aria-pressed="true"] b{ color:var(--t1) }
 
 html #catBloggerList .blc.bpc5 .bpc5-buy{
   display:flex; align-items:center; gap:10px;
@@ -87532,6 +87532,27 @@ button.a3-seg:active{ opacity:.55 }
 .a3-stats .k{ font-size:11px; color:var(--p-mu2); margin-top:1px }
 .a3-tags{ display:flex; flex-wrap:wrap; gap:5px }
 .a3-tag{ font-size:12px; padding:3px 8px; border-radius:8px; background:var(--p-s2); color:var(--p-mu) }
+/* Строка аудитории и ряд размещений — числа сняты с настоящей карточки
+   каталога (.blc-aud-row и .bpc5-fmt), чтобы предпросмотр не отличался
+   от того, что человек увидит на главной. */
+.a3-aud{ display:flex; align-items:center; gap:7px }
+.a3-aud .k, .a3-aud .v{ font-size:11px; font-weight:500; color:var(--p-mu2) }
+.a3-aud .bar{ width:52px; height:3px; border-radius:999px; overflow:hidden; display:block;
+  background:rgba(59,130,246,.45); flex:0 0 auto }
+.a3-aud .bar i{ display:block; height:100%; background:rgba(236,72,153,.75) }
+.a3-pick{ font-size:11px; font-weight:700; letter-spacing:.4px; text-transform:uppercase;
+  color:var(--p-mu2); margin:2px 0 -4px }
+.a3-fmtrow{ display:flex; gap:7px; overflow:hidden }
+.a3-fmtrow span{
+  flex:0 0 auto; height:29px; padding:0 11px; border-radius:999px;
+  display:inline-flex; align-items:center; white-space:nowrap;
+  background:rgba(255,255,255,.045); border:1px solid rgba(255,255,255,.14);
+  font-size:12.5px; font-weight:650; color:var(--p-mu);
+}
+.a3-fmtrow span.on{
+  background:rgba(var(--p-plt,47,108,224),.16); border-color:rgba(var(--p-plt,47,108,224),.55);
+  color:#fff; box-shadow:inset 0 0 0 1px rgba(var(--p-plt,47,108,224),.25);
+}
 .a3-buy{ display:flex; align-items:flex-end; gap:10px }
 .a3-price b{ display:block; font-size:19.5px; font-weight:780; letter-spacing:-.035em }
 .a3-price b[data-long="1"]{ font-size:16.5px }
@@ -87999,6 +88020,16 @@ function cpmNum(pid){
   if(!p || !r) return 0;
   return (p / r) * 1000;
 }
+/* Цена за тысячу считается по ТОЙ ЖЕ цене, что стоит в карточке.
+   Иначе рядом оказывались цена первого размещения и CPM самого
+   дешёвого — два числа про разные размещения. */
+function cpmFor(price, reach){
+  price = numInt(price, MAXP); reach = numInt(reach);
+  if(!price || !reach) return '';
+  var v = (price / reach) * 1000;
+  if(v >= 1000000) return short(v) + ' ₽';
+  return (v < 1 ? dec(v.toFixed(2)) : v < 100 ? dec(v.toFixed(1)) : money(v)) + ' ₽';
+}
 function cpmText(pid){
   var v = cpmNum(pid);
   if(!v) return '';
@@ -88307,6 +88338,30 @@ function sanityHtml(pid){
   if(!list.length) return '';
   return '<div class="a3-note">' + IC.warn + '<div>' + list.map(function(t){ return esc(t); }).join('<br>') + '</div></div>';
 }
+/* Строка аудитории — ровно та, что в каталоге (.blc-aud-row): подпись
+   11/500, указатель 52×3, значения справа. Владелец сравнил превью с
+   главной и увидел разницу — значит, обещание «так она будет выглядеть
+   в каталоге» было неправдой. */
+function audRow(){
+  if(!S.showGender) return '';
+  return '<div class="a3-aud"><span class="k">Аудитория</span>'
+    + '<span class="bar"><i style="width:' + S.genderF + '%"></i></span>'
+    + '<span class="v">' + S.genderF + '% Ж · ' + (100 - S.genderF) + '% М</span></div>';
+}
+/* Ряд размещений — он же в каталоге. Здесь он неподвижный: это
+   предпросмотр, выбирать в нём нечего. */
+function fmtRow(pid, c){
+  var kn = knownFmt(pid), out = [];
+  Object.keys(c.fmts || {}).forEach(function(fid){
+    if(!numInt(c.fmts[fid], MAXP)) return;
+    out.push({ id: fid, name: (kn[fid] && kn[fid].name) || c.names[fid] || 'Размещение' });
+  });
+  if(out.length < 2) return '';
+  return '<div class="a3-pick">Выберите размещение</div>'
+    + '<div class="a3-fmtrow">' + out.map(function(f, i){
+        return '<span class="' + (i === 0 ? 'on' : '') + '">' + esc(f.name) + '</span>';
+      }).join('') + '</div>';
+}
 function previewHtml(){
   var u = me();
   var ready = readyChans(), mp = mainPid();
@@ -88322,18 +88377,18 @@ function previewHtml(){
     /* Главная площадка в каталоге подсвечена своим цветом (.bpc6-ch.on) */
     return '<span class="a3-pill' + (p === mp ? ' on' : '') + '">' + icoBox(p, 'a3-pill-ic') + esc(PLAT[p].name) + (s ? ' <b>' + esc(short(s)) + '</b>' : '') + '</span>';
   }).join('');
-  var cpm = cpmText(mp);
   var byId = {}; topicsAll().forEach(function(t){ byId[t.id] = t.label; });
   /* Каталог показывает все выбранные тематики (их и так не больше пяти),
      а предпросмотр обрезал до трёх — карточка выглядела беднее правды. */
   var tags = uniq(S.topics).slice(0, 5).map(function(id){ return '<span class="a3-tag">' + esc(byId[id] || id) + '</span>'; }).join('');
-  var low = lowPrice(mp), fmtName = '';
-  var kn = knownFmt(mp);
-  Object.keys(c.fmts).forEach(function(k){ if(numInt(c.fmts[k], MAXP) === low && !fmtName) fmtName = (kn[k] && kn[k].name) || c.names[k] || ''; });
-  var prices = Object.keys(c.fmts).map(function(k){ return numInt(c.fmts[k], MAXP); }).filter(Boolean).sort(function(a,b){ return a-b; });
-  var hi = prices.length ? prices[prices.length - 1] : 0;
-  var top = hi > low ? hi : 0;      /* «1 – 1 ₽» вилкой не бывает */
-  var priceTxt = top ? money(low) + ' – ' + money(top) + ' ₽' : money(low) + ' ₽';
+  /* Цена — ПЕРВОГО размещения, как и в каталоге: там вилку убрали, и
+     превью обязано показывать то же самое число. */
+  var kn = knownFmt(mp), firstId = '', fmtName = '';
+  Object.keys(c.fmts).forEach(function(k){ if(!firstId && numInt(c.fmts[k], MAXP)) firstId = k; });
+  var first = numInt(c.fmts[firstId], MAXP) || lowPrice(mp);
+  fmtName = (kn[firstId] && kn[firstId].name) || c.names[firstId] || '';
+  var priceTxt = money(first) + ' ₽';
+  var cpm = cpmFor(first, c.reach);
   return '<div class="a3-prev" style="--p-plt:' + pl.rgb + '">'
     + '<div class="a3-prev-top"><div class="a3-ava-wrap"><div class="a3-ava">' + esc(initialsOf(name)) + ava + '</div>'
     +   icoBox(mp, 'a3-ava-plt') + '</div>'
@@ -88344,13 +88399,11 @@ function previewHtml(){
     +   '<div><div class="v">' + (numInt(c.reach) ? esc(short(c.reach)) : '—') + '</div><div class="k">Просмотры</div></div>'
     +   '<div><div class="v">' + (numEr(c.er) ? esc(erText(c.er)) : '—') + '</div><div class="k">ER</div></div>'
     +   '<div><div class="v">' + (cpm ? esc(cpm) : '—') + '</div><div class="k">CPM</div></div></div>'
-    + (S.showGender
-        ? '<div class="a3-aud"><span>Аудитория</span><span class="a3-aud-bar"><i style="width:'
-          + S.genderF + '%"></i></span><span>' + S.genderF + '% Ж · ' + (100 - S.genderF) + '% М</span></div>'
-        : '')
+    + audRow()
     + (tags ? '<div class="a3-tags">' + tags + '</div>' : '')
+    + fmtRow(mp, c)
     + '<div class="a3-buy"><div class="a3-price"><b' + (priceTxt.length > 13 ? ' data-long="1"' : '') + '>' + esc(priceTxt) + '</b>'
-    +   (fmtName && !top ? '<small>' + esc(fmtName) + '</small>' : '') + '</div><div class="a3-add">Добавить</div></div>'
+    +   (fmtName ? '<small>' + esc(fmtName) + '</small>' : '') + '</div><div class="a3-add">Добавить в кампанию</div></div>'
     + '</div>'
     + sanityHtml(mp)
     + (ready.length > 1 ? '<div class="a3-help" style="margin:-8px 2px 14px">В полосе — цифры канала <b>' + esc(pl.name)
@@ -88906,7 +88959,12 @@ function publish(){
       var c = chanOf(pid);
       stash[pid] = { url: String(c.url || ''), subs: numInt(c.subs), reach: numInt(c.reach), er: numEr(c.er), fmts: c.fmts };
     });
-    var m = chanOf(mp) || {}, cpm = cpmText(mp);
+    var m = chanOf(mp) || {};
+    /* В карту пишем цену за тысячу по ПЕРВОМУ размещению — ровно то
+       число, которое каталог покажет рядом с ценой. */
+    var firstP = 0;
+    Object.keys(m.fmts || {}).forEach(function(k){ if(!firstP) firstP = numInt(m.fmts[k], MAXP); });
+    var cpm = cpmFor(firstP || lowPrice(mp), m.reach);
     var old = (S.id && cardById(S.id)) || myCard();
     var sinceText = '';
     try{
@@ -89077,11 +89135,11 @@ function onPage(){
    почти одинаковых серых, оба похожи на подпись, а не на кнопку.
    Стало: у невыбранных видимый кант и стрелка-подсказка у ряда, у
    выбранного — заливка цветом площадки и кольцо. */
-html #catBloggerList .blc.bpc5 .bpc5-fmt{
+html #catBloggerList .blc.bpc5.bpc6 .bpc5-fmt{
   gap:7px!important; padding:1px 0 2px!important;
   scroll-behavior:smooth;
 }
-html #catBloggerList .blc.bpc5 .bpc5-fmt button{
+html #catBloggerList .blc.bpc5.bpc6 .bpc5-fmt button{
   height:32px!important; padding:0 13px!important;
   background:rgba(255,255,255,.045)!important;
   border:1px solid rgba(255,255,255,.14)!important;
@@ -89091,8 +89149,8 @@ html #catBloggerList .blc.bpc5 .bpc5-fmt button{
              color .18s cubic-bezier(.4,0,.2,1),
              transform .12s cubic-bezier(.4,0,.2,1)!important;
 }
-html #catBloggerList .blc.bpc5 .bpc5-fmt button:active{ transform:scale(.95)!important }
-html #catBloggerList .blc.bpc5 .bpc5-fmt button[aria-pressed="true"]{
+html #catBloggerList .blc.bpc5.bpc6 .bpc5-fmt button:active{ transform:scale(.95)!important }
+html #catBloggerList .blc.bpc5.bpc6 .bpc5-fmt button[aria-pressed="true"]{
   background:rgba(var(--plt-rgb,47,108,224),.16)!important;
   border-color:rgba(var(--plt-rgb,47,108,224),.55)!important;
   color:#fff!important;
@@ -89100,7 +89158,7 @@ html #catBloggerList .blc.bpc5 .bpc5-fmt button[aria-pressed="true"]{
 }
 /* Подпись над рядом: без неё ряд читается как перечисление, а не как
    выбор. Ставим один раз, самим рядом, а не в разметку карточки. */
-html #catBloggerList .blc.bpc5 .bpc7-pick{
+html #catBloggerList .blc.bpc5.bpc6 .bpc7-pick{
   font-size:11px; font-weight:700; letter-spacing:.4px; text-transform:uppercase;
   color:var(--t3,#7d818c); margin:0 2px 6px; display:block;
 }
@@ -89111,11 +89169,11 @@ html #catBloggerList .blc.bpc5 .bpc7-pick{
   0%{ opacity:0; transform:translateY(4px) }
   100%{ opacity:1; transform:none }
 }
-html #catBloggerList .blc.bpc5 .bpc5-price.bpc5-swap b,
-html #catBloggerList .blc.bpc5 .bpc5-price.bpc5-swap small{
+html #catBloggerList .blc.bpc5.bpc6 .bpc5-price.bpc5-swap b,
+html #catBloggerList .blc.bpc5.bpc6 .bpc5-price.bpc5-swap small{
   animation:bpc7Swap .26s cubic-bezier(.22,1,.36,1) both;
 }
-html #catBloggerList .blc.bpc5 .bpc5-price.bpc5-swap small{ animation-delay:.04s }
+html #catBloggerList .blc.bpc5.bpc6 .bpc5-price.bpc5-swap small{ animation-delay:.04s }
 
 /* ── 3 · Переключение площадки — тоже движением ────────────────────
    Пилюли каналов и полоса чисел меняются местами скачком; даём им
@@ -89159,6 +89217,98 @@ html #catBloggerList .blc .blc-bm{
 html #catBloggerList .blc .blc-bm:active{ transform:scale(.92)!important }
 html #catBloggerList .blc .bpk-btn{
   width:32px!important; height:32px!important; border-radius:11px!important;
+}
+
+/* ── 5 · Движение карточки ─────────────────────────────────────────
+   «Анимаций не хватает, прям много нужно». Движение здесь не украшение:
+   каталог — это список, по которому листают, и глазу нужно понимать, что
+   появилось, что нажалось и что изменилось.
+
+   Всё строится на transform и opacity — только их браузер считает не
+   пересчитывая вёрстку, поэтому список остаётся плавным на телефоне.
+   При системной настройке «меньше движения» всё гаснет разом (в конце). */
+
+/* Появление карточки: она приезжает снизу и слегка приближается.
+   Задержку по номеру в списке ставит скрипт — из-за неё карточки
+   входят каскадом, а не все разом. */
+@keyframes bpc7Card{
+  0%{ opacity:0; transform:translateY(14px) scale(.985) }
+  100%{ opacity:1; transform:none }
+}
+html #catBloggerList .blc.bpc7-in{
+  animation:bpc7Card .44s cubic-bezier(.22,1,.36,1) both;
+}
+/* Внутренности догоняют карточку — короткий каскад внутри неё. */
+html #catBloggerList .blc.bpc7-in .bpc5-head,
+html #catBloggerList .blc.bpc7-in .bls,
+html #catBloggerList .blc.bpc7-in .blc-stats,
+html #catBloggerList .blc.bpc7-in .blc-tags,
+html #catBloggerList .blc.bpc7-in .bpc5-buy{
+  animation:bpc7Rise .4s cubic-bezier(.22,1,.36,1) both;
+}
+html #catBloggerList .blc.bpc7-in .bls,
+html #catBloggerList .blc.bpc7-in .blc-stats{ animation-delay:.05s }
+html #catBloggerList .blc.bpc7-in .blc-tags{ animation-delay:.09s }
+html #catBloggerList .blc.bpc7-in .bpc5-buy{ animation-delay:.13s }
+
+/* Нажатие на карточку — отклик всей плитки, как у настоящей кнопки. */
+html #catBloggerList .blc{
+  transition:transform .16s cubic-bezier(.4,0,.2,1),
+             box-shadow .22s cubic-bezier(.4,0,.2,1),
+             border-color .22s cubic-bezier(.4,0,.2,1);
+  will-change:transform;
+}
+html #catBloggerList .blc:active{ transform:scale(.992) }
+
+/* Пилюля канала: выбранная слегка выступает и получает мягкое свечение
+   цветом площадки — видно, чьи цифры сейчас в полосе. */
+html #catBloggerList .blc .bpc6-ch{
+  transition:transform .2s cubic-bezier(.34,1.28,.64,1),
+             background .2s cubic-bezier(.4,0,.2,1),
+             box-shadow .24s cubic-bezier(.4,0,.2,1),
+             opacity .2s cubic-bezier(.4,0,.2,1)!important;
+}
+html #catBloggerList .blc .bpc6-ch.on{
+  box-shadow:0 3px 14px rgba(var(--plt-rgb,47,108,224),.28)!important;
+}
+html #catBloggerList .blc .bpc6-ch:not(.on){ opacity:.82 }
+
+/* Полоса чисел: при смене канала цифры не просто подменяются, а
+   переезжают — иначе замена читается как случайная перерисовка. */
+@keyframes bpc7Num{
+  0%{ opacity:0; transform:translateY(6px) }
+  100%{ opacity:1; transform:none }
+}
+html #catBloggerList .blc.bpc7-switch .bls-val,
+html #catBloggerList .blc.bpc7-switch .blc-stats .v,
+html #catBloggerList .blc.bpc7-switch .bls-key,
+html #catBloggerList .blc.bpc7-switch .blc-stats .k{
+  animation:bpc7Num .32s cubic-bezier(.22,1,.36,1) both;
+}
+html #catBloggerList .blc.bpc7-switch .bls-val:nth-child(2),
+html #catBloggerList .blc.bpc7-switch .blc-stats > div:nth-child(2) .v{ animation-delay:.05s }
+html #catBloggerList .blc.bpc7-switch .blc-stats > div:nth-child(3) .v{ animation-delay:.1s }
+
+/* Кнопка «Добавить в кампанию»: нажатие и наведение. */
+html #catBloggerList .blc .blc-add, html #catBloggerList .blc .blc-add-remove{
+  transition:transform .14s cubic-bezier(.4,0,.2,1), opacity .16s, box-shadow .22s!important;
+}
+html #catBloggerList .blc .blc-add:active, html #catBloggerList .blc .blc-add-remove:active{
+  transform:scale(.96)!important;
+}
+/* Значок площадки на аватаре — мягкое проявление при смене. */
+html #catBloggerList .blc .bpc5-plt{
+  transition:transform .24s cubic-bezier(.34,1.28,.64,1)!important;
+}
+html #catBloggerList .blc.bpc7-switch .bpc5-plt{ animation:bpc7Pop .34s cubic-bezier(.34,1.28,.64,1) both }
+@keyframes bpc7Pop{ 0%{ transform:scale(.6); opacity:0 } 100%{ transform:none; opacity:1 } }
+
+/* Тег и чип — общий отклик на палец. */
+html #catBloggerList .blc .blc-tag{ transition:background .18s, color .18s }
+
+@media (prefers-reduced-motion:reduce){
+  html #catBloggerList .blc,
+  html #catBloggerList .blc *{ animation:none!important; transition:none!important }
 }
 /* Кто выше — тот и ловит нажатие. Невидимые области соседних кнопок
    всё равно почти касаются, и порядок в разметке решать это не должен:
@@ -89225,11 +89375,70 @@ function flash(card){
   }catch(e){ E(e); }
 }
 
+/* Появление карточек. Каскад — по номеру в списке, но только для тех,
+   кто уже виден: карточка глубоко внизу должна проехать при прокрутке,
+   а не отыграть своё, пока на неё никто не смотрит.
+
+   Класс снимаем через 700 мс. Он с fill:both, и оставшись висеть, он бы
+   заморозил карточку в конечном кадре — а её потом перерисовывают другие
+   слои, и следующая правка уехала бы под чужую анимацию. */
+var seen = (typeof WeakSet === 'function') ? new WeakSet() : null;
+var io = null;
+function playIn(card, i){
+  try{
+    if(!card || (seen && seen.has(card))) return;
+    if(seen) seen.add(card);
+    card.style.animationDelay = Math.min(i, 6) * 55 + 'ms';
+    card.classList.add('bpc7-in');
+    setTimeout(function(){
+      try{ card.classList.remove('bpc7-in'); card.style.animationDelay = ''; }catch(e){}
+    }, 700 + Math.min(i, 6) * 55);
+  }catch(e){ E(e); }
+}
+/* Карточка уже в кадре — играем сразу. Полагаться на одного
+   наблюдателя пересечений нельзя: список лежит в своём прокручиваемом
+   контейнере, и для видимых карточек событие может не прийти вовсе —
+   тогда список просто не появлялся бы. */
+function inView(card){
+  try{
+    var r = card.getBoundingClientRect();
+    if(!r.height) return false;
+    return r.top < (window.innerHeight || 0) - 20 && r.bottom > 0;
+  }catch(e){ return false; }
+}
+function watchIn(card, i){
+  try{
+    if(!card || (seen && seen.has(card))) return;
+    if(inView(card)){ playIn(card, i); return; }
+    if(!window.IntersectionObserver){ playIn(card, i); return; }
+    if(!io){
+      io = new IntersectionObserver(function(list){
+        list.forEach(function(en){
+          if(!en.isIntersecting) return;
+          io.unobserve(en.target);
+          playIn(en.target, Number(en.target.getAttribute('data-bpc7-i')) || 0);
+        });
+      }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+    }
+    card.setAttribute('data-bpc7-i', String(i));
+    io.observe(card);
+    /* Запас. Список лежит в своём прокручиваемом контейнере, и событие
+       пересечения приходит не всегда — без этой страховки карточка ниже
+       экрана не появилась бы вовсе. Полторы секунды: если человек уже
+       долистал, отработает наблюдатель, если нет — карточка всё равно
+       окажется на месте к моменту, когда до неё доедут. */
+    setTimeout(function(){
+      try{ if(!seen || !seen.has(card)) playIn(card, 0); }catch(e){}
+    }, 1500);
+  }catch(e){ playIn(card, i); }
+}
+
 function sweep(){
   try{
-    document.querySelectorAll('#catBloggerList .blc').forEach(function(card){
+    document.querySelectorAll('#catBloggerList .blc').forEach(function(card, i){
       addPickLabel(card);
       paintPlt(card);
+      watchIn(card, i);
     });
   }catch(e){ E(e); }
 }
