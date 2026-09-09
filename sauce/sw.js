@@ -1,5 +1,5 @@
 /* Санчоус — service worker: быстрый повторный запуск и работа офлайн */
-const VERSION = 'sanchous-v2';
+const VERSION = 'sanchous-v3';
 const CORE = [
   './',
   './index.html',
@@ -51,14 +51,22 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // статика — сначала кэш
+  /* Статика — тоже СНАЧАЛА СЕТЬ, кэш только на подхвате.
+     Было «сначала кэш»: правки стилей, скрипта и манифеста не доезжали
+     до человека, пока не сменится работник, — сайт неделю мог жить на
+     прошлой версии, и по нему нельзя было понять, применилась правка или
+     нет. Файлы здесь маленькие и лежат на том же сервере, что и
+     страница; лишний запрос дешевле застрявшей версии. Кэш остаётся
+     ровно для того, ради чего он и нужен: работать без сети. */
   e.respondWith(
-    caches.match(req).then((hit) => hit || fetch(req).then((res) => {
-      if (res && res.status === 200 && res.type === 'basic') {
-        const copy = res.clone();
-        caches.open(VERSION).then((c) => c.put(req, copy));
-      }
-      return res;
-    }))
+    fetch(req)
+      .then((res) => {
+        if (res && res.status === 200 && res.type === 'basic') {
+          const copy = res.clone();
+          caches.open(VERSION).then((c) => c.put(req, copy));
+        }
+        return res;
+      })
+      .catch(() => caches.match(req))
   );
 });

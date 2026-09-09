@@ -633,8 +633,31 @@
 
   /* ---------------- Service worker ---------------- */
   if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
+    /* Был ли работник ДО этой загрузки — запоминаем сразу: ниже по этому
+       и отличаем «встал впервые» от «сменился на новый». */
+    var hadWorker = !!navigator.serviceWorker.controller;
+    var reloaded = false;
+
     window.addEventListener('load', function () {
-      navigator.serviceWorker.register('sw.js').catch(function () { /* офлайн-режим необязателен */ });
+      navigator.serviceWorker.register('sw.js')
+        .then(function (reg) {
+          /* Проверяем обновление при каждом возвращении на страницу:
+             иначе новая версия ждёт следующего захода. */
+          document.addEventListener('visibilitychange', function () {
+            if (!document.hidden) { try { reg.update(); } catch (e) {} }
+          });
+        })
+        .catch(function () { /* офлайн-режим необязателен */ });
+    });
+
+    /* Работник сменился — страница всё ещё показывает файлы прежней
+       версии, которые он успел отдать. Перезагружаемся ОДИН раз, чтобы
+       человеку не приходилось делать это руками. Если работника раньше
+       не было, перезагружать нечего: файлы и так свежие. */
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (!hadWorker || reloaded) return;
+      reloaded = true;
+      location.reload();
     });
   }
 
