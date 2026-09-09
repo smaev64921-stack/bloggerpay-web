@@ -1,0 +1,536 @@
+/* =========================================================
+   САНЧОУС — интерфейс магазина
+   Корзина, избранное, карточка товара, установка приложения
+   ========================================================= */
+
+[hidden]{ display:none !important; }
+
+/* ---------- Иконки в шапке: читаются на любом фоне ---------- */
+.topbar:not(.is-stuck) .icon-btn--fav,
+.topbar:not(.is-stuck) .icon-btn--burger{
+  background:rgba(18,18,16,.62);
+  box-shadow:0 4px 14px rgba(0,0,0,.28);
+}
+.icon-btn--cart{
+  background:var(--red);
+  box-shadow:0 6px 18px rgba(242,11,27,.34);
+}
+.icon-btn--cart:hover{ background:var(--red-dark); }
+.icon-btn--cart .icon-btn__count{
+  top:-2px; right:-2px;
+  background:#fff;
+  color:var(--ink);
+  box-shadow:0 2px 6px rgba(0,0,0,.3);
+}
+.icon-btn--fav.is-on svg{ fill:var(--red); stroke:var(--red); }
+
+/* ---------- Сердечко на карточке ---------- */
+.fav{
+  position:relative;
+  z-index:3;
+  margin-left:auto;
+  width:34px; height:34px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding:0;
+  background:rgba(255,255,255,.9);
+  border:0;
+  border-radius:50%;
+  cursor:pointer;
+  box-shadow:0 3px 10px rgba(0,0,0,.12);
+  transition:transform .2s var(--ease), background-color .2s var(--ease);
+  -webkit-tap-highlight-color:transparent;
+}
+.fav svg{
+  width:18px; height:18px;
+  fill:none; stroke:#3a3a3a; stroke-width:1.9;
+  stroke-linecap:round; stroke-linejoin:round;
+  transition:fill .2s var(--ease), stroke .2s var(--ease);
+}
+.fav:hover{ transform:scale(1.08); }
+.fav[aria-pressed="true"] svg{ fill:var(--red); stroke:var(--red); }
+.fav.is-pop{ animation:pop .42s var(--ease); }
+@keyframes pop{ 35%{ transform:scale(1.28); } 100%{ transform:scale(1); } }
+
+@media (min-width:600px){
+  .fav{ width:38px; height:38px; }
+  .fav svg{ width:20px; height:20px; }
+}
+
+.fav--wide{
+  margin-left:0;
+  width:48px; height:48px;
+  flex:none;
+  background:#f0f0ee;
+  box-shadow:none;
+}
+.fav--wide svg{ width:22px; height:22px; }
+
+/* ---------- Зона открытия карточки ---------- */
+.card__zoom{
+  position:absolute;
+  inset:0;
+  z-index:2;
+  padding:0;
+  background:transparent;
+  border:0;
+  cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+}
+.card__link{
+  padding:0;
+  background:none;
+  border:0;
+  font:inherit;
+  color:inherit;
+  text-align:left;
+  cursor:pointer;
+  transition:color .2s var(--ease);
+}
+.card__link:hover{ color:var(--red); }
+
+/* ---------- Счётчик количества ---------- */
+.stepper{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  width:100%;
+  min-height:38px;
+  padding:0 3px;
+  border-radius:999px;
+  background:var(--red);
+  color:#fff;
+  box-shadow:0 6px 16px rgba(242,11,27,.24);
+  animation:swap .26s var(--ease);
+}
+@keyframes swap{ from{ transform:scale(.94); opacity:.4; } to{ transform:none; opacity:1; } }
+
+.stepper button{
+  width:36px;
+  min-height:38px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding:0;
+  background:none;
+  border:0;
+  border-radius:999px;
+  color:#fff;
+  cursor:pointer;
+  transition:background-color .18s var(--ease);
+  -webkit-tap-highlight-color:transparent;
+}
+.stepper button:hover{ background:rgba(0,0,0,.16); }
+.stepper button svg{
+  width:15px; height:15px;
+  fill:none; stroke:currentColor; stroke-width:2.6; stroke-linecap:round;
+}
+.stepper__num{
+  min-width:22px;
+  font-size:14px;
+  font-weight:800;
+  text-align:center;
+  font-variant-numeric:tabular-nums;
+}
+
+@media (min-width:600px){
+  .stepper{ min-height:44px; }
+  .stepper button{ width:42px; min-height:44px; }
+  .stepper button svg{ width:17px; height:17px; }
+  .stepper__num{ font-size:16px; }
+}
+@media (min-width:1000px){
+  .stepper{ min-height:48px; }
+  .stepper button{ width:46px; min-height:48px; }
+}
+
+/* ---------- Затемнение ---------- */
+.scrim{
+  position:fixed;
+  inset:0;
+  z-index:70;
+  background:rgba(10,10,9,.55);
+  opacity:0;
+  transition:opacity .3s var(--ease);
+}
+.scrim.is-on{ opacity:1; }
+body.is-locked{ overflow:hidden; }
+
+/* ---------- Панель корзины и избранного ---------- */
+.drawer{
+  position:fixed;
+  top:0; right:0; bottom:0;
+  z-index:80;
+  width:min(100%, 420px);
+  display:flex;
+  flex-direction:column;
+  background:var(--paper);
+  box-shadow:-18px 0 50px rgba(0,0,0,.28);
+  transform:translateX(102%);
+  transition:transform .34s var(--ease);
+}
+.drawer.is-open{ transform:none; }
+
+.drawer__head{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:12px 12px 12px 16px;
+  padding-top:max(12px, env(safe-area-inset-top));
+  background:var(--ink);
+}
+.tabs{ display:flex; gap:6px; flex:1; }
+.tab{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  padding:9px 14px;
+  background:rgba(255,255,255,.09);
+  border:0;
+  border-radius:999px;
+  color:#cfcfcf;
+  font-size:13px;
+  font-weight:700;
+  cursor:pointer;
+  transition:background-color .2s var(--ease), color .2s var(--ease);
+}
+.tab.is-active{ background:var(--red); color:#fff; }
+.tab__num{
+  min-width:20px;
+  padding:0 5px;
+  border-radius:999px;
+  background:rgba(0,0,0,.28);
+  font-size:11px;
+  line-height:18px;
+}
+
+.drawer__close{
+  flex:none;
+  width:38px; height:38px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  background:rgba(255,255,255,.09);
+  border:0;
+  border-radius:50%;
+  cursor:pointer;
+}
+.drawer__close svg{ width:18px; height:18px; fill:none; stroke:#fff; stroke-width:2; stroke-linecap:round; }
+
+.drawer__body{
+  flex:1;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  padding:14px;
+}
+.drawer__pane{ display:none; }
+.drawer__pane.is-active{ display:block; }
+
+.dlist{ list-style:none; margin:0; padding:0; display:grid; gap:10px; }
+.ditem{
+  display:grid;
+  grid-template-columns:64px 1fr;
+  gap:12px;
+  padding:10px;
+  background:#fff;
+  border-radius:12px;
+  box-shadow:0 3px 12px rgba(0,0,0,.06);
+}
+.ditem__img{
+  width:64px; height:70px;
+  object-fit:cover;
+  border-radius:8px;
+  background:#fff;
+  cursor:pointer;
+}
+.ditem__main{ display:flex; flex-direction:column; gap:4px; min-width:0; }
+.ditem__name{
+  padding:0;
+  background:none;
+  border:0;
+  font-size:13.5px;
+  font-weight:700;
+  line-height:1.25;
+  text-align:left;
+  cursor:pointer;
+}
+.ditem__name:hover{ color:var(--red); }
+.ditem__vol{ font-size:11.5px; color:var(--muted); }
+.ditem__row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-top:2px;
+}
+.ditem__price{ font-size:15px; font-weight:800; white-space:nowrap; }
+.ditem .stepper{ width:112px; min-height:32px; box-shadow:none; }
+.ditem .stepper button{ width:34px; min-height:32px; }
+.ditem .stepper button svg{ width:13px; height:13px; }
+.ditem .stepper__num{ font-size:13px; }
+.ditem__add{
+  height:32px;
+  padding:0 14px;
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+.ditem__del{
+  flex:none;
+  width:30px; height:30px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  background:#f2f2f0;
+  border:0;
+  border-radius:50%;
+  cursor:pointer;
+}
+.ditem__del svg{ width:14px; height:14px; fill:none; stroke:#8a8a8a; stroke-width:2; stroke-linecap:round; }
+.ditem__del:hover svg{ stroke:var(--red); }
+
+.empty{
+  padding:44px 20px;
+  color:var(--muted);
+  font-size:14px;
+  line-height:1.6;
+  text-align:center;
+}
+.empty__emoji{ display:block; margin-bottom:12px; font-size:38px; }
+
+.drawer__foot{
+  padding:14px;
+  padding-bottom:max(14px, env(safe-area-inset-bottom));
+  background:#fff;
+  border-top:1px solid #e8e8e6;
+}
+.drawer__total{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  margin-bottom:12px;
+  font-size:14px;
+  color:var(--muted);
+}
+.drawer__total b{ font-size:24px; color:var(--text); letter-spacing:-.02em; }
+.drawer__order{ width:100%; height:52px; font-size:14px; }
+
+/* ---------- Карточка товара ---------- */
+.modal{
+  position:fixed;
+  inset:0;
+  z-index:85;
+  display:flex;
+  align-items:flex-end;
+  justify-content:center;
+}
+@media (min-width:900px){ .modal{ align-items:center; padding:24px; } }
+
+.modal__sheet{
+  position:relative;
+  width:100%;
+  max-height:94vh;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  background:var(--paper);
+  border-radius:20px 20px 0 0;
+  transform:translateY(4%);
+  opacity:0;
+  transition:transform .32s var(--ease), opacity .32s var(--ease);
+}
+.modal.is-open .modal__sheet{ transform:none; opacity:1; }
+
+@media (min-width:900px){
+  .modal__sheet{
+    display:grid;
+    grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);
+    max-width:980px;
+    max-height:88vh;
+    border-radius:20px;
+    transform:translateY(14px) scale(.98);
+  }
+}
+
+.modal__close{
+  position:absolute;
+  top:12px; right:12px;
+  z-index:4;
+  width:38px; height:38px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  background:rgba(255,255,255,.92);
+  border:0;
+  border-radius:50%;
+  cursor:pointer;
+  box-shadow:0 4px 14px rgba(0,0,0,.16);
+}
+.modal__close svg{ width:18px; height:18px; fill:none; stroke:var(--ink); stroke-width:2; stroke-linecap:round; }
+
+.modal__media{ background:#fff; }
+.modal__media img{
+  width:100%;
+  aspect-ratio:1194 / 1317;
+  object-fit:cover;
+}
+@media (min-width:900px){
+  .modal__media{ height:100%; }
+  .modal__media img{ height:100%; aspect-ratio:auto; }
+}
+
+.modal__info{ padding:18px 16px 22px; }
+@media (min-width:900px){ .modal__info{ padding:34px 32px; overflow-y:auto; } }
+
+.modal__badge{
+  display:none;
+  padding:5px 13px;
+  border-radius:999px;
+  background:var(--red);
+  color:#fff;
+  font-size:10.5px;
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.05em;
+}
+.modal__badge:not(:empty){ display:inline-block; margin-bottom:10px; }
+
+.modal__title{
+  font-size:22px;
+  font-weight:800;
+  line-height:1.15;
+  letter-spacing:-.02em;
+}
+@media (min-width:900px){ .modal__title{ font-size:30px; } }
+
+.modal__lead{
+  margin-top:8px;
+  font-family:Caveat, Montserrat, cursive;
+  font-size:22px;
+  font-weight:700;
+  line-height:1.2;
+  color:var(--red);
+}
+@media (min-width:900px){ .modal__lead{ font-size:26px; } }
+
+.specs{ display:flex; flex-wrap:wrap; gap:8px; margin:16px 0 0; }
+.specs div{
+  padding:8px 12px;
+  background:#fff;
+  border-radius:10px;
+  box-shadow:0 2px 8px rgba(0,0,0,.05);
+}
+.specs dt{
+  font-size:10.5px;
+  color:var(--muted);
+  text-transform:uppercase;
+  letter-spacing:.05em;
+}
+.specs dd{ margin:2px 0 0; font-size:13.5px; font-weight:700; }
+
+.modal__desc{
+  margin-top:16px;
+  font-size:14px;
+  line-height:1.6;
+  color:#3d3d39;
+}
+.modal__sub{
+  margin-top:18px;
+  font-size:12px;
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.06em;
+  color:var(--muted);
+}
+.chips{
+  list-style:none;
+  display:flex;
+  flex-wrap:wrap;
+  gap:7px;
+  margin:9px 0 0;
+  padding:0;
+}
+.chips li{
+  padding:7px 13px;
+  background:#fff;
+  border-radius:999px;
+  font-size:12.5px;
+  font-weight:600;
+  box-shadow:0 2px 8px rgba(0,0,0,.05);
+}
+.modal__small{
+  margin-top:8px;
+  font-size:12.5px;
+  line-height:1.55;
+  color:var(--muted);
+}
+
+.modal__bar{
+  position:sticky;
+  bottom:0;
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:12px;
+  margin:22px -16px -22px;
+  padding:14px 16px;
+  padding-bottom:max(14px, env(safe-area-inset-bottom));
+  background:rgba(244,244,244,.97);
+  border-top:1px solid #e6e6e4;
+}
+@media (min-width:900px){
+  .modal__bar{ margin:26px -32px -34px; padding:18px 32px; }
+}
+.modal__price{ display:flex; align-items:baseline; gap:8px; }
+.modal__price .price{ font-size:26px; }
+.modal__price .price--old{ font-size:16px; }
+.modal__price .price--old:empty{ display:none; }
+.modal__actions{ display:flex; align-items:center; gap:10px; margin-left:auto; }
+.modal__buy{ width:190px; }
+
+/* ---------- Предложение установить приложение ---------- */
+.install{
+  position:fixed;
+  left:12px; right:12px;
+  bottom:max(12px, env(safe-area-inset-bottom));
+  z-index:88;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  max-width:520px;
+  margin-inline:auto;
+  padding:12px 14px;
+  background:var(--ink);
+  color:#fff;
+  border-radius:16px;
+  box-shadow:0 18px 44px rgba(0,0,0,.4);
+  transform:translateY(160%);
+  transition:transform .4s var(--ease);
+}
+.install.is-on{ transform:none; }
+.install__icon{ flex:none; width:46px; height:46px; border-radius:50%; }
+.install__text{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+.install__text b{ font-size:14px; }
+.install__text span{ font-size:11.5px; line-height:1.35; color:#a8a8a8; }
+.install .btn--sm{ flex:none; height:38px; padding:0 16px; font-size:12.5px; }
+.install__no{
+  position:absolute;
+  top:-9px; right:-9px;
+  width:26px; height:26px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  background:#3a3a38;
+  border:0;
+  border-radius:50%;
+  cursor:pointer;
+}
+.install__no svg{ width:12px; height:12px; fill:none; stroke:#fff; stroke-width:2.4; stroke-linecap:round; }
+
+/* цена и сердечко в одной строке */
+.card__price{ justify-content:space-between; }
+.card__price .fav{
+  background:#f4f4f2;
+  box-shadow:none;
+}
+.card__price .fav:hover{ background:#ececea; }

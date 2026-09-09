@@ -4602,13 +4602,59 @@ const SITE = {
   '/icon-512.png': { name: 'icon-512.png', type: 'image/png' },
   '/icon-512-maskable.png': { name: 'icon-512-maskable.png', type: 'image/png' },
 };
+/* ── Магазин соусов «Санчоус» по адресу /sauce/ ──────────────────────
+   У магазина есть свой бот на этом же хостинге, но его узел (de2) не
+   отвечает: соединение и TLS проходят, а до контейнера прокси не
+   достаёт — сайт снаружи висит до таймаута. Узел, на котором живёт
+   BloggerPay, работает, поэтому магазин раздаём отсюда.
+
+   Здесь, в отличие от списка выше, файлов десятки, и перечислять их
+   поимённо не имеет смысла. Поэтому раздаём папку — но по правилам, а
+   не «что попросят»:
+     · только внутри /sauce/ и только из папки sauce;
+     · путь после разбора обязан остаться ВНУТРИ этой папки (проверяем
+       результат path.resolve, а не сам запрос: «..» умеют прятать в
+       кодировке);
+     · расширение — из списка; неизвестное просто не отдаём.
+   Секретов в этой папке нет: там лежит только сайт магазина. */
+const SAUCE_DIR = path.join(SITE_DIR, 'sauce');
+const SAUCE_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+  '.txt': 'text/plain; charset=utf-8',
+};
+function sauceFile(pathname) {
+  if (!pathname.startsWith('/sauce/')) return null;
+  let rest = pathname.slice('/sauce/'.length);
+  try { rest = decodeURIComponent(rest); } catch (e) { return null; }
+  if (rest === '' || rest.endsWith('/')) rest += 'index.html';
+  /* Обратный слэш на Windows — тоже разделитель, а нулевой байт обрезает
+     имя в системном вызове. Ни того, ни другого в адресе быть не может. */
+  if (rest.includes('\0') || rest.includes('\\')) return null;
+  const file = path.resolve(SAUCE_DIR, rest);
+  if (file !== SAUCE_DIR && !file.startsWith(SAUCE_DIR + path.sep)) return null;
+  const type = SAUCE_TYPES[path.extname(file).toLowerCase()];
+  if (!type) return null;
+  return { file, type };
+}
+
 function staticFile(pathname) {
   const rec = SITE[pathname];
   if (rec) return { file: path.join(SITE_DIR, rec.name), type: rec.type };
   /* Файл-подпись площадки: /tiktok<буквы и цифры>.txt из корня проекта. */
   const sign = /^\/(tiktok[A-Za-z0-9]{8,64}\.txt)$/.exec(pathname);
   if (sign) return { file: path.join(SITE_DIR, sign[1]), type: 'text/plain; charset=utf-8' };
-  return null;
+  return sauceFile(pathname);
 }
 /* Заголовки безопасности для страниц, которые отдаёт сам сервер.
    На Netlify их ставит netlify.toml, но сайт раздаёт и этот сервер —
@@ -4696,6 +4742,12 @@ const handler = async (req, res) => {
      некуда ссылаться, кроме как на нас. Отдельный хостинг для статики
      не нужен. */
   if (req.method === 'GET' || req.method === 'HEAD') {
+    /* Без косой черты в конце браузер считает «sauce» файлом, и все
+       относительные пути страницы (css/style.css) уезжают в корень. */
+    if (url.pathname === '/sauce') {
+      res.writeHead(301, { Location: '/sauce/' });
+      return res.end();
+    }
     const hit = staticFile(url.pathname);
     if (hit) return sendFile(req, res, hit.file, hit.type);
   }
