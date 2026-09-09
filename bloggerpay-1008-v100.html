@@ -89232,62 +89232,78 @@ html #catBloggerList .blc .bpk-btn{
    Задержку по номеру в списке ставит скрипт — из-за неё карточки
    входят каскадом, а не все разом. */
 @keyframes bpc7Card{
-  0%{ opacity:0; transform:translateY(14px) scale(.985) }
+  0%{ opacity:0; transform:translateY(26px) scale(.96) }
+  60%{ opacity:1 }
   100%{ opacity:1; transform:none }
 }
 html #catBloggerList .blc.bpc7-in{
-  animation:bpc7Card .44s cubic-bezier(.22,1,.36,1) both;
+  animation:bpc7Card .52s cubic-bezier(.22,1,.36,1) both;
 }
-/* Внутренности догоняют карточку — короткий каскад внутри неё. */
-html #catBloggerList .blc.bpc7-in .bpc5-head,
-html #catBloggerList .blc.bpc7-in .bls,
-html #catBloggerList .blc.bpc7-in .blc-stats,
-html #catBloggerList .blc.bpc7-in .blc-tags,
-html #catBloggerList .blc.bpc7-in .bpc5-buy{
-  animation:bpc7Rise .4s cubic-bezier(.22,1,.36,1) both;
-}
-html #catBloggerList .blc.bpc7-in .bls,
-html #catBloggerList .blc.bpc7-in .blc-stats{ animation-delay:.05s }
-html #catBloggerList .blc.bpc7-in .blc-tags{ animation-delay:.09s }
-html #catBloggerList .blc.bpc7-in .bpc5-buy{ animation-delay:.13s }
+/* Внутренний каскад убран намеренно: он давал по ШЕСТЬ одновременных
+   анимаций на карточку, и на списке из десятка это уже заметно на
+   слабом телефоне. Одна анимация на карточку — и заметнее, и дешевле. */
 
-/* Нажатие на карточку — отклик всей плитки, как у настоящей кнопки. */
+/* Здесь НЕ должно быть ни will-change, ни :active на всей плитке.
+   will-change:transform поднимает каждую карточку в отдельный слой
+   композитора — на телефоне это память и рывки при прокрутке. А
+   :active срабатывает от касания ЕЩЁ ДО того, как палец поехал:
+   начинаешь листать — вся карточка сжимается и перерисовывается,
+   и список дёргается. Отклик на нажатие оставляем мелким органам
+   управления: кнопкам, чипам, пилюлям. */
 html #catBloggerList .blc{
-  transition:transform .16s cubic-bezier(.4,0,.2,1),
-             box-shadow .22s cubic-bezier(.4,0,.2,1),
-             border-color .22s cubic-bezier(.4,0,.2,1);
-  will-change:transform;
+  transition:border-color .22s cubic-bezier(.4,0,.2,1);
 }
-html #catBloggerList .blc:active{ transform:scale(.992) }
 
 /* Пилюля канала: выбранная слегка выступает и получает мягкое свечение
    цветом площадки — видно, чьи цифры сейчас в полосе. */
 html #catBloggerList .blc .bpc6-ch{
   transition:transform .2s cubic-bezier(.34,1.28,.64,1),
              background .2s cubic-bezier(.4,0,.2,1),
-             box-shadow .24s cubic-bezier(.4,0,.2,1),
              opacity .2s cubic-bezier(.4,0,.2,1)!important;
 }
+/* Тень здесь не анимируем: размытую тень браузер перерисовывает на
+   каждом кадре, и переключение канала на телефоне начинает «сыпаться».
+   Ставим её сразу, готовой — она видна и без перехода. */
 html #catBloggerList .blc .bpc6-ch.on{
-  box-shadow:0 3px 14px rgba(var(--plt-rgb,47,108,224),.28)!important;
+  box-shadow:0 3px 14px rgba(var(--plt-rgb,47,108,224),.26)!important;
+  transform:translateY(-1px)!important;
 }
-html #catBloggerList .blc .bpc6-ch:not(.on){ opacity:.82 }
+html #catBloggerList .blc .bpc6-ch:not(.on){ opacity:.78 }
 
 /* Полоса чисел: при смене канала цифры не просто подменяются, а
    переезжают — иначе замена читается как случайная перерисовка. */
 @keyframes bpc7Num{
-  0%{ opacity:0; transform:translateY(6px) }
+  0%{ opacity:0; transform:translateY(12px) }
   100%{ opacity:1; transform:none }
 }
-html #catBloggerList .blc.bpc7-switch .bls-val,
-html #catBloggerList .blc.bpc7-switch .blc-stats .v,
-html #catBloggerList .blc.bpc7-switch .bls-key,
-html #catBloggerList .blc.bpc7-switch .blc-stats .k{
-  animation:bpc7Num .32s cubic-bezier(.22,1,.36,1) both;
+html #catBloggerList .blc.bpc7-switch .blc-strip > .bls,
+html #catBloggerList .blc.bpc7-switch .blc-stats > div{
+  animation:bpc7Num .38s cubic-bezier(.22,1,.36,1) both;
 }
-html #catBloggerList .blc.bpc7-switch .bls-val:nth-child(2),
-html #catBloggerList .blc.bpc7-switch .blc-stats > div:nth-child(2) .v{ animation-delay:.05s }
-html #catBloggerList .blc.bpc7-switch .blc-stats > div:nth-child(3) .v{ animation-delay:.1s }
+html #catBloggerList .blc.bpc7-switch .blc-strip > .bls:nth-child(2),
+html #catBloggerList .blc.bpc7-switch .blc-stats > div:nth-child(2){ animation-delay:.06s }
+html #catBloggerList .blc.bpc7-switch .blc-strip > .bls:nth-child(3),
+html #catBloggerList .blc.bpc7-switch .blc-stats > div:nth-child(3){ animation-delay:.12s }
+
+/* Блик по полосе чисел при смене канала. Самое заметное движение в
+   карточке и самое дешёвое: один псевдоэлемент, который едет
+   transform'ом — ни перерисовки, ни пересчёта вёрстки. */
+html #catBloggerList .blc .blc-strip,
+html #catBloggerList .blc .blc-stats{ position:relative; overflow:hidden }
+/* display:block здесь обязателен: bp-card5 гасит псевдоэлементы полосы
+   правилом .bls::after{display:none!important}, и без своего объявления
+   блик просто не рождается — специфичность тут ни при чём. */
+html #catBloggerList .blc.bpc5.bpc7-switch .blc-strip::after,
+html #catBloggerList .blc.bpc5.bpc7-switch .blc-stats::after{
+  content:''; display:block!important; position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(100deg, transparent 20%,
+    rgba(var(--plt-rgb,47,108,224),.16) 48%, transparent 76%);
+  animation:bpc7Shine .62s cubic-bezier(.4,0,.2,1) both;
+}
+@keyframes bpc7Shine{
+  0%{ transform:translateX(-110%) }
+  100%{ transform:translateX(110%) }
+}
 
 /* Кнопка «Добавить в кампанию»: нажатие и наведение. */
 html #catBloggerList .blc .blc-add, html #catBloggerList .blc .blc-add-remove{
@@ -89371,7 +89387,7 @@ function flash(card){
     card.classList.remove('bpc7-switch');
     void card.offsetWidth;
     card.classList.add('bpc7-switch');
-    setTimeout(function(){ try{ card.classList.remove('bpc7-switch'); }catch(e){} }, 420);
+    setTimeout(function(){ try{ card.classList.remove('bpc7-switch'); }catch(e){} }, 700);
   }catch(e){ E(e); }
 }
 
