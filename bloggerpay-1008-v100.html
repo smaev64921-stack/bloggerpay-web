@@ -84414,7 +84414,12 @@ function fmtsOf(card, pid){
       out.push({ id: String(it.fmtId || ''), name: name || 'Размещение', price: price });
     });
   }catch(e){ E(e); }
-  out.sort(function(a, b){ return a.price - b.price; });
+  /* Порядок НЕ трогаем: он тот, в котором блогер перечислил размещения.
+     Раньше список сортировался по цене, и карточка по умолчанию
+     показывала вилку «самое дешёвое – самое дорогое». Рекламодателю это
+     ничего не говорило: два числа без имени формата. Теперь показываем
+     ПЕРВОЕ размещение — то, которое блогер поставил первым, — и называем
+     его. Остальные рядом чипами. */
   return out;
 }
 function reachOf(card, pid){
@@ -84548,32 +84553,30 @@ function paintDeal(el){
       } else {
         var pick = String(el.__fmt || ''), cur = null;
         for(var i = 0; i < fs.length; i++) if(fs[i].id === pick) cur = fs[i];
-        /* «от» имеет смысл, только когда цен несколько. У площадки с
-           единственным форматом цена одна и точная — писать «от 9 000 ₽»
-           значит обещать, что бывает дешевле. Заодно называем формат:
-           ряд чипов при одной цене не рисуется (см. ниже), и без имени
-           непонятно, за что эти деньги. */
-        var one = !!cur || fs.length === 1;
+        /* Показываем ОДНУ цену и всегда называем формат. Вилки
+           «дешёвое – дорогое» здесь больше нет: два числа без имени не
+           отвечали ни на один вопрос рекламодателя, а «от» обещало, что
+           бывает дешевле. По умолчанию — первое размещение из списка
+           блогера, дальше он переключает чипами. */
         if(!cur) cur = fs[0];
         var cpm = cpmOf(cur.price, reach);
         var med = medians()[pid] || 0;
         var win = (med && cpm && cpm < med) ? Math.round((1 - cpm / med) * 100) : 0;
-        var line = [];
-        if(one) line.push(esc(cur.name));
+        var line = [esc(cur.name)];
         if(cpm) line.push('CPM ' + money(cpm) + ' ₽');
         if(win >= 12) line.push('<span class="bpc5-deal-badge">−' + win + '% к медиане</span>');
-        /* Пока формат не выбран, здесь стояло «от N ₽» — ровно то же
-           число, что и в карточке площадки над полосой. Показываем вилку:
-           она отвечает на следующий вопрос рекламодателя — «а сколько
-           стоит дороже всего». Вилки нет, когда цена одна. */
-        var top = fs[fs.length - 1];
-        var range = !one && top && top.price > cur.price;
-        /* «от» и вилка вместе не читаются: вилка уже говорит и нижнюю
-           границу, и верхнюю. «от» остаётся только когда цена одна, а
-           формат не выбран — например, форматов несколько с одной ценой. */
-        price.innerHTML = '<b>' + (one || range ? '' : 'от ') + money(cur.price)
-          + (range ? ' – ' + money(top.price) : '') + ' ₽</b>'
-          + (line.length ? '<small>' + line.join(' · ') + '</small>' : '');
+        var was = price.getAttribute('data-v') || '';
+        var now = String(cur.id) + ':' + cur.price;
+        price.innerHTML = '<b>' + money(cur.price) + ' ₽</b>'
+          + '<small>' + line.join(' · ') + '</small>';
+        price.setAttribute('data-v', now);
+        /* Цена сменилась от нажатия — показываем это движением, иначе
+           переключение форматов выглядит как «ничего не произошло». */
+        if(was && was !== now){
+          price.classList.remove('bpc5-swap');
+          void price.offsetWidth;
+          price.classList.add('bpc5-swap');
+        }
       }
     }
 
@@ -88944,6 +88947,209 @@ function onPage(){
   }catch(e){ E(e); }
   setTimeout(onPage, 400);
 })();
+})();
+</script>
+
+<style id="bp-card7-css">
+/* ══ КАРТОЧКА КАТАЛОГА · ОТДЕЛКА ═══════════════════════════════════════
+   Владелец, глядя на карточку: «где интеграции — показывает самую
+   дешёвую и самую дорогую», «не понял в самом начале, что это две
+   кнопки», «кнопка избранного багнутая, их надо сместить», «при
+   переключении сделай плавную анимацию везде».
+
+   Вилку убрали в самом bp-card5 (fmtsOf больше не сортирует, цена одна и
+   названа). Здесь — вид и движение.
+   Откат: удалить пару bp-card7-css + bp-card7.                        */
+
+/* ── 1 · Форматы читаются как кнопки ────────────────────────────────
+   Было: плитка #1B1D22 с прозрачной рамкой и нажатая #23262C — два
+   почти одинаковых серых, оба похожи на подпись, а не на кнопку.
+   Стало: у невыбранных видимый кант и стрелка-подсказка у ряда, у
+   выбранного — заливка цветом площадки и кольцо. */
+html #catBloggerList .blc.bpc5 .bpc5-fmt{
+  gap:7px!important; padding:1px 0 2px!important;
+  scroll-behavior:smooth;
+}
+html #catBloggerList .blc.bpc5 .bpc5-fmt button{
+  height:32px!important; padding:0 13px!important;
+  background:rgba(255,255,255,.045)!important;
+  border:1px solid rgba(255,255,255,.14)!important;
+  color:var(--t2,#b9bcc4)!important; font-weight:650!important;
+  transition:background .18s cubic-bezier(.4,0,.2,1),
+             border-color .18s cubic-bezier(.4,0,.2,1),
+             color .18s cubic-bezier(.4,0,.2,1),
+             transform .12s cubic-bezier(.4,0,.2,1)!important;
+}
+html #catBloggerList .blc.bpc5 .bpc5-fmt button:active{ transform:scale(.95)!important }
+html #catBloggerList .blc.bpc5 .bpc5-fmt button[aria-pressed="true"]{
+  background:rgba(var(--plt-rgb,47,108,224),.16)!important;
+  border-color:rgba(var(--plt-rgb,47,108,224),.55)!important;
+  color:#fff!important;
+  box-shadow:inset 0 0 0 1px rgba(var(--plt-rgb,47,108,224),.25)!important;
+}
+/* Подпись над рядом: без неё ряд читается как перечисление, а не как
+   выбор. Ставим один раз, самим рядом, а не в разметку карточки. */
+html #catBloggerList .blc.bpc5 .bpc7-pick{
+  font-size:11px; font-weight:700; letter-spacing:.4px; text-transform:uppercase;
+  color:var(--t3,#7d818c); margin:0 2px 6px; display:block;
+}
+
+/* ── 2 · Смена цены — движением ─────────────────────────────────────
+   Нажал формат, цена сменилась — это должно быть видно. */
+@keyframes bpc7Swap{
+  0%{ opacity:0; transform:translateY(4px) }
+  100%{ opacity:1; transform:none }
+}
+html #catBloggerList .blc.bpc5 .bpc5-price.bpc5-swap b,
+html #catBloggerList .blc.bpc5 .bpc5-price.bpc5-swap small{
+  animation:bpc7Swap .26s cubic-bezier(.22,1,.36,1) both;
+}
+html #catBloggerList .blc.bpc5 .bpc5-price.bpc5-swap small{ animation-delay:.04s }
+
+/* ── 3 · Переключение площадки — тоже движением ────────────────────
+   Пилюли каналов и полоса чисел меняются местами скачком; даём им
+   короткое проявление, чтобы глаз успел заметить, что данные другие. */
+@keyframes bpc7Rise{
+  0%{ opacity:0; transform:translateY(5px) }
+  100%{ opacity:1; transform:none }
+}
+html #catBloggerList .blc.bpc5.bpc7-switch .bls,
+html #catBloggerList .blc.bpc5.bpc7-switch .blc-stats,
+html #catBloggerList .blc.bpc5.bpc7-switch .bpc5-sub,
+html #catBloggerList .blc.bpc5.bpc7-switch .bpc5-price{
+  animation:bpc7Rise .3s cubic-bezier(.22,1,.36,1) both;
+}
+html #catBloggerList .blc.bpc5.bpc7-switch .bpc5-sub{ animation-delay:.03s }
+html #catBloggerList .blc.bpc5.bpc7-switch .bpc5-price{ animation-delay:.06s }
+/* Сам значок площадки: мягкое увеличение вместо мгновенной подсветки. */
+html #catBloggerList .blc .blc-pr-soc, html #catBloggerList .blc .bpc6-ch{
+  transition:transform .18s cubic-bezier(.34,1.28,.64,1),
+             background .18s cubic-bezier(.4,0,.2,1),
+             box-shadow .18s cubic-bezier(.4,0,.2,1)!important;
+}
+html #catBloggerList .blc .bpc6-ch:active{ transform:scale(.96)!important }
+
+/* ── 4 · Избранное больше не воюет с «⋯» ───────────────────────────
+   У звезды невидимая область нажатия была 84 px в ширину при кнопке в
+   31 px, у соседнего «⋯» — своя на 44 px, и они перекрывались. Соседняя
+   область лежала сверху и забирала нажатие: человек метил в звезду, а
+   открывалось меню. Обе области ровно 44 px, а кнопки разведены так,
+   чтобы области не залезали друг на друга. */
+html #catBloggerList .blc .blc-rat-col{ column-gap:14px!important }
+html #catBloggerList .blc .blc-bm::after{
+  width:44px!important; height:44px!important;
+}
+html #catBloggerList .blc .blc-bm{
+  width:32px!important; height:32px!important; border-radius:11px!important;
+  transition:background .16s cubic-bezier(.4,0,.2,1),
+             border-color .16s cubic-bezier(.4,0,.2,1),
+             transform .12s cubic-bezier(.4,0,.2,1)!important;
+}
+html #catBloggerList .blc .blc-bm:active{ transform:scale(.92)!important }
+html #catBloggerList .blc .bpk-btn{
+  width:32px!important; height:32px!important; border-radius:11px!important;
+}
+/* Кто выше — тот и ловит нажатие. Невидимые области соседних кнопок
+   всё равно почти касаются, и порядок в разметке решать это не должен:
+   «⋯» добавляется последним и без этого перекрывал звезду. */
+html #catBloggerList .blc .blc-bm{ position:relative!important; z-index:4!important }
+html #catBloggerList .blc .bpk-btn{ z-index:3!important }
+</style>
+
+<script id="bp-card7">
+/* Пара к style#bp-card7-css. Пояснение — там же. */
+(function(){
+'use strict';
+if(window.__bpCard7) return; window.__bpCard7 = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'card7'); }catch(_){} }
+
+var PLT = { youtube:'255,59,48', telegram:'49,166,232', tiktok:'37,244,238', instagram:'225,48,108', vk:'45,124,255' };
+
+/* Цвет активной площадки — чипам форматов: выбранный формат должен
+   принадлежать тому же каналу, что и цифры над ним. */
+function paintPlt(card){
+  try{
+    var on = card.querySelector('.bpc6-ch.on, .blc-pr-soc.bp-ch, .blc-soc.bp-ch');
+    var pid = '';
+    if(on){
+      pid = on.getAttribute('data-pid') || '';
+      if(!pid){
+        var cls = String(on.className);
+        if(/syt|youtube/.test(cls)) pid = 'youtube';
+        else if(/stg|telegram/.test(cls)) pid = 'telegram';
+        else if(/stt|tiktok/.test(cls)) pid = 'tiktok';
+      }
+    }
+    var rgb = PLT[pid] || '47,108,224';
+    if(card.getAttribute('data-plt-rgb') !== rgb){
+      card.style.setProperty('--plt-rgb', rgb);
+      card.setAttribute('data-plt-rgb', rgb);
+    }
+  }catch(e){ E(e); }
+}
+
+/* Подпись над рядом форматов. Ставится один раз на карточку и живёт
+   рядом с рядом: разметку карточки не трогаем (её пересобирают другие
+   слои, и любая правка внутри вернулась бы петлёй). */
+function addPickLabel(card){
+  try{
+    var row = card.querySelector('.bpc5-fmt');
+    if(!row || row.previousElementSibling && row.previousElementSibling.classList.contains('bpc7-pick')) return;
+    var lab = document.createElement('span');
+    lab.className = 'bpc7-pick';
+    lab.textContent = 'Выберите размещение';
+    row.parentNode.insertBefore(lab, row);
+  }catch(e){ E(e); }
+}
+
+/* Короткое проявление при смене площадки. Класс снимаем сами: с
+   fill:both он остался бы висеть и приглушил бы следующую перерисовку. */
+function flash(card){
+  try{
+    card.classList.remove('bpc7-switch');
+    void card.offsetWidth;
+    card.classList.add('bpc7-switch');
+    setTimeout(function(){ try{ card.classList.remove('bpc7-switch'); }catch(e){} }, 420);
+  }catch(e){ E(e); }
+}
+
+function sweep(){
+  try{
+    document.querySelectorAll('#catBloggerList .blc').forEach(function(card){
+      addPickLabel(card);
+      paintPlt(card);
+    });
+  }catch(e){ E(e); }
+}
+
+/* Нажатие по значку площадки — проявление. Слушаем на всплытии, ничего
+   не перехватывая: переключатель по-прежнему делает свою работу. */
+document.addEventListener('click', function(ev){
+  try{
+    var t = ev.target && ev.target.closest ? ev.target.closest('.bpc6-ch, .blc-pr-soc, .blc-soc') : null;
+    if(!t) return;
+    var card = t.closest('#catBloggerList .blc');
+    if(!card) return;
+    setTimeout(function(){ paintPlt(card); flash(card); }, 30);
+  }catch(e){ E(e); }
+}, true);
+
+/* Список карточек пересобирают несколько слоёв — держимся наблюдателя,
+   но работаем ИДЕМПОТЕНТНО: иначе своя же правка вызвала бы следующий
+   проход и так по кругу. */
+try{
+  var host = document.getElementById('catBloggerList');
+  if(host){
+    var t = null;
+    new MutationObserver(function(){
+      if(t) return;
+      t = setTimeout(function(){ t = null; sweep(); }, 120);
+    }).observe(host, { childList:true, subtree:true });
+  }
+}catch(e){ E(e); }
+setTimeout(sweep, 600);
+setTimeout(sweep, 2000);
 })();
 </script>
 
