@@ -1,5 +1,5 @@
 /* Санчоус — service worker: быстрый повторный запуск и работа офлайн */
-const VERSION = 'sanchous-v1';
+const VERSION = 'sanchous-v2';
 const CORE = [
   './',
   './index.html',

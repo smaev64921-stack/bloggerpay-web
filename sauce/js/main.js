@@ -301,7 +301,14 @@
 
   /* ---------------- Панель корзины ---------------- */
   var activeTab = 'cart';
-  var isDrawerOpen = function () { return drawer && !drawer.hidden; };
+  /* Открыт или нет — храним НАМЕРЕНИЕ, а не читаем атрибут hidden.
+     Атрибут ставится в конце анимации (через 320-340 мс), а затемнение
+     проверяло его через 300 мс — то есть всегда ВИДЕЛО панель ещё
+     открытой и не пряталось. Невидимая подложка .scrim оставалась
+     висеть поверх всей страницы и глотала каждое нажатие: сайт «не
+     реагировал» до перезагрузки. */
+  var drawerOpen = false, modalOpen = false;
+  var isDrawerOpen = function () { return drawerOpen; };
 
   function setTab(name) {
     activeTab = name;
@@ -316,6 +323,19 @@
     renderCounters();
   }
 
+  /* Появление панели включается КЛАССОМ. Ставить его из
+     requestAnimationFrame нельзя: если кадры не идут (вкладка вернулась
+     из фона, экономия батареи), обработчик не вызывается никогда — и
+     панель остаётся за краем экрана при заблокированной прокрутке, а
+     подложка ловит нажатия. Со стороны это «сайт не реагирует».
+     Принудительный пересчёт вёрстки даёт браузеру ту же «предыдущую»
+     точку для перехода, но не зависит ни от одного кадра. */
+  function paintIn(el, cls) {
+    if (!el) return;
+    void el.offsetWidth;
+    el.classList.add(cls);
+  }
+
   function lockBody(on) {
     document.body.classList.toggle('is-locked', on);
   }
@@ -323,11 +343,11 @@
   function showScrim(on) {
     if (on) {
       scrim.hidden = false;
-      requestAnimationFrame(function () { scrim.classList.add('is-on'); });
+      paintIn(scrim, 'is-on');
     } else {
       scrim.classList.remove('is-on');
       setTimeout(function () {
-        if (!isDrawerOpen() && modal.hidden) scrim.hidden = true;
+        if (!drawerOpen && !modalOpen) scrim.hidden = true;
       }, 300);
     }
   }
@@ -337,10 +357,11 @@
     setTab(tab || 'cart');
     renderLists();
     renderCounters();
+    drawerOpen = true;
     drawer.hidden = false;
     showScrim(true);
     lockBody(true);
-    requestAnimationFrame(function () { drawer.classList.add('is-open'); });
+    paintIn(drawer, 'is-open');
     syncBackButton();
     syncMainButton();
     haptic('light');
@@ -348,9 +369,10 @@
 
   function closeDrawer() {
     if (!isDrawerOpen()) return;
+    drawerOpen = false;
     drawer.classList.remove('is-open');
-    setTimeout(function () { drawer.hidden = true; }, 340);
-    if (modal.hidden) { showScrim(false); lockBody(false); }
+    setTimeout(function () { if (!drawerOpen) drawer.hidden = true; }, 340);
+    if (!modalOpen) { showScrim(false); lockBody(false); }
     syncBackButton();
     syncMainButton();
   }
@@ -392,20 +414,22 @@
     mb.dataset.rendered = '';
     renderBuyControls();
 
+    modalOpen = true;
     modal.hidden = false;
     showScrim(true);
     lockBody(true);
-    requestAnimationFrame(function () { modal.classList.add('is-open'); });
+    paintIn(modal, 'is-open');
     modal.querySelector('.modal__sheet').scrollTop = 0;
     syncBackButton();
     haptic('light');
   }
 
   function closeModal() {
-    if (modal.hidden) return;
+    if (!modalOpen) return;
+    modalOpen = false;
     modal.classList.remove('is-open');
-    setTimeout(function () { modal.hidden = true; }, 320);
-    if (!isDrawerOpen()) { showScrim(false); lockBody(false); }
+    setTimeout(function () { if (!modalOpen) modal.hidden = true; }, 320);
+    if (!drawerOpen) { showScrim(false); lockBody(false); }
     syncBackButton();
   }
 
@@ -413,15 +437,15 @@
   function syncBackButton() {
     if (!tg || !tg.BackButton) return;
     try {
-      if (!modal.hidden || isDrawerOpen()) tg.BackButton.show();
+      if (modalOpen || drawerOpen) tg.BackButton.show();
       else tg.BackButton.hide();
     } catch (e) { /* не поддерживается */ }
   }
 
   if (tg && tg.BackButton && tg.BackButton.onClick) {
     tg.BackButton.onClick(function () {
-      if (!modal.hidden) closeModal();
-      else if (isDrawerOpen()) closeDrawer();
+      if (modalOpen) closeModal();
+      else if (drawerOpen) closeDrawer();
     });
   }
   if (tg && tg.MainButton && tg.MainButton.onClick) {
@@ -471,7 +495,7 @@
   function openMenu() {
     if (!mmenu || !burger) return;
     mmenu.hidden = false;
-    requestAnimationFrame(function () { mmenu.classList.add('is-open'); });
+    paintIn(mmenu, 'is-open');
     burger.setAttribute('aria-expanded', 'true');
   }
 
@@ -540,8 +564,8 @@
 
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape') return;
-    if (!modal.hidden) closeModal();
-    else if (isDrawerOpen()) closeDrawer();
+    if (modalOpen) closeModal();
+    else if (drawerOpen) closeDrawer();
     else closeMenu();
   });
 
@@ -564,7 +588,7 @@
     if (window.matchMedia('(display-mode: standalone)').matches) return;
     if (window.navigator.standalone) return;
     installBox.hidden = false;
-    requestAnimationFrame(function () { installBox.classList.add('is-on'); });
+    paintIn(installBox, 'is-on');
   }
 
   window.addEventListener('beforeinstallprompt', function (e) {
@@ -572,6 +596,14 @@
     deferred = e;
     setTimeout(showInstall, 2500);
   });
+
+  /* Предложение показываем, даже если браузер не прислал
+     beforeinstallprompt. Событие приходит не всегда: Safari его не знает
+     вовсе, а Chrome молчит, когда сайт лежит ВНУТРИ уже установленного
+     приложения (у нас в корне того же адреса стоит BloggerPay, и его
+     область — весь адрес). Без этого запаса приглашение не появлялось бы
+     ни у кого. Нажатие тогда объясняет, как установить руками. */
+  setTimeout(showInstall, 4000);
 
   window.addEventListener('appinstalled', function () {
     hideInstall(true);
@@ -588,9 +620,10 @@
         if (res && res.outcome === 'accepted') hideInstall(true);
       });
       deferred = null;
+    } else if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
+      showToast('Нажмите «Поделиться» → «На экран «Домой»»');
     } else {
-      // iOS Safari: своего диалога установки нет
-      showToast('Нажми «Поделиться» → «На экран «Домой»');
+      showToast('Откройте меню браузера (⋮) → «Установить приложение»');
     }
   });
 

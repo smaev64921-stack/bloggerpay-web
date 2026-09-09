@@ -4,20 +4,21 @@
   "description": "Соусы, которые хочется повторить: сырный, кетчуп, фирменный и медово-чили.",
   "lang": "ru",
   "dir": "ltr",
-  "start_url": "./",
-  "scope": "./",
-  "id": "/sanchous/",
+  "id": "/sauce/",
+  "start_url": "/sauce/",
+  "scope": "/sauce/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "orientation": "portrait",
   "background_color": "#151513",
   "theme_color": "#151513",
   "categories": ["food", "shopping"],
   "icons": [
-    { "src": "img/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "img/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "img/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "img/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
     { "src": "img/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
   "shortcuts": [
-    { "name": "Каталог соусов", "url": "./#catalog" }
+    { "name": "Каталог соусов", "url": "/sauce/#catalog" }
   ]
 }

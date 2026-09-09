@@ -154,7 +154,10 @@
   opacity:0;
   transition:opacity .3s var(--ease);
 }
-.scrim.is-on{ opacity:1; }
+/* Подложка ловит нажатие только когда она видна. Даже если её забудут
+   спрятать, прозрачная плёнка не должна глотать нажатия по странице. */
+.scrim{ pointer-events:none; }
+.scrim.is-on{ opacity:1; pointer-events:auto; }
 body.is-locked{ overflow:hidden; }
 
 /* ---------- Панель корзины и избранного ---------- */
