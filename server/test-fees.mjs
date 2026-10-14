@@ -123,7 +123,7 @@ await api('POST', '/api/deals/release', { dealId: D1, toUserId: blgId, amount: 9
 /* всего выплачено 2 100: комиссия = 7% от 2 100 = 147, блогеру 1 953 — без дрейфа округления */
 ok((await bal(BLG)).available === 1000 + 2100 - 147, 'три выплаты 2 000 + 1 + 99: блогеру ровно 2 100 − 7% = 1 953 ₽', await bal(BLG));
 const led3 = (await api('GET', '/api/ledger', null, BLG)).body.rows || [];
-ok(led3.filter((r) => r.kind === 'payout').reduce((s, r) => s + r.amount, 0) === 1953, 'в истории блогера выплаты «на руки»: 1 860 + 1 + 92', led3);
+ok(led3.filter((r) => r.kind === 'payout').reduce((s, r) => s + r.amount, 0) === 1953, 'в истории блогера выплаты «на руки»: 1 860 + 0 + 93 (комиссия по накопленному, вверх)', led3);
 /* обычная сделка — блогеру целиком */
 await api('POST', '/api/deals/release', { dealId: DL, toUserId: blg2Id, opKey: op('rel') }, ADV);
 ok((await bal(BLG2)).available === 1000, 'выплата по обычной сделке — без комиссии, 1 000 ₽', await bal(BLG2));
@@ -154,13 +154,20 @@ ok(r3.status === 200 && r3.body.feeBack === 0, 'вернули 8 ₽ из 14: к
 const r4 = await api('POST', '/api/deals/refund', { dealId: D3, opKey: op('ref') }, ADV);
 ok(r4.status === 200 && r4.body.feeBack === 2 && (await bal(ADV)).available === a3, 'закрыли задание без трат: вернулся остаток и вся комиссия (2 ₽) — на счёте как до него', [r4.body, a3]);
 
-/* бюджет 10 001 ₽: комиссия 701 ₽ (вверх); потрачен целиком — за 7% от
-   10 001 = 700 ₽ лишний рубль возвращается при закрытии */
+/* бюджет 10 001 ₽: комиссия 701 ₽ (7% с округлением вверх); потрачен целиком —
+   удерживается те же 701 ₽, и с выплаты блогеру — 701 ₽ */
 const D4 = 'camp:fee4' + tag;
 const a4 = (await bal(ADV)).available;
 const h4 = await api('POST', '/api/deals/hold', { dealId: D4, amount: 10001, opKey: op('hold') }, ADV);
 const p4 = await api('POST', '/api/deals/release', { dealId: D4, toUserId: blg2Id, amount: 10001, opKey: op('rel') }, ADV);
-ok(h4.body.fee === 701 && p4.status === 200 && (await bal(ADV)).available === a4 - 10001 - 700, 'бюджет потрачен целиком: комиссия ровно 7% от потраченного (700 ₽), лишний рубль вернулся', [h4.body, p4.body, a4]);
+ok(h4.body.fee === 701 && p4.status === 200 && (await bal(ADV)).available === a4 - 10001 - 701, 'бюджет 10 001 ₽ потрачен целиком: комиссия 701 ₽ (7% вверх), ничего лишнего', [h4.body, p4.body, a4]);
+/* задание на 7 ₽, потраченное целиком: без округления вверх оно шло бы совсем без комиссий */
+const D5 = 'camp:fee5' + tag;
+const a5 = (await bal(ADV)).available, g5 = (await bal(BLG2)).available;
+const h5 = await api('POST', '/api/deals/hold', { dealId: D5, amount: 7, opKey: op('hold') }, ADV);
+const p5 = await api('POST', '/api/deals/release', { dealId: D5, toUserId: blg2Id, amount: 7, opKey: op('rel') }, ADV);
+ok(h5.body.fee === 1 && p5.status === 200 && (await bal(ADV)).available === a5 - 8 && (await bal(BLG2)).available === g5 + 6,
+  'задание на 7 ₽ потрачено целиком: рекламодатель заплатил 7 + 1 ₽, блогеру 6 ₽ — обе комиссии взяты', [h5.body, p5.body]);
 
 /* ── 7 · пополнение по счёту: счёт на сумму + 7%, на баланс — сумма ── */
 const inv = await api('POST', '/api/topup/invoice', { amount: 20000, company: 'ООО Ромашка', inn: '7707083893', email: 'a@b.ru' }, ADV);
@@ -183,9 +190,9 @@ ok(pd.status === 200 && pd.body.net === 1000 && pd.body.fee === 0, 'выплат
 /* ── 9 · сверка и доход сервиса ── */
 ov = await overview();
 /* комиссии: пополнения 700 + 3 500 + 70 (блогер 1 000) · задание 700 + 70 − 210 − 413 ·
-   выплаты 147 · счёт 1 400 · бюджет 10 001: 701 − 1 (назад при закрытии) + 700 с выплаты;
-   задания по 7 ₽ — в ноль (2 взято, 2 вернули) */
-const income = 700 + 3500 + 70 + 700 + 70 - 210 - 413 + 147 + 1400 + 701 - 1 + 700;
+   выплаты 147 · счёт 1 400 · бюджет 10 001: 701 + 701 с выплаты · 7 ₽ потраченные:
+   1 + 1 · задания по 7 ₽ без трат — в ноль (2 взято, 2 вернули) */
+const income = 700 + 3500 + 70 + 700 + 70 - 210 - 413 + 147 + 1400 + 701 + 701 + 1 + 1;
 ok(ov.доход_платформы === income, 'доход сервиса = сумма всех комиссий (' + income + ' ₽)', ov.доход_платформы);
 ok(ov.сверка.сходится && ov.сверка.расхождение === 0, 'сверка денег сходится: всё внесённое лежит в системе или выплачено', ov.сверка);
 ok(ov.выплачено_наружу === 1000, 'наружу выплачено 1 000 ₽ — ровно сумма вывода', ov.выплачено_наружу);

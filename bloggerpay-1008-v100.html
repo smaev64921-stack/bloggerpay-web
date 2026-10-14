@@ -107638,7 +107638,7 @@ function pctOf(sum, p){ return Math.round(Math.max(0, num(sum)) * num(p) / 100);
    вернуть за часть остатка — вниз, чтобы мелкими суммами её не обойти */
 function pctUp(sum, p){ return Math.ceil(Math.max(0, num(sum)) * num(p) / 100); }
 function pctDown(sum, p){ return Math.floor(Math.max(0, num(sum)) * num(p) / 100); }
-function netOf(g, p){ g = Math.max(0, Math.round(num(g))); return g - pctOf(g, p); }
+function netOf(g, p){ g = Math.max(0, Math.round(num(g))); return g - pctUp(g, p); }   /* как vidNetOf у кассы */
 
 var F = window.bpFees = window.bpFees || { topup:7, task:7, payout:7, withdraw:0, src:'default' };
 var MAP = { topupFeePct:'topup', taskFeePct:'task', payoutFeePct:'payout', withdrawFeePct:'withdraw' };

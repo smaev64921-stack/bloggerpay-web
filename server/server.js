@@ -356,7 +356,9 @@ function pctOf(sum, pct) { return Math.round((Number(sum) || 0) * (Number(pct) |
    округление не должно давать обхода (разбор 15.10.2026): бюджет, пополненный
    по 7 ₽, шёл без комиссии (0,49 → 0), а возврат по 8 ₽ отдавал лишнюю (0,56 → 1).
    Взять — вверх, вернуть часть — вниз; закрытие задания возвращает всю
-   невыбранную комиссию (dealFeeBackAll), и в итоге остаётся ровно % от потраченного. */
+   невыбранную комиссию (dealFeeBackAll). За потраченное держим % тоже с
+   округлением вверх, и комиссия с выплат блогеру — так же, по накопленному:
+   иначе задание на 7 ₽, потраченное целиком, проходило бы совсем без комиссий. */
 function pctUp(sum, pct) { return Math.ceil(Math.max(0, Number(sum) || 0) * (Number(pct) || 0) / 100); }
 function pctDown(sum, pct) { return Math.floor(Math.max(0, Number(sum) || 0) * (Number(pct) || 0) / 100); }
 const MAX_AMOUNT = 100_000_000;          /* больше — опечатка, не бюджет */
@@ -1835,7 +1837,7 @@ function moneyOp(opKey, userId, kind, build) {
 function dealFeeBack(add, d, sum) {
   const p = Number(d && d.fee_pct) || 0;
   if (p <= 0 || sum <= 0) return 0;
-  const room = (Number(d.fee_in) || 0) - (Number(d.fee_back) || 0) - pctOf(d.paid, p);
+  const room = (Number(d.fee_in) || 0) - (Number(d.fee_back) || 0) - pctUp(d.paid, p);
   const back = Math.max(0, Math.min(room, pctDown(sum, p)));
   if (back > 0) {
     add(0, 'available', -back, 'task-fee-back', d.id);
@@ -1848,7 +1850,7 @@ function dealFeeBack(add, d, sum) {
 function dealFeeBackAll(add, d) {
   const p = Number(d && d.fee_pct) || 0;
   if (p <= 0) return 0;
-  const back = Math.max(0, (Number(d.fee_in) || 0) - (Number(d.fee_back) || 0) - pctOf(d.paid, p));
+  const back = Math.max(0, (Number(d.fee_in) || 0) - (Number(d.fee_back) || 0) - pctUp(d.paid, p));
   if (back > 0) {
     add(0, 'available', -back, 'task-fee-back', d.id);
     add(d.payer_id, 'available', back, 'task-fee-back', d.id);
@@ -1872,12 +1874,12 @@ function dealPayFee(d, sum, before) {
   const p = Number(d && d.pay_fee_pct) || 0;
   if (p <= 0 || sum <= 0) return 0;
   const b = Math.max(0, Number(before == null ? d.paid : before) || 0);
-  return Math.max(0, Math.min(sum, pctOf(b + sum, p) - pctOf(b, p)));
+  return Math.max(0, Math.min(sum, pctUp(b + sum, p) - pctUp(b, p)));
 }
 function dealPayMoves(add, d, payeeId, sum, fee) {
   const cut = fee == null ? dealPayFee(d, sum) : Math.max(0, Math.min(sum, fee));
   add(d.payer_id, 'hold', -sum, 'release', d.id);
-  add(payeeId, 'available', sum - cut, 'payout', d.id);
+  if (sum - cut > 0) add(payeeId, 'available', sum - cut, 'payout', d.id);   /* 1 ₽ при комиссии 1 ₽ — строки «+0» нет */
   if (cut > 0) add(0, 'available', cut, 'payout-fee', d.id);
   const done = (d.paid + sum) >= d.amount;
   q.payDeal.run(sum, done ? 'released' : 'held', d.id);
@@ -7581,7 +7583,7 @@ function vidPayFeePct(campId) {
 }
 function vidNetOf(gross, pct) {
   const g = Math.max(0, Math.round(Number(gross) || 0));
-  return g - pctOf(g, pct);
+  return g - pctUp(g, pct);   /* как комиссия с выплат (dealPayFee) */
 }
 function vidSettle(row, now, o, note) {
   if (!row || row.status !== 'active') return { state: 'skip', paid: 0 };
