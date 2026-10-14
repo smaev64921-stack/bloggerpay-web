@@ -125,8 +125,9 @@ const squat = await api('POST', '/api/deals/hold',
 ok(squat.status === 403, 'посторонний имя бюджета кампании не занимает', squat.body);
 
 await api('POST', '/api/topup', { amount: 50000, opKey: randomUUID() }, A.token);
+/* бюджет задания + 7% комиссии сверху (14.10.2026) должны уместиться в 50 000 */
 const real = await api('POST', '/api/deals/hold',
-  { dealId: 'camp:' + campId, amount: 50000, opKey: randomUUID() }, A.token);
+  { dealId: 'camp:' + campId, amount: 40000, opKey: randomUUID() }, A.token);
 ok(real.status === 200, 'хозяин кампании замораживает бюджет', real.body);
 
 /* ══ 4. Ключи кассы — служебное пространство ═════════════════════════

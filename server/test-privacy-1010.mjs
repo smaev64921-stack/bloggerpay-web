@@ -222,7 +222,8 @@ try {
   console.log('\nОбщий рейтинг: имена как на доске задания');
   const tgName = await reg('tg' + t, 'blogger', 'Пользователь 7654321');
   await api('POST', '/api/topup', { amount: 5000, opKey: randomUUID() }, { token: adv.token });
-  await api('POST', '/api/deals/hold', { dealId: 'camp:' + camp, amount: 5000, opKey: randomUUID() }, { token: adv.token });
+  /* бюджет задания + 7% комиссии сверху (14.10.2026) — в пополнение 5 000 */
+  await api('POST', '/api/deals/hold', { dealId: 'camp:' + camp, amount: 4000, opKey: randomUUID() }, { token: adv.token });
   const rel = await api('POST', '/api/deals/release', { dealId: 'camp:' + camp, toUserId: tgName.id, amount: 2000, opKey: randomUUID() }, { token: adv.token });
   ok(rel.status === 200, 'выплата блогеру с именем по умолчанию', rel.body);
   const lb = await api('GET', '/api/leaderboard');

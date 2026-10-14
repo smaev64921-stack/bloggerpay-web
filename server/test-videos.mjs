@@ -436,6 +436,8 @@ const common = {
   YT_CLIENT_ID: 'yt-client', YT_CLIENT_SECRET: 'yt-secret', YT_API_BASE: GG, YT_OAUTH_BASE: GG,
   TRUST_PROXY: '1', ADMIN_CHAT_ID: '', RESEND_API_KEY: '', VID_AUTO_ACCEPT_H: '', VID_TRACK_DAYS: '',
   TEST_TOPUP: '1', TEST_TOPUP_OPEN: '1', YOOKASSA_SHOP_ID: '', YOOKASSA_SECRET_KEY: '',
+  /* механика начислений — без комиссий; комиссии 7% проверяет test-fees.mjs */
+  TOPUP_FEE_PCT: '0', TASK_FEE_PCT: '0', PAYOUT_FEE_PCT: '0', WITHDRAW_FEE_PCT: '0',
 };
 const srv = spawn(process.execPath, ['server.js'], {
   cwd: here,
@@ -1703,7 +1705,7 @@ try {
     { sBrd, board: { videos: bNow.videos, views: bNow.views, paid: bNow.paid, budget: bNow.budget, reserved: bNow.reserved } });
   ok(!!sBrd && sBrd.videos === 3 && sBrd.views === 16000 && sBrd.paid === 200 && sBrd.budget === 10000,
     'brd: 3 видео, 16 000 просмотров, выплачено 200 ₽ из 10 000 ₽', sBrd);
-  ok(!!sBrd && Object.keys(sBrd).sort().join() === 'budget,paid,reserved,videos,views', 'в строке задания только пять чисел', sBrd);
+  ok(!!sBrd && Object.keys(sBrd).sort().join() === 'budget,paid,payFeePct,reserved,videos,views', 'в строке задания только шесть чисел (с 14.10 — ставка комиссии с выплат)', sBrd);
   ok(!(camps.paused in sc1), 'задание на паузе в сводку не попадает', Object.keys(sc1).length);
   ok(camps.main in sc1 && camps.notif in sc1 && camps.noesc in sc1 && sc1[camps.noesc].budget === 0,
     'активные задания в сводке есть, без заморозки — бюджет 0', sc1[camps.noesc]);

@@ -330,7 +330,28 @@ const OAUTH = {
    и избранное (mine), свободные дни (slot). Такой конверт человек
    пишет только сам себе — проверка в POST /api/sync/put. */
 const SELF_KINDS = new Set(['prof', 'mine', 'slot']);
-const FEE_PCT = 4;                       /* комиссия сервиса при выводе */
+/* Комиссии сервиса (14.10.2026, решение владельца):
+   · пополнение — 7% СВЕРХУ суммы: просит 10 000 ₽ на баланс — платит 10 700 ₽;
+   · задание — 7% сверху бюджета с рекламодателя (бюджет 10 000 ₽ — со счёта
+     10 700 ₽, все 10 000 ₽ идут на выплаты) и 7% с каждой выплаты блогеру
+     (начислено 100 ₽ — на баланс 93 ₽). Ставки пишутся в строку заморозки
+     задания при запуске: у заданий, запущенных раньше, комиссии нет;
+   · вывод — без комиссии (было 4%). Заявки, поданные раньше, выплачиваются
+     как были поданы (fee/net записаны в заявке). */
+/* Ставки можно переопределить переменными окружения (целые проценты 0–30):
+   так наборы проверок механики начислений гоняются без комиссий, а комиссии
+   проверяет свой набор (test-fees.mjs). На бою — значения по умолчанию. */
+function feeEnv(k, d) {
+  const raw = ENV[k];
+  const v = Math.round(Number(raw));
+  return raw != null && String(raw).trim() !== '' && Number.isFinite(v) && v >= 0 && v <= 30 ? v : d;
+}
+const FEE_PCT = feeEnv('WITHDRAW_FEE_PCT', 0);       /* комиссия при выводе — убрана 14.10.2026 */
+const TOPUP_FEE_PCT = feeEnv('TOPUP_FEE_PCT', 7);    /* пополнение: сверху суммы */
+const TASK_FEE_PCT = feeEnv('TASK_FEE_PCT', 7);      /* рекламодатель: сверху бюджета задания */
+const PAYOUT_FEE_PCT = feeEnv('PAYOUT_FEE_PCT', 7);  /* блогер: с каждой выплаты за задание */
+/* процент от суммы в рублях (целые рубли, округление до ближайшего) */
+function pctOf(sum, pct) { return Math.round((Number(sum) || 0) * (Number(pct) || 0) / 100); }
 const MAX_AMOUNT = 100_000_000;          /* больше — опечатка, не бюджет */
 const SESSION_DAYS = 30;
 
@@ -575,6 +596,15 @@ CREATE INDEX IF NOT EXISTS withdrawals_status ON withdrawals(status);
    IF NOT EXISTS её не изменит, поэтому колонку добавляем отдельно. */
 try { db.exec('ALTER TABLE deals ADD COLUMN paid INTEGER NOT NULL DEFAULT 0'); }
 catch (e) { /* уже есть — это нормально */ }
+/* Комиссии задания (14.10.2026): fee_pct — с рекламодателя сверху бюджета,
+   pay_fee_pct — с выплат блогеру; fee_in — сколько комиссии взято, fee_back —
+   сколько вернули вместе с неистраченным бюджетом. У строк до этого дня — 0. */
+for (const col of ['fee_pct INTEGER NOT NULL DEFAULT 0', 'pay_fee_pct INTEGER NOT NULL DEFAULT 0',
+  'fee_in INTEGER NOT NULL DEFAULT 0', 'fee_back INTEGER NOT NULL DEFAULT 0']) {
+  try { db.exec('ALTER TABLE deals ADD COLUMN ' + col); } catch (e) { /* уже есть */ }
+}
+/* Комиссия платежа ЮKassa: amount — сколько зачислить, fee — сверху (14.10.2026). */
+try { db.exec('ALTER TABLE payments ADD COLUMN fee INTEGER NOT NULL DEFAULT 0'); } catch (e) { /* уже есть */ }
 
 /* Телеграм-id: по нему узнаём человека, вошедшего из мини-аппа. */
 /* Селфи с паспортом (02.09.2026): второй снимок в заявке на проверку
@@ -965,13 +995,14 @@ function invoiceHooks(bot) {
       const tgName = [f.first_name, f.last_name].filter(Boolean).join(' ').slice(0, 80) || null;
       qi.link.run(chat, tgUser, tgName, r.id);
       await bot.say(chat, '🧾 Заявка на пополнение по счёту №' + r.id + '\n\n'
-        + 'Сумма: ' + rubTxt(r.amount) + '\nПлательщик: ' + r.company + '\nИНН: ' + r.inn + '\n\n'
+        + 'На баланс: ' + rubTxt(r.amount) + '\nСумма счёта: ' + rubTxt(r.amount + pctOf(r.amount, TOPUP_FEE_PCT))
+        + ' (включая комиссию сервиса ' + TOPUP_FEE_PCT + '%)\nПлательщик: ' + r.company + '\nИНН: ' + r.inn + '\n\n'
         + 'Менеджер выставит счёт и пришлёт его сюда, в этот чат, в течение рабочего дня. '
         + 'После оплаты деньги поступят на баланс BloggerPay — мы напишем.\n\n'
         + 'Нужны другие реквизиты или договор? Напишите сюда — менеджер ответит.');
       if (admin && chat !== admin) {
         const a = await bot.say(admin, '🧾 Клиент по счёту №' + r.id + ' на связи в боте' + (tgUser ? ' — ' + tgUser : '') + '\n'
-          + rubTxt(r.amount) + ' · ' + r.company + ' · ИНН ' + r.inn + '\n\n'
+          + rubTxt(r.amount) + ' на баланс · счёт на ' + rubTxt(r.amount + pctOf(r.amount, TOPUP_FEE_PCT)) + ' · ' + r.company + ' · ИНН ' + r.inn + '\n\n'
           + 'Ответьте на это сообщение (Ответить) — бот передаст ответ клиенту. Счёт можно прислать файлом.');
         if (a && a.message_id) qi.relayPut.run(Number(a.message_id), chat, r.id);
       }
@@ -1170,6 +1201,10 @@ const q = {
   /* бюджет задания: пополнение и частичный возврат (11.10.2026) */
   growDeal: db.prepare(`UPDATE deals SET amount = amount + ?, updated_at = datetime('now') WHERE id = ? AND status = 'held'`),
   cutDeal: db.prepare(`UPDATE deals SET amount = amount - ?, updated_at = datetime('now') WHERE id = ? AND status = 'held'`),
+  /* комиссии задания (14.10.2026) */
+  setDealFees: db.prepare('UPDATE deals SET fee_pct = ?, pay_fee_pct = ?, fee_in = ? WHERE id = ?'),
+  addFeeIn: db.prepare('UPDATE deals SET fee_in = fee_in + ? WHERE id = ?'),
+  addFeeBack: db.prepare('UPDATE deals SET fee_back = fee_back + ? WHERE id = ?'),
   insWd: db.prepare('INSERT INTO withdrawals (user_id, amount, fee, net, requisites, status) VALUES (?,?,?,?,?,?)'),
   wd: db.prepare('SELECT * FROM withdrawals WHERE id = ?'),
   updWd: db.prepare(`UPDATE withdrawals SET status = ?, note = ?, updated_at = datetime('now') WHERE id = ?`),
@@ -1181,10 +1216,14 @@ const q = {
       COALESCE(SUM(CASE WHEN bucket='available' THEN amount END), 0) AS available,
       COALESCE(SUM(CASE WHEN bucket='hold' THEN amount END), 0) AS hold
     FROM ledger`),
+  /* доход сервиса — все комиссии на счёте 0: вывод (fee, до 14.10), пополнение,
+     задание (за вычетом возвращённой с остатком бюджета), выплаты блогерам */
   platformIncome: db.prepare(`SELECT COALESCE(SUM(amount),0) AS fees
-    FROM ledger WHERE user_id = 0 AND kind = 'fee'`),
+    FROM ledger WHERE user_id = 0 AND kind IN ('fee','topup-fee','task-fee','task-fee-back','payout-fee')`),
   paidOut: db.prepare(`SELECT COALESCE(SUM(net),0) AS s FROM withdrawals WHERE status = 'paid'`),
-  toppedUp: db.prepare(`SELECT COALESCE(SUM(amount),0) AS s FROM ledger WHERE kind = 'topup'`),
+  /* внесено снаружи: зачисления на баланс И комиссия пополнения сверху —
+     её человек тоже заплатил, она лежит на счёте сервиса (сверка) */
+  toppedUp: db.prepare(`SELECT COALESCE(SUM(amount),0) AS s FROM ledger WHERE kind IN ('topup','topup-fee')`),
   openDeals: db.prepare(`SELECT d.id, d.amount, d.paid, d.payer_id, d.payee_id, d.created_at,
       u.name AS payer_name
     FROM deals d JOIN users u ON u.id = d.payer_id
@@ -1275,6 +1314,7 @@ const q = {
   trimErrors: db.prepare(`DELETE FROM errors WHERE id NOT IN
     (SELECT id FROM errors ORDER BY id DESC LIMIT 20000)`),
   insPay: db.prepare('INSERT INTO payments (id, user_id, amount, status) VALUES (?,?,?,?)'),
+  payFee: db.prepare('UPDATE payments SET fee = ? WHERE id = ?'),
   payById: db.prepare('SELECT * FROM payments WHERE id = ?'),
   updPay: db.prepare(`UPDATE payments SET status = ?, updated_at = datetime('now') WHERE id = ?`),
   insKyc: db.prepare('INSERT INTO kyc_requests (user_id, name, birth, photo, selfie, status) VALUES (?,?,?,?,?,?)'),
@@ -1671,11 +1711,23 @@ async function ykApi(method, path, body, idemKey) {
 function creditYkPayment(p) {
   if (!p || p.status !== 'succeeded') return { ok: false, status: (p && p.status) || 'unknown' };
   const uid = Number(p.metadata && p.metadata.userId) || 0;
-  const amount = Math.round(Number(p.amount && p.amount.value) || 0);
-  if (!uid || !q.userById.get(uid) || amount <= 0) return { ok: false, status: 'bad-payment' };
+  const paidSum = Math.round(Number(p.amount && p.amount.value) || 0);
+  if (!uid || !q.userById.get(uid) || paidSum <= 0) return { ok: false, status: 'bad-payment' };
+  /* Комиссия пополнения сверху (14.10.2026): заплачено 10 700 ₽ — на баланс
+     10 000 ₽, 700 ₽ — сервису. Делим по своей строке платежа (её сумма и
+     комиссия), если она сходится с оплаченным; иначе — по ставке от оплаты. */
+  const row = q.payById.get(p.id);
+  let amount, fee;
+  if (row && row.user_id === uid && row.amount > 0 && row.amount + (row.fee || 0) === paidSum) {
+    amount = row.amount; fee = row.fee || 0;
+  } else {
+    amount = Math.round(paidSum * 100 / (100 + TOPUP_FEE_PCT));
+    fee = paidSum - amount;
+  }
   const r = moneyOp('yk:' + p.id, uid, 'topup', (add) => {
-    add(uid, 'available', amount, 'topup', 'пополнение ЮKassa ' + p.id);
-    return { ok: true, credited: amount };
+    add(uid, 'available', amount, 'topup', 'пополнение ЮKassa ' + p.id + (fee > 0 ? ' · оплачено ' + paidSum + ', комиссия ' + fee : ''));
+    if (fee > 0) add(0, 'available', fee, 'topup-fee', 'комиссия пополнения ЮKassa ' + p.id);
+    return { ok: true, credited: amount, fee, paid: paidSum };
   });
   if (r.status === 200) {
     try { q.updPay.run('succeeded', p.id); } catch (e) { /* строки могло не быть */ }
@@ -1768,14 +1820,57 @@ function moneyOp(opKey, userId, kind, build) {
   }
 }
 
+/* Сколько комиссии задания вернуть вместе с возвратом части бюджета
+   (14.10.2026): комиссия — за ПОТРАЧЕННОЕ. Возвращаем % от возвращаемой
+   суммы, но не больше, чем взято минус уже возвращённое минус % от уже
+   выплаченного блогерам. Ставит возврат в той же операции. */
+function dealFeeBack(add, d, sum) {
+  const p = Number(d && d.fee_pct) || 0;
+  if (p <= 0 || sum <= 0) return 0;
+  const room = (Number(d.fee_in) || 0) - (Number(d.fee_back) || 0) - pctOf(d.paid, p);
+  const back = Math.max(0, Math.min(room, pctOf(sum, p)));
+  if (back > 0) {
+    add(0, 'available', -back, 'task-fee-back', d.id);
+    add(d.payer_id, 'available', back, 'task-fee-back', d.id);
+    q.addFeeBack.run(back, d.id);
+  }
+  return back;
+}
+/* Полный возврат: вся невыбранная комиссия (взято − возвращено − % от выплаченного). */
+function dealFeeBackAll(add, d) {
+  const p = Number(d && d.fee_pct) || 0;
+  if (p <= 0) return 0;
+  const back = Math.max(0, (Number(d.fee_in) || 0) - (Number(d.fee_back) || 0) - pctOf(d.paid, p));
+  if (back > 0) {
+    add(0, 'available', -back, 'task-fee-back', d.id);
+    add(d.payer_id, 'available', back, 'task-fee-back', d.id);
+    q.addFeeBack.run(back, d.id);
+  }
+  return back;
+}
+
 /* Выплата из заморозки: hold плательщика → available получателя.
    Одно движение на оба пути — кнопку рекламодателя (/api/deals/release)
    и прибавки за видео по мере роста просмотров (vidPayStep), — чтобы журнал у них был
    одинаковым до строки: рейтинг, расход кампании и сверка читают именно
    его. Зовётся ТОЛЬКО внутри moneyOp. true — заморозка исчерпана. */
-function dealPayMoves(add, d, payeeId, sum) {
+/* Комиссия с выплаты блогеру (14.10.2026): у заморозки задания с
+   pay_fee_pct > 0 из суммы выплаты получателю уходит сумма минус процент,
+   процент — сервису (payout-fee). Округление — по НАКОПЛЕННОМУ: комиссия
+   этой части = % от выплаченного после минус % от выплаченного до, тогда
+   сумма частей ровно равна % от всего (у ролика — по его выплатам, см.
+   vidPayStep; у ручной выплаты — по заморозке). fee можно передать готовой. */
+function dealPayFee(d, sum, before) {
+  const p = Number(d && d.pay_fee_pct) || 0;
+  if (p <= 0 || sum <= 0) return 0;
+  const b = Math.max(0, Number(before == null ? d.paid : before) || 0);
+  return Math.max(0, Math.min(sum, pctOf(b + sum, p) - pctOf(b, p)));
+}
+function dealPayMoves(add, d, payeeId, sum, fee) {
+  const cut = fee == null ? dealPayFee(d, sum) : Math.max(0, Math.min(sum, fee));
   add(d.payer_id, 'hold', -sum, 'release', d.id);
-  add(payeeId, 'available', sum, 'payout', d.id);
+  add(payeeId, 'available', sum - cut, 'payout', d.id);
+  if (cut > 0) add(0, 'available', cut, 'payout-fee', d.id);
   const done = (d.paid + sum) >= d.amount;
   q.payDeal.run(sum, done ? 'released' : 'held', d.id);
   if (done) q.updDeal.run('released', d.payee_id != null ? d.payee_id : payeeId, d.id);
@@ -3028,6 +3123,8 @@ const routes = {
           /* резерв живых роликов — как на доске: без него гость видел
              «Осталось» больше, чем есть (11.10.2026) */
           reserved: vidReserved(r.id),
+          /* ставка комиссии с выплат блогерам: витрина показывает «вам N ₽» */
+          payFeePct: vidPayFeePct(r.id),
         };
       }
       tsumCache.body = { ok: true, at: now, camps };
@@ -3730,9 +3827,11 @@ const routes = {
     const amount = body.amount;
     if (!amountOk(amount)) return { status: 400, body: { error: 'Сумма — целое число от 1 до 100 000 000' } };
     if (!userKey(body.opKey)) return badKey;
+    const fee = pctOf(amount, TOPUP_FEE_PCT);
     return moneyOp(String(body.opKey || ''), u.id, 'topup', (add) => {
-      add(u.id, 'available', amount, 'topup', 'тестовое пополнение');
-      return { ok: true, balance: q.balance.get(u.id) };
+      add(u.id, 'available', amount, 'topup', 'тестовое пополнение' + (fee > 0 ? ' · оплачено ' + (amount + fee) + ', комиссия ' + fee : ''));
+      if (fee > 0) add(0, 'available', fee, 'topup-fee', 'комиссия тестового пополнения');
+      return { ok: true, amount, fee, total: amount + fee, balance: q.balance.get(u.id) };
     });
   },
 
@@ -3760,13 +3859,15 @@ const routes = {
     const info = qi.ins.run(u.id, code, amount, company, inn, email || null, comment || null);
     const id = Number(info.lastInsertRowid);
     if (ALERTS_ON) {
-      tgSendTo(ADMIN_CHAT_ID, '🧾 Заявка на пополнение по счёту №' + id + '\n\n' + rubTxt(amount) + '\n' + company + ' · ИНН ' + inn
+      tgSendTo(ADMIN_CHAT_ID, '🧾 Заявка на пополнение по счёту №' + id + '\n\n' + rubTxt(amount) + ' на баланс · счёт на '
+        + rubTxt(amount + pctOf(amount, TOPUP_FEE_PCT)) + ' (комиссия ' + TOPUP_FEE_PCT + '%)\n' + company + ' · ИНН ' + inn
         + '\n' + (email || u.email) + (comment ? '\n«' + comment + '»' : '')
         + '\n\nКлиент откроет чат с ботом — его сообщения придут сюда. Зачислить после оплаты: админ-панель → Счета.', 'счёт');
     }
     adminLog(req, 'inv-new', 'user ' + u.id, 'счёт №' + id + ' · ' + amount + ' ₽');
     const bot = (BOT && typeof BOT.botName === 'function' && BOT.botName()) || String(ENV.BOT_USERNAME || '').replace(/^@/, '') || 'BloggerPay_bot';
-    return { status: 200, body: { ok: true, id, code, amount, bot, min: INV_MIN } };
+    const fee = pctOf(amount, TOPUP_FEE_PCT);
+    return { status: 200, body: { ok: true, id, code, amount, fee, total: amount + fee, feePct: TOPUP_FEE_PCT, bot, min: INV_MIN } };
   },
 
   'GET /api/topup/invoices': async (req) => {
@@ -3775,7 +3876,8 @@ const routes = {
     const bot = (BOT && typeof BOT.botName === 'function' && BOT.botName()) || String(ENV.BOT_USERNAME || '').replace(/^@/, '') || 'BloggerPay_bot';
     const rows = qi.mine.all(u.id).map((r) => {
       const open = r.status === 'new' || r.status === 'linked';
-      return { id: r.id, amount: r.amount, company: r.company, inn: r.inn, status: r.status, paid: r.paid, note: r.note,
+      return { id: r.id, amount: r.amount, fee: pctOf(r.amount, TOPUP_FEE_PCT), total: r.amount + pctOf(r.amount, TOPUP_FEE_PCT),
+        company: r.company, inn: r.inn, status: r.status, paid: r.paid, note: r.note,
         tg: !!r.tg, created_at: r.created_at, updated_at: r.updated_at, code: open ? r.code : undefined };
     });
     return { status: 200, body: { rows, bot, min: INV_MIN } };
@@ -3791,7 +3893,9 @@ const routes = {
     const test = testTopupAllowed(req, u);
     return {
       status: 200,
-      body: { mode: YK_ON ? 'yookassa' : (test ? 'test' : 'off'), min: 1000 },
+      body: { mode: YK_ON ? 'yookassa' : (test ? 'test' : 'off'), min: 1000,
+        /* комиссии — приложению для честного «к оплате / на баланс» (14.10.2026) */
+        topupFeePct: TOPUP_FEE_PCT, taskFeePct: TASK_FEE_PCT, payoutFeePct: PAYOUT_FEE_PCT, withdrawFeePct: FEE_PCT },
     };
   },
 
@@ -3804,18 +3908,20 @@ const routes = {
     if (!amountOk(amount) || amount < 1000) {
       return { status: 400, body: { error: 'Сумма пополнения — целое число от 1 000 ₽' } };
     }
+    /* сумма — сколько придёт на баланс; к оплате — сумма + комиссия 7% */
+    const fee = pctOf(amount, TOPUP_FEE_PCT);
     try {
       const p = await ykApi('POST', '/payments', {
-        amount: { value: amount.toFixed(2), currency: 'RUB' },
+        amount: { value: (amount + fee).toFixed(2), currency: 'RUB' },
         capture: true,
         confirmation: { type: 'redirect', return_url: PAY_RETURN_URL },
-        description: 'Пополнение баланса BloggerPay, аккаунт ' + u.id,
-        metadata: { userId: u.id },
+        description: 'Пополнение баланса BloggerPay на ' + amount + ' ₽ (комиссия ' + fee + ' ₽), аккаунт ' + u.id,
+        metadata: { userId: u.id, credit: amount, fee },
       }, crypto.randomUUID());
-      try { q.insPay.run(p.id, u.id, amount, p.status || 'pending'); } catch (e) { /* повтор — не критично */ }
+      try { q.insPay.run(p.id, u.id, amount, p.status || 'pending'); q.payFee.run(fee, p.id); } catch (e) { /* повтор — не критично */ }
       const url = p.confirmation && p.confirmation.confirmation_url;
       if (!url) return { status: 502, body: { error: 'Касса не вернула страницу оплаты' } };
-      return { status: 200, body: { ok: true, paymentId: p.id, url } };
+      return { status: 200, body: { ok: true, paymentId: p.id, url, amount, fee, total: amount + fee } };
     } catch (e) {
       return { status: e.httpStatus || 502, body: { error: String(e.message || 'Касса недоступна') } };
     }
@@ -3927,11 +4033,21 @@ const routes = {
       if (payeeId === u.id) return { status: 400, body: { error: 'Нельзя назначить получателем себя' } };
     }
     if (!userKey(body.opKey)) return badKey;
+    /* задание (camp:<id>): комиссия сервиса 7% сверху бюджета — бюджет целиком
+       идёт на выплаты, комиссия списывается отдельной строкой. У обычной
+       сделки комиссии нет. Ставки записываем в заморозку: дальше по ним
+       считаются пополнения бюджета, выплаты блогерам и возврат остатка. */
+    const fee = asCamp ? pctOf(amount, TASK_FEE_PCT) : 0;
     return moneyOp(String(body.opKey || ''), u.id, 'hold', (add) => {
       add(u.id, 'available', -amount, 'hold', dealId);
       add(u.id, 'hold', amount, 'hold', dealId);
+      if (fee > 0) {
+        add(u.id, 'available', -fee, 'task-fee', dealId);
+        add(0, 'available', fee, 'task-fee', dealId);
+      }
       q.insDeal.run(dealId, u.id, payeeId, amount, 'held');
-      return { ok: true, dealId, payeeId, balance: q.balance.get(u.id) };
+      if (asCamp) q.setDealFees.run(TASK_FEE_PCT, PAYOUT_FEE_PCT, fee, dealId);
+      return { ok: true, dealId, payeeId, fee, feePct: asCamp ? TASK_FEE_PCT : 0, total: amount + fee, balance: q.balance.get(u.id) };
     });
   },
 
@@ -4149,10 +4265,11 @@ const routes = {
       return moneyOp(String(body.opKey || ''), u.id, 'refund', (add) => {
         add(d.payer_id, 'hold', -sum, 'refund', dealId);
         add(d.payer_id, 'available', sum, 'refund', dealId);
+        const feeBack = all ? dealFeeBackAll(add, d) : dealFeeBack(add, d, sum);
         if (all) q.updDeal.run('refunded', d.payee_id, dealId);
         else q.cutDeal.run(sum, dealId);
         vidBoardDrop(cid);
-        return { ok: true, dealId, refunded: sum, left: left - sum, closed: all };
+        return { ok: true, dealId, refunded: sum, feeBack, left: left - sum, closed: all };
       });
     }
     /* Пока по заданию есть ролики на проверке или в подсчёте просмотров
@@ -4173,10 +4290,11 @@ const routes = {
     return moneyOp(String(body.opKey || ''), u.id, 'refund', (add) => {
       add(d.payer_id, 'hold', -rest, 'refund', dealId);
       add(d.payer_id, 'available', rest, 'refund', dealId);
+      const feeBack = dealFeeBackAll(add, d);
       q.updDeal.run('refunded', d.payee_id, dealId);
       /* доска задания держит бюджет минуту — после возврата он другой */
       if (dealId.startsWith('camp:')) vidBoardDrop(dealId.slice(5));
-      return { ok: true, dealId, refunded: rest };
+      return { ok: true, dealId, refunded: rest, feeBack };
     });
   },
 
@@ -4202,12 +4320,18 @@ const routes = {
     if (d.payer_id !== u.id) return { status: 403, body: { error: 'Это бюджет чужой кампании' } };
     if (d.status !== 'held') return { status: 409, body: { error: 'Сделка уже закрыта: ' + d.status } };
     if (!userKey(body.opKey)) return badKey;
+    const fee = pctOf(amount, d.fee_pct || 0);
     return moneyOp(String(body.opKey || ''), u.id, 'hold', (add) => {
       add(u.id, 'available', -amount, 'hold', dealId);
       add(u.id, 'hold', amount, 'hold', dealId);
+      if (fee > 0) {
+        add(u.id, 'available', -fee, 'task-fee', dealId);
+        add(0, 'available', fee, 'task-fee', dealId);
+        q.addFeeIn.run(fee, dealId);
+      }
       q.growDeal.run(amount, dealId);
       vidBoardDrop(m[1]);
-      return { ok: true, dealId, added: amount, budget: d.amount + amount, balance: q.balance.get(u.id) };
+      return { ok: true, dealId, added: amount, fee, total: amount + fee, budget: d.amount + amount, balance: q.balance.get(u.id) };
     });
   },
 
@@ -4256,6 +4380,9 @@ const routes = {
       add(d.payer_id, 'hold', -rest, 'settle', dealId);
       if (toBlogger > 0) add(payee.id, 'available', toBlogger, 'settle-payout', dealId);
       if (toPayer > 0) add(d.payer_id, 'available', toPayer, 'settle-refund', dealId);
+      /* задание с комиссией: за вернувшуюся плательщику долю — и её 7% (14.10.2026);
+         доля исполнителя — решение арбитра, её не режем */
+      if (toPayer > 0) dealFeeBack(add, d, toPayer);
       q.payDeal.run(toBlogger, 'released', dealId);
       if (payee) q.updDeal.run('released', payee.id, dealId);
       q.closeDisputesAll.run(dealId);          /* решение вынесено — замок снят */
@@ -4843,7 +4970,7 @@ const routes = {
     }
     const _wdPaid = moneyOp(sysKey('wd-paid', w.id), w.user_id, 'wd-paid', (add) => {
       add(w.user_id, 'hold', -w.amount, 'wd-paid', 'заявка ' + w.id);
-      add(0, 'available', w.fee, 'fee', 'комиссия по заявке ' + w.id);
+      if (w.fee > 0) add(0, 'available', w.fee, 'fee', 'комиссия по заявке ' + w.id);
       q.updWd.run('paid', String(body.note || '').slice(0, 200) || null, w.id);
       /* Человек ждёт эти деньги и обновляет экран вручную — скажем сами. */
       pushTo(w.user_id, 'Деньги отправлены',
@@ -4943,9 +5070,12 @@ const routes = {
     if (r.status === 'paid' && amount !== r.paid) {
       return { status: 409, body: { error: 'Счёт уже оплачен: зачислено ' + rubTxt(r.paid) } };
     }
+    /* комиссия 7% сверху: счёт выставлен на сумму + комиссию, на баланс — сумма */
+    const fee = pctOf(amount, TOPUP_FEE_PCT);
     const res = moneyOp('invoice:' + r.id, r.user_id, 'topup', (add) => {
-      add(r.user_id, 'available', amount, 'topup', 'пополнение по счёту №' + r.id);
-      return { ok: true, id: r.id, amount, balance: q.balance.get(r.user_id) };
+      add(r.user_id, 'available', amount, 'topup', 'пополнение по счёту №' + r.id + (fee > 0 ? ' · оплачено ' + (amount + fee) + ', комиссия ' + fee : ''));
+      if (fee > 0) add(0, 'available', fee, 'topup-fee', 'комиссия пополнения по счёту №' + r.id);
+      return { ok: true, id: r.id, amount, fee, total: amount + fee, balance: q.balance.get(r.user_id) };
     });
     if (res.status === 200 && !res.body.repeated) {
       qi.setSt.run('paid', amount, null, r.id);
@@ -5432,6 +5562,8 @@ const routes = {
       ok: true, campId, sort,
       members: agg.members, videos: agg.videos, views: agg.views,
       paid: agg.paid, reserved: agg.reserved, budget: agg.budget, left: agg.left,
+      /* комиссии задания (14.10.2026): с рекламодателя сверху бюджета и с выплат блогерам */
+      feePct: agg.feePct, payFeePct: agg.payFeePct,
       /* автору — сколько можно вернуть в кошелёк сейчас (не из кэша доски) */
       free: isOwn ? vidReturnable(campId) : undefined,
       leaders: vidBoardOut(board.leaders, board.uids, u.id, isOwn),
@@ -6949,6 +7081,7 @@ function vidDTO(r, view, opts) {
   const minViews = Math.max(0, Math.round(Number(t.minViews) || 0));
   const top = vidTopViews(r);
   const counting = r.status === 'active';
+  const feePctV = vidPayFeePct(r.camp_id);
   const out = {
     id: r.id, campId: r.camp_id, bloggerId: r.blogger_id, ownerId: r.owner_id,
     platform: r.platform || 'tiktok', videoId: vid,
@@ -6964,6 +7097,12 @@ function vidDTO(r, view, opts) {
     /* Для старых приложений: конец подсчёта (у строк v2 — момент зачёта). */
     windowEndsAt: r.track_ends_at || r.approved_at || null,
     earned: est, paid: r.paid || 0, paidAt: r.paid_at || null,
+    /* комиссия с выплат (14.10.2026): ставка задания и суммы «на баланс»
+       блогера — paid/earned/maxPay выше по-прежнему из бюджета (gross) */
+    feePct: feePctV, paidNet: vidNetOf(r.paid || 0, feePctV), earnedNet: vidNetOf(est, feePctV),
+    /* кто смотрит: блогеру приложение показывает суммы «на баланс» (за вычетом
+       комиссии), автору задания — суммы из бюджета (14.10.2026) */
+    viewer: view || null,
     /* Подсчёт v3: до какого момента считаем, сколько суток осталось
        (только у active), всего суток подсчёта, максимум за ролик (null —
        потолка нет), взят ли он, порог начислений и сколько до него. */
@@ -6971,6 +7110,7 @@ function vidDTO(r, view, opts) {
     daysLeft: counting && r.track_ends_at ? vidDaysLeft(r) : null,
     trackDays: VID_TRACK_DAYS,
     maxPay: maxPay || null,
+    maxPayNet: maxPay ? vidNetOf(maxPay, feePctV) : null,
     capReached: maxPay > 0 && est >= maxPay,
     minViews,
     viewsToMin: minViews && top < minViews ? minViews - top : 0,
@@ -7421,6 +7561,16 @@ function vidAccessFail(row, code, now, name, P, o) {
    (начислено − выплачено) — vidPayStep. Потом — конец подсчёта (максимум
    за ролик взят, срок вышел, цифры заморожены) или уведомление блогеру:
    первое начисление — сразу, дальше сводка не чаще раза в сутки. */
+/* Ставка комиссии с выплат по заданию (0 — задание запущено до 14.10.2026)
+   и сумма «на баланс» блогера от выплаченного из бюджета. */
+function vidPayFeePct(campId) {
+  const d = q.deal.get('camp:' + campId);
+  return d ? Number(d.pay_fee_pct) || 0 : 0;
+}
+function vidNetOf(gross, pct) {
+  const g = Math.max(0, Math.round(Number(gross) || 0));
+  return g - pctOf(g, pct);
+}
 function vidSettle(row, now, o, note) {
   if (!row || row.status !== 'active') return { state: 'skip', paid: 0 };
   const name = vidCampName(vidCamp(row.camp_id));
@@ -7463,6 +7613,10 @@ function vidSettle(row, now, o, note) {
     if (!row || row.status !== 'active') return { state: 'skip', paid: credited };
   }
   const total = row.paid || 0;
+  /* блогеру говорим, сколько пришло НА БАЛАНС (за вычетом комиссии) */
+  const fp = vidPayFeePct(row.camp_id);
+  const N = (g) => vidNetOf(g, fp);
+  const feeTail = fp > 0 ? ' (за вычетом комиссии сервиса ' + fp + '%)' : '';
   const maxPay = vidMaxPay(t);
   const capped = maxPay > 0 && earned >= maxPay;
   const ended = !!row.frozen || now >= Number(row.track_ends_at) || capped;
@@ -7475,13 +7629,13 @@ function vidSettle(row, now, o, note) {
     vidBoardDrop(row.camp_id);
     let title, body;
     if (total > 0 && first) {
-      title = 'Видео засчитано — ' + vidNum(total) + ' ₽ на балансе';
-      body = '«' + name + '»: ' + vidNum(total) + ' ₽ за ' + views
+      title = 'Видео засчитано — ' + vidNum(N(total)) + ' ₽ на балансе';
+      body = '«' + name + '»: ' + vidNum(N(total)) + ' ₽ за ' + views + feeTail
         + (capped ? '. Это максимум за видео — подсчёт закончен' : '. Подсчёт закончен') + tail;
     } else if (total > 0) {
-      title = 'Подсчёт закончен — всего ' + vidNum(total) + ' ₽';
-      body = '«' + name + '»: ' + (credited > 0 ? 'последняя прибавка +' + vidNum(credited) + ' ₽, ' : '')
-        + 'всего ' + vidNum(total) + ' ₽ за ' + views + (capped ? ' — это максимум за видео' : '') + tail;
+      title = 'Подсчёт закончен — всего ' + vidNum(N(total)) + ' ₽';
+      body = '«' + name + '»: ' + (credited > 0 ? 'последняя прибавка +' + vidNum(N(total) - N(total - credited)) + ' ₽, ' : '')
+        + 'всего ' + vidNum(N(total)) + ' ₽ за ' + views + feeTail + (capped ? ' — это максимум за видео' : '') + tail;
     } else {
       title = o.accept ? 'Видео засчитано' : 'Подсчёт закончен';
       body = '«' + name + '»: по условиям задания выплаты нет — ' + views
@@ -7496,13 +7650,13 @@ function vidSettle(row, now, o, note) {
   const pending = total > (row.notif_paid || 0);
   if (pending && (first || o.how || now - (Number(row.notif_at) || 0) >= VID_DAILY_MS)) {
     if (first) {
-      vidNotify(row.blogger_id, 'Видео засчитано — ' + vidNum(total) + ' ₽ на балансе', '«' + name + '»: '
-        + vidNum(total) + ' ₽ за ' + views + '. Дальше сайт сам обновляет просмотры и доначисляет — ещё ' + dleft + tail,
+      vidNotify(row.blogger_id, 'Видео засчитано — ' + vidNum(N(total)) + ' ₽ на балансе', '«' + name + '»: '
+        + vidNum(N(total)) + ' ₽ за ' + views + feeTail + '. Дальше сайт сам обновляет просмотры и доначисляет — ещё ' + dleft + tail,
         '/?go=tasks');
     } else {
-      const plus = total - (row.notif_paid || 0);
+      const plus = N(total) - N(row.notif_paid || 0);
       vidNotify(row.blogger_id, '+' + vidNum(plus) + ' ₽ за просмотры: «' + name + '»', 'Всего по видео начислено '
-        + vidNum(total) + ' ₽ за ' + views + '. Считаем ещё ' + dleft + tail, '/?go=tasks');
+        + vidNum(N(total)) + ' ₽ за ' + views + feeTail + '. Считаем ещё ' + dleft + tail, '/?go=tasks');
     }
     q.vidNotified.run(now, total, row.id);
   } else if (o.accept) {
@@ -7548,7 +7702,7 @@ function vidPayStep(row, earned, owe, views, now, name) {
     const dd = q.deal.get(dealId);
     const left = dd && dd.status === 'held' ? Math.max(0, dd.amount - dd.paid) : 0;
     if (left < sum) throw httpError(409, 'В заморозке стало меньше денег');
-    const closed = dealPayMoves(add, dd, cur.blogger_id, sum);
+    const closed = dealPayMoves(add, dd, cur.blogger_id, sum, dealPayFee(dd, sum, before));
     q.vidAccrued.run(after, now, sum >= owe ? views : null, now, cur.id);
     if (sum < owe) q.vidShort.run('В заморозке кампании не хватило денег: недоплачено ' + (owe - sum) + ' ₽', now, cur.id);
     return { ok: true, dealId, paid: sum, left: left - sum, closed, to: cur.blogger_id, video: cur.id,
@@ -7700,6 +7854,7 @@ function vidBoardAgg(campId) {
     views: ranked.reduce((s, r) => s + r.views, 0),
     budget: d ? d.amount : 0, paid: d ? d.paid : 0, reserved,
     left: d && d.status === 'held' ? Math.max(0, d.amount - d.paid - reserved) : 0,
+    feePct: d ? Number(d.fee_pct) || 0 : 0, payFeePct: d ? Number(d.pay_fee_pct) || 0 : 0,
   };
   vidBoards.set(key, agg);
   if (vidBoards.size > 500) vidBoards.delete(vidBoards.keys().next().value);

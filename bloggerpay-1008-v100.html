@@ -13677,7 +13677,7 @@ function showVerifyPicker() {
           </div>
           <div class="tu-method-desc">Настоящий приём платежей ещё не подключён.<br>Сумма зачисляется только в этом приложении.</div>
         </div>
-        <div class="tu-commission">Без комиссии</div>
+        <div class="tu-commission">Комиссия 7% сверху</div>
       </div>
     </div>
 
@@ -13721,7 +13721,7 @@ function showVerifyPicker() {
         <h4>Важно знать</h4>
         <ul>
           <li>Сумма появляется на балансе сразу</li>
-          <li>Комиссия за пополнение — 0%</li>
+          <li>Комиссия сервиса — 7% сверху суммы: на баланс приходит вся сумма</li>
           <li>Минимальная сумма пополнения — 1 000 ₽</li>
           <li>Средства доступны сразу после пополнения</li>
         </ul>
@@ -13792,7 +13792,7 @@ function showVerifyPicker() {
         <div class="wd-method-desc">Реквизиты сохраняются на этом устройстве.<br>Настоящие выплаты пока не подключены.</div>
         <div class="wd-method-timing">Заявка встанет в очередь на выплату</div>
       </div>
-      <div class="wd-commission-chip">Комиссия 4%</div>
+      <div class="wd-commission-chip">Без комиссии</div>
     </div>
 
     <!-- card -->
@@ -13889,7 +13889,7 @@ function showVerifyPicker() {
     <!-- fee -->
     <div class="wd-fee-row">
       <div class="wd-fee-line">
-        <span class="wd-fee-label">Комиссия сервиса (4%)</span>
+        <span class="wd-fee-label">Комиссия за вывод</span>
         <span class="wd-fee-val" id="wdFeeVal">− 0 ₽</span>
       </div>
       <div class="wd-fee-divider"></div>
@@ -16656,12 +16656,12 @@ function openHelpSheet(){
   const faq = (window.bpMvOn && window.bpMvOn()) ? [
     ['Как заработать на заданиях?','На «Главной» выберите задание рекламодателя, вступите в него и опубликуйте ролик с рекламой в TikTok или YouTube. Потом нажмите «Загрузить видео» в карточке задания.'],
     ['Когда приходят деньги?','Рекламодатель проверяет ролик. После зачёта 30 дней деньги начисляются по мере роста просмотров — по ставке задания, до максимума за ролик.'],
-    ['Как вывести деньги?','Раздел «Баланс» → «Вывести». Подтвердите личность, привяжите карту и укажите сумму от 1 000 ₽. Комиссия — 4%.'],
+    ['Как вывести деньги?','Раздел «Баланс» → «Вывести». Подтвердите личность, привяжите карту и укажите сумму от 1 000 ₽. Без комиссии.'],
     ['Как разместить своё задание?','Переключитесь на роль рекламодателя в профиле, откройте «Мои задания» и нажмите «Создать задание». Бюджет замораживается и уходит блогерам за просмотры.']
   ] : [
     ['Как работает безопасная сделка?','Рекламодатель оплачивает сделку — средства замораживаются. Блогер выполняет работу по шагам, рекламодатель проверяет публикацию, после подтверждения блогер получает выплату.'],
     ['Что делать при споре?','На любом шаге активной сделки можно открыть спор из карточки сделки — обе стороны прикладывают аргументы, решение фиксируется в сделке.'],
-    ['Как вывести деньги?','Раздел «Баланс» → «Вывести». Привяжите карту, укажите сумму от 1 000 ₽. Комиссия — 4%.'],
+    ['Как вывести деньги?','Раздел «Баланс» → «Вывести». Привяжите карту, укажите сумму от 1 000 ₽. Без комиссии.'],
     ['Как попасть в каталог блогеров?','Создайте карту блогера в профиле: платформы, тематики, цена. После публикации её видят рекламодатели.']
   ];
   const items = faq.map((f,i)=>`
@@ -16797,7 +16797,7 @@ function openLegal(kind){
     ${h('2. Задания и деньги')}
     ${p('2.1. При запуске задания его бюджет замораживается. Блогер вступает в задание и загружает ссылку на свой ролик с подключённого аккаунта — можно сразу, даже с 0 просмотров.')}
     ${p('2.2. Рекламодатель проверяет ролик до 72 часов; если он не ответил, ролик засчитывается сам. После зачёта 30 дней сервис раз в сутки обновляет просмотры и начисляет деньги по ставке задания — с порога просмотров, если он задан, и не больше максимума за ролик и остатка бюджета.')}
-    ${p('2.3. Пополнение и задания — без комиссии. При выводе удерживается 4 % от суммы; вывод — от 1 000 ₽, после проверки личности.')}
+    ${p('2.3. Комиссии сервиса: пополнение — 7 % сверх суммы (на баланс зачисляется вся сумма пополнения); задание — 7 % сверх бюджета с рекламодателя (за неистраченный остаток комиссия возвращается) и 7 % с каждой выплаты блогеру за видео. Вывод — без комиссии, от 1 000 ₽, после проверки личности.')}
     ${h('3. Аккаунт')}
     ${p('3.1. Данные аккаунта (имя, email, телефон) обрабатывает оператор сервиса как оператор персональных данных по 152-ФЗ — подробно в политике конфиденциальности.')}
     ${p('3.2. Один человек — один аккаунт. Не передавайте аккаунт другим и не входите в него на чужих устройствах.')}
@@ -19399,7 +19399,7 @@ function wdUpdate() {
   // Cap at balance
   if (val > balance) { val = balance; inp.value = val || ''; }
 
-  const fee = Math.round(val * 0.04);
+  const fee = 0;   /* вывод без комиссии (14.10.2026, было 4%) */
   const net = val - fee;
   const fmt = n => n > 0 ? n.toLocaleString('ru') + ' ₽' : '0 ₽';
 
@@ -19448,7 +19448,7 @@ function wdSubmit() {
 
   setTimeout(() => {
     // Deduct balance
-    const fee = Math.round(val * 0.04);
+    const fee = 0;   /* вывод без комиссии (14.10.2026, было 4%) */
     const net = val - fee;
     /* Баланс мог измениться за время анимации (соседняя вкладка, автовыплата) —
        перед списанием сверяемся ещё раз, иначе уходим в минус. */
@@ -33704,7 +33704,7 @@ function _buildOfferOverlay(role) {
     {t:'Оплата уже заморожена', d:'Рекламодатель внёс оплату в эскроу. Деньги гарантированно зарезервированы за вами.'},
     {t:'Вы создаёте контент', d:'Согласуйте ТЗ, подготовьте и опубликуйте рекламу в установленный срок.'},
     {t:'Проверка рекламодателем', d:'Рекламодатель одобряет публикацию. Возможны до 2 запросов на правки.'},
-    {t:'Получение оплаты', d:'После одобрения деньги поступают на ваш баланс. Вывод — на карту с комиссией 4%.'},
+    {t:'Получение оплаты', d:'После одобрения деньги поступают на ваш баланс. Вывод — на карту без комиссии.'},
     {t:'Соблюдайте сроки', d:'При срыве дедлайна сделка может быть отменена, а оплата возвращена рекламодателю.'},
   ];
 
@@ -38584,6 +38584,11 @@ function markSent(kk){
 /* ═══ 1. ТЕЛЕФОН ═══ */
 var _code = null, _tick = null;
 window.bpKycPhone = function(){
+  /* 14.10 (владелец): подтверждённый номер изменить нельзя */
+  if(phoneOk()){
+    try{ if(typeof showAuthToast === 'function') showAuthToast('Номер уже подтверждён — изменить его нельзя', 'info'); }catch(e){}
+    return;
+  }
   var k = kyc(); if(!k) return;
   var card = sheet(
     '<div class="kyc-hero"><div class="kyc-hero-ic">' + I.hPhone + '</div>' +
@@ -39462,7 +39467,7 @@ else setTimeout(boot, 0);
                 + '<div><div class="bp-escrow-h">' + s[1] + '</div>'
                 + '<div class="bp-escrow-p">' + s[2] + '</div></div></div>'; }).join('')
       +   '</div>'
-      +   '<div class="bp-escrow-fee">Комиссии со сделки нет: блогер получает всю сумму. Сервис берёт 4% только при выводе денег на карту.</div>'
+      +   '<div class="bp-escrow-fee">Комиссии со сделки нет: блогер получает всю сумму. Вывод на карту — тоже без комиссии.</div>'
       +   '<div class="ocs-acts">'
       +     '<button class="ocs-b ocs-b-main" onclick="document.getElementById(\'bpEscrowSheet\').remove();bpLeaveGuest(\'register\')">Создать аккаунт</button>'
       +   '</div>'
@@ -43099,7 +43104,7 @@ else setTimeout(boot, 0);
 
   /* Версия документов. Меняется вместе с текстом оферты и политики —
      тогда видно, кто на какую редакцию соглашался. */
-  var DOC_VER = '2026-10-10';
+  var DOC_VER = '2026-10-14';   /* 14.10.2026: комиссии 7% (пополнение, задание, выплаты), вывод без комиссии */
 
   function recordConsent(){
     var rec = {
@@ -50783,9 +50788,10 @@ window.bpTaskFinishGo = function(campId){
     }
     if(c && !hasKeyPrefix(holdKey(campId))){
       var adv = findUser(c.ownerId);
-      var needAmt = budgetOf(c);
+      /* 14.10.2026: касса списывает бюджет + комиссию сервиса сверху (bp-fees) */
+      var needAmt = budgetOf(c) + (typeof window.bpFeeTask === 'function' ? window.bpFeeTask(budgetOf(c), c) : 0);
       if(adv && num(adv.balance) < needAmt){
-        toast('Не хватает ' + money(needAmt - num(adv.balance)) + ' ₽ в кошельке — пополните, и задание запустится', 'err');
+        toast('Не хватает ' + money(needAmt - num(adv.balance)) + ' ₽ в кошельке' + (needAmt > budgetOf(c) ? ' (бюджет + комиссия сервиса)' : '') + ' — пополните, и задание запустится', 'err');
         if(typeof window.bpCampGoTopup === 'function') window.bpCampGoTopup(campId);
         return;
       }
@@ -50918,6 +50924,8 @@ window.bpCampGoTopup = function(campId){
   var need = Math.max(0, Math.round(box.planned) - Math.round(box.held));
   if(need <= 0) need = MIN_BUDGET;
   var adv = findUser(c.ownerId) || {};
+  /* сверху бюджета — комиссия сервиса (14.10.2026): пополнить надо и на неё */
+  if(typeof window.bpFeeTask === 'function') need += window.bpFeeTask(need, c);
   var diff = Math.max(0, need - Math.round(num(adv.balance)));
   if(diff > 0 && diff < 1000) diff = 1000;   /* минимум пополнения — 1 000 ₽ */
 
@@ -50952,11 +50960,21 @@ function _tm2Fmt(inp){
 }
 window._tm2Fmt = _tm2Fmt;   /* inline-oninput ищет функцию в window */
 function _tm2Read(inp){ return Math.floor(num(String((inp && inp.value) || '').replace(/[^\d]/g, ''))); }
+/* комиссия сервиса задания (14.10.2026): пополнение бюджета — % сверху суммы,
+   возврат остатка — % возвращается вместе с ним; ставка — та, что записана
+   кассой при запуске (bp-fees: bpFeeCamp) */
+function _tm2Fee(campId){ try{ return typeof window.bpFeeCamp === 'function' ? Math.max(0, num(window.bpFeeCamp(campById(campId) || campId, 'task'))) : 0; }catch(e){ return 0; } }
+function _tm2FeeOf(campId, v){ return Math.round(Math.max(0, num(v)) * _tm2Fee(campId) / 100); }
 function _tm2Max(campId, back){
   var c = campById(campId); if(!c) return 0;
   if(back) return Math.max(0, Math.round(campEscrow(c).free));
-  var adv = findUser(c.ownerId) || {};
-  return Math.max(0, Math.floor(num(adv.balance)));
+  var adv = findUser(c.ownerId) || {}, bal = Math.max(0, Math.floor(num(adv.balance)));
+  if(!_tm2Fee(campId)) return bal;
+  /* на сколько можно пополнить, чтобы хватило и на комиссию сверху */
+  var v = Math.floor(bal * 100 / (100 + _tm2Fee(campId)));
+  while(v > 0 && v + _tm2FeeOf(campId, v) > bal) v--;
+  while(v + 1 + _tm2FeeOf(campId, v + 1) <= bal) v++;
+  return v;
 }
 window.bpCampMoneySheet = function(campId, mode){
   var c = campById(campId);
@@ -50990,8 +51008,10 @@ window.bpCampMoneySheet = function(campId, mode){
     +     '<div class="bptm2-rows" id="bpTmMoneyRows"></div>'
     +     '<div class="bptm2-fee">'
     +       (back
-              ? 'Вернуть можно только свободный остаток — деньги, обещанные принятым работам, остаются в бюджете задания. Комиссия за возврат не удерживается.'
-              : 'Деньги переедут из кошелька на счёт задания и будут зарезервированы под выплаты блогерам. Пополнение бюджета — без комиссии.')
+              ? 'Вернуть можно только свободный остаток — деньги, обещанные принятым работам, остаются в бюджете задания. '
+                + (_tm2Fee(campId) ? 'Вместе с суммой вернём и комиссию сервиса за неё (' + _tm2Fee(campId) + '%).' : 'Комиссия за возврат не удерживается.')
+              : 'Деньги переедут из кошелька на счёт задания и будут зарезервированы под выплаты блогерам. '
+                + (_tm2Fee(campId) ? 'Комиссия сервиса ' + _tm2Fee(campId) + '% — сверху суммы: в бюджет уходит вся сумма.' : 'Пополнение бюджета — без комиссии.'))
     +     '</div>'
     +   '</div>'
     +   '<div class="tk-sheet-foot">'
@@ -51032,19 +51052,23 @@ window.bpTmMoneyPreview = function(campId, back){
   if(rows){
     if(back){
       var fee = (typeof bpCampRefundFee === 'function') ? bpCampRefundFee(Math.min(v, max)) : 0;
+      var fb = _tm2FeeOf(campId, Math.min(v, max));   /* комиссия за возвращённое — назад */
       rows.innerHTML =
           row('Свободно в бюджете', money(box.free) + ' ₽', 'g')
         + (v > 0 && v <= max
-            ? row('Придёт в кошелёк', money(v - fee) + ' ₽', 'g')
+            ? row('Придёт в кошелёк', money(v - fee + fb) + ' ₽', 'g')
+              + (fb > 0 ? row('В том числе возврат комиссии ' + _tm2Fee(campId) + '%', '+\u00a0' + money(fb) + ' ₽', 'fee') : '')
               + (fee > 0 ? row('Комиссия сервиса 3%', '−\u00a0' + money(fee) + ' ₽', '') : '')
               + row('Останется в бюджете', money(box.free - v) + ' ₽', '')
             : row('В кошельке сейчас', money(bal) + ' ₽', ''));
     } else {
+      var tf = _tm2FeeOf(campId, v);
       rows.innerHTML =
           row('В кошельке', money(bal) + ' ₽', 'g')
         + (v > 0 && v <= max
             ? row('Станет на счёте задания', money(box.free + v) + ' ₽', 'g')
-              + row('Останется в кошельке', money(bal - v) + ' ₽', '')
+              + (tf > 0 ? row('Комиссия сервиса ' + _tm2Fee(campId) + '%', '+\u00a0' + money(tf) + ' ₽', 'fee') + row('Спишется с кошелька', money(v + tf) + ' ₽', '') : '')
+              + row('Останется в кошельке', money(bal - v - tf) + ' ₽', '')
             : row('Сейчас на счёте задания', money(box.free) + ' ₽', ''));
     }
   }
@@ -61257,7 +61281,7 @@ function esc(s){ try{ return bpEsc(String(s == null ? '' : s)); }catch(e){ retur
 
 var MIN_TOPUP = 1000;      /* было врозь: в поле 100, в коде 1000 */
 var MIN_WD    = 1000;      /* было врозь: в поле 1000, в коде 100 */
-var FEE       = 0.04;      /* 4% — единственная комиссия сервиса */
+var FEE       = 0;         /* вывод без комиссии (14.10.2026, было 4%) */
 
 /* ── деньги: один формат на всё ──
    В файле сумма форматировалась восемью способами, отсюда
@@ -61363,7 +61387,7 @@ function buildTopup(){
 
     '<div class="bpw-card bpw-sum">' +
       '<div class="bpw-row"><span class="bpw-rk">К зачислению</span><span class="bpw-rv" id="tuGross">0' + NB + '₽</span></div>' +
-      '<div class="bpw-row minus"><span class="bpw-rk">Комиссия за пополнение</span><span class="bpw-rv">0' + NB + '₽</span></div>' +
+      '<div class="bpw-row minus"><span class="bpw-rk">Комиссия за пополнение</span><span class="bpw-rv">7' + NB + '% сверху</span></div>' +
       '<div class="bpw-row total neutral"><span class="bpw-rk">Баланс станет</span><span class="bpw-rv" id="tuAfter">' + money(avail()) + '</span></div>' +
     '</div>' +
 
@@ -61423,7 +61447,7 @@ function buildWithdraw(){
 
     '<div class="bpw-card bpw-sum">' +
       '<div class="bpw-row"><span class="bpw-rk">Спишется с баланса</span><span class="bpw-rv" id="wdGross">0' + NB + '₽</span></div>' +
-      '<div class="bpw-row minus"><span class="bpw-rk">Комиссия сервиса, 4%</span><span class="bpw-rv" id="wdFeeVal">0' + NB + '₽</span></div>' +
+      '<div class="bpw-row minus"><span class="bpw-rk">Комиссия за вывод</span><span class="bpw-rv" id="wdFeeVal">0' + NB + '₽</span></div>' +
       '<div class="bpw-row total"><span class="bpw-rk" id="wdNetKey">Придёт на карту</span><span class="bpw-rv" id="wdNetVal">0' + NB + '₽</span></div>' +
     '</div>' +
 
@@ -61735,7 +61759,7 @@ window.bpwReceipt = function(ts){
     row('Дата', esc(t.date || ''));
     if(it.wd){
       row('Списано с баланса', money(amt));
-      row('Комиссия сервиса, 4%', '−' + NB + money(t.fee || 0), 'minus');
+      row('Комиссия за вывод', t.fee ? '−' + NB + money(t.fee) : 'без комиссии', 'minus');
       if(t.card) row('Карта получателя', esc(tail(t.card)) + ' · ' + esc(brand(t.card).name));
       /* Состояния приходят с сервера (bpWdRefresh): queued, processing,
          paid, rejected, cancelled. Раньше разбирались только два, и
@@ -61751,7 +61775,7 @@ window.bpwReceipt = function(ts){
       };
       row('Статус', esc(WD_ST[t.status] || 'В очереди на выплату'));
     } else {
-      row('Комиссия за пополнение', money(0), 'minus');
+      row('Комиссия за пополнение', '7' + NB + '% сверху', 'minus');
       row('Статус', 'Зачислено');
     }
     row('Идентификатор', '<span class="bpw-num">' + esc(String(t.ts || '')) + '</span>');
@@ -62107,7 +62131,7 @@ function balCard(){
       var note = document.createElement('div');
       note.id = 'balWdNote';
       note.style.cssText = 'font-size:10.5px;font-weight:500;color:var(--t3);text-align:center;margin-top:9px;line-height:1.4';
-      note.textContent = 'Вывод — от ' + money(MIN_WD) + ', комиссия сервиса 4%. Пополнение без комиссии.';
+      note.textContent = 'Вывод — от ' + money(MIN_WD) + ', без комиссии. Пополнение — комиссия 7% сверху суммы.';
       acts.parentNode.insertBefore(note, acts.nextSibling);
     }
   }catch(e){ E(e); }
@@ -63003,7 +63027,7 @@ window.bpInviteSheet = function(){
   }catch(e){ E(e); }
 };
 window.bpgShareInvite = function(){
-  share(window.bpInviteLink(), 'BloggerPay — реклама у блогеров с защитой сделки. Комиссия со сделки 0%.');
+  share(window.bpInviteLink(), 'BloggerPay — задания для блогеров: оплата за просмотры, деньги под защитой.');
   haptic('medium');
 };
 window.bpgCopyInvite = function(){ copy(window.bpInviteLink()); haptic('light'); };
@@ -63338,10 +63362,10 @@ window.__bppFallback = ART;
 function slides(){
   var blg = isBlogger();
   var fee = {
-    cls:'t-fee', art:'fee', k:'Комиссия сделки',
-    t: blg ? '<span class="hl">0%</span> со сделки — вся сумма ваша'
-           : '<span class="hl">0%</span> со сделки. Платите блогеру, не нам',
-    s: 'Сервис зарабатывает только на выводе — 4%',
+    cls:'t-fee', art:'fee', k:'Комиссии',
+    t: blg ? '<span class="hl">0%</span> за вывод — деньги на карту целиком'
+           : '<span class="hl">7%</span> сверху бюджета — без скрытых платежей',
+    s: 'Пополнение +7% · задания 7% · вывод без комиссии',
     cta:'Как это устроено', act:"bppSheet('fee')"
   };
   var safe = {
@@ -63476,11 +63500,11 @@ window.bppSheet = function(kind){
     if(kind === 'fee'){
       h = 'На чём зарабатывает площадка';
       rows =
-        row(' g', IC.zero, 'Сделка — 0%', blg
-          ? 'Вся сумма сделки достаётся вам. У большинства бирж здесь удерживают 10–20%.'
-          : 'Вся сумма уходит блогеру. У большинства бирж здесь удерживают 10–20%.') +
-        row('', IC.out, 'Вывод — 4%', 'Единственная комиссия сервиса: берётся при выводе денег на карту.') +
-        row(' g', IC.in, 'Пополнение — 0%', 'Сколько внесли — столько на балансе.');
+        row('', IC.in, 'Пополнение — 7%', 'Сверху суммы: пополняете на 10 000 ₽ — оплачиваете 10 700 ₽, на баланс приходят все 10 000 ₽.') +
+        row('', IC.zero, 'Задание — 7%', blg
+          ? 'С каждой выплаты за видео: начислено 100 ₽ — на баланс 93 ₽.'
+          : 'Сверху бюджета: бюджет 10 000 ₽ — со счёта 10 700 ₽. За неистраченный остаток комиссия возвращается.') +
+        row(' g', IC.out, 'Вывод — 0%', 'Деньги выводятся на карту без комиссии.');
     } else {
       h = 'Как работает безопасная сделка';
       rows = blg
@@ -65116,7 +65140,7 @@ function E(e){ try{ if(typeof BPERR === 'function') BPERR(e); }catch(_){} }
 function $(id){ return document.getElementById(id); }
 function esc(s){ return String(s == null ? '' : s).replace(/[<>&"']/g, function(c){ return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]; }); }
 var NB = ' ';
-var MIN_TOPUP = 1000, MAX_TOPUP = 1000000, MIN_WD = 1000, FEE = 0.04;
+var MIN_TOPUP = 1000, MAX_TOPUP = 1000000, MIN_WD = 1000, FEE = 0;   /* вывод без комиссии (14.10.2026, было 4%) */
 
 function money(n, bare){
   var v = Number(n); if(!isFinite(v)) v = 0;
@@ -65301,12 +65325,14 @@ function buildTopup(){
     '<div class="bw2-card"><div class="bw2-k">' + I.card + 'Способ оплаты</div>' +
       '<div class="bw2-obj"><span class="bw2-obj-i sq" style="--bw2-bg:rgba(246,168,35,.13);--bw2-c:#f6a823">' + I.flask + '</span>' +
         '<span class="bw2-obj-t"><span class="bw2-obj-n">Тестовое зачисление</span><span class="bw2-obj-s">Приём платежей ещё не подключён — деньги не списываются</span></span>' +
-        '<span class="bw2-tag">0' + NB + '%</span></div>' +
+        '<span class="bw2-tag" id="bw2TuTag">+' + tuFeePct() + NB + '%</span></div>' +
     '</div>' +
+    /* 14.10.2026: комиссия 7% СВЕРХУ — на баланс приходит вся сумма, платится сумма + 7% */
     '<div class="bw2-card bw2-sum">' +
-      '<div class="bw2-row"><span class="bw2-rk">К зачислению</span><span class="bw2-rv" id="bw2TuGross">0' + NB + '₽</span></div>' +
-      '<div class="bw2-row minus"><span class="bw2-rk">Комиссия</span><span class="bw2-rv">0' + NB + '₽</span></div>' +
-      '<div class="bw2-row total neutral"><span class="bw2-rk">Баланс после</span><span class="bw2-rv" id="bw2TuAfter">' + money(avail()) + '</span></div>' +
+      '<div class="bw2-row"><span class="bw2-rk">На баланс</span><span class="bw2-rv" id="bw2TuGross">0' + NB + '₽</span></div>' +
+      '<div class="bw2-row minus"><span class="bw2-rk" id="bw2TuFeeK">Комиссия сервиса ' + tuFeePct() + NB + '%</span><span class="bw2-rv" id="bw2TuFee">0' + NB + '₽</span></div>' +
+      '<div class="bw2-row total neutral"><span class="bw2-rk">К оплате</span><span class="bw2-rv" id="bw2TuPay">0' + NB + '₽</span></div>' +
+      '<div class="bw2-row bw2-after"><span class="bw2-rk">Баланс после</span><span class="bw2-rv" id="bw2TuAfter">' + money(avail()) + '</span></div>' +
     '</div>' +
     '<div class="bw2-note">' + I.lock + '<div><b>Пока без настоящего платежа</b>Сумма появится на балансе этого приложения, чтобы можно было ' + ((window.bpMvOn && window.bpMvOn()) ? 'запустить задание и проверить выплаты целиком' : 'пройти сделку и эскроу целиком') + '. Когда подключим приём платежей, здесь появятся карта и СБП.</div></div>' +
     '<div class="bw2-cta on" id="bw2TuCta"><button type="button" class="bw2-go" id="tuBtn"><span id="tuBtnLabel">Пополнить</span></button></div>' +
@@ -65334,11 +65360,19 @@ function buildTopup(){
   sizeInput(inp);
   tuSync();
 }
+/* комиссия пополнения (14.10.2026): ставка с сервера (bp-fees), по умолчанию 7% */
+function tuFeePct(){ var f = window.bpFees; return f && f.topup != null ? Number(f.topup) || 0 : 7; }
+function tuFeeOf(v){ return Math.round((Number(v) || 0) * tuFeePct() / 100); }
 function tuSync(){
   try{
     var inp = $('bw2TuAmt'); if(!inp) return;
     var v = readAmt(inp), wrap = $('bw2TuWrap'), hint = $('bw2TuHint'), btn = $('tuBtn'), lbl = $('tuBtnLabel');
+    var fp = tuFeePct(), fee = tuFeeOf(v);
     $('bw2TuGross').textContent = money(v);
+    var fe = $('bw2TuFee'); if(fe) fe.textContent = fee > 0 ? '+' + NB + money(fee) : money(0);
+    var fk = $('bw2TuFeeK'); if(fk) fk.textContent = 'Комиссия сервиса ' + fp + NB + '%';
+    var pe = $('bw2TuPay'); if(pe) pe.textContent = money(v + fee);
+    var tg = $('bw2TuTag'); if(tg) tg.textContent = (fp ? '+' : '') + fp + NB + '%';
     $('bw2TuAfter').textContent = money(avail() + v);
     /* чипы складываются — постоянную подсветку «равно этой кнопке» сняли */
     Array.prototype.forEach.call($('bw2TuChips').querySelectorAll('.bw2-chip'), function(c){ c.classList.remove('on'); });
@@ -65347,12 +65381,12 @@ function tuSync(){
     else if(v > MAX_TOPUP) err = 'За раз — не больше ' + money(MAX_TOPUP);
     wrap.classList.toggle('err', !!err);
     hint.className = 'bw2-hint' + (err ? ' err' : '');
-    hint.textContent = err || (v > 0 ? 'Сейчас на балансе ' + money(avail()) : 'Минимум ' + money(MIN_TOPUP) + ' · без комиссии');
+    hint.textContent = err || (v > 0 ? 'Сейчас на балансе ' + money(avail()) : 'Минимум ' + money(MIN_TOPUP) + (fp ? ' · комиссия ' + fp + NB + '% сверху' : ' · без комиссии'));
     var ready = v >= MIN_TOPUP && !err;
     btn.classList.toggle('bp-cta-idle', !ready);
     btn.dataset.ready = ready ? '1' : '';
     btn.dataset.why = err || 'Введите сумму — минимум ' + money(MIN_TOPUP);
-    lbl.textContent = ready ? 'Пополнить на ' + money(v) : 'Пополнить';
+    lbl.textContent = ready ? (fee > 0 ? 'Оплатить ' + money(v + fee) : 'Пополнить на ' + money(v)) : 'Пополнить';
   }catch(e){ E(e); }
 }
 function tuGo(){
@@ -65437,7 +65471,7 @@ function buildWithdraw(){
     '<div class="bw2-card" id="bw2Dest"><div class="bw2-k">' + I.card + 'Куда выводим</div><div id="bw2DestBody"></div><div id="bw2Legacy" style="display:none"></div></div>' +
     '<div class="bw2-card bw2-sum">' +
       '<div class="bw2-row"><span class="bw2-rk">Спишется с баланса</span><span class="bw2-rv" id="bw2WdGross">0' + NB + '₽</span></div>' +
-      '<div class="bw2-row minus"><span class="bw2-rk">Комиссия сервиса 4' + NB + '%</span><span class="bw2-rv" id="bw2WdFee">0' + NB + '₽</span></div>' +
+      '<div class="bw2-row minus"><span class="bw2-rk">Комиссия за вывод</span><span class="bw2-rv" id="bw2WdFee">без комиссии</span></div>' +
       '<div class="bw2-row total"><span class="bw2-rk" id="bw2WdNetK">Получите</span><span class="bw2-rv" id="bw2WdNet">0' + NB + '₽</span></div>' +
     '</div>' +
     '<div class="bw2-card" id="bw2Pending" style="display:none"><div class="bw2-k">' + I.clock + 'Заявки в обработке</div><div id="bw2PendingBody"></div></div>' +
@@ -65525,7 +65559,7 @@ function wdSync(){
     var wrap = $('bw2WdWrap'), hint = $('bw2WdHint'), btn = $('wdSubmitBtn'), lbl = $('wdSubmitLabel');
     var fee = Math.round(v * FEE), net = v - fee, p = payout();
     $('bw2WdGross').textContent = money(v);
-    $('bw2WdFee').textContent = fee > 0 ? '−' + NB + money(fee) : money(0);
+    $('bw2WdFee').textContent = fee > 0 ? '−' + NB + money(fee) : 'без комиссии';
     $('bw2WdNet').textContent = money(net > 0 ? net : 0);
     $('bw2WdNetK').textContent = p ? 'Получите ' + p.short : 'Получите';
     Array.prototype.forEach.call($('bw2WdChips').querySelectorAll('.bw2-chip'), function(c){
@@ -65540,7 +65574,7 @@ function wdSync(){
     else if(v > 0 && v < MIN_WD) err = 'Минимум ' + money(MIN_WD);
     wrap.classList.toggle('err', !!err);
     hint.className = 'bw2-hint' + (err ? ' err' : '');
-    hint.textContent = err || (v > 0 ? 'Комиссия 4 % уже учтена в «Получите»' : (a >= MIN_WD ? 'Минимум ' + money(MIN_WD) + ' · доступно ' + money(a) : 'Для вывода нужно хотя бы ' + money(MIN_WD)));
+    hint.textContent = err || (v > 0 ? 'Без комиссии — на карту придёт вся сумма' : (a >= MIN_WD ? 'Минимум ' + money(MIN_WD) + ' · доступно ' + money(a) : 'Для вывода нужно хотя бы ' + money(MIN_WD)));
     var ready = !err && v >= MIN_WD && v <= a && !!p && kycReady();
     btn.classList.toggle('bp-cta-idle', !ready);
     btn.dataset.ready = ready ? '1' : '';
@@ -65597,7 +65631,7 @@ function wdGo(){
       if(ok) successSheet({
         wait:true, title:'Заявка принята', amount:money(v - fee),
         sub:'Придёт ' + (p ? p.short : 'на карту') + '. Заявка ждёт в очереди на выплату — пока её не отправили, можно отменить, и вся сумма вернётся на баланс.',
-        rows:[['Списано с баланса', money(v)], ['Комиссия сервиса 4 %', '−' + NB + money(fee)], ['Статус', 'В очереди на выплату']],
+        rows:[['Списано с баланса', money(v)], ['Комиссия за вывод', fee ? '−' + NB + money(fee) : 'без комиссии'], ['Статус', 'В очереди на выплату']],
         primary:{ t:'Готово', fn:function(){ try{ goTo('balance'); }catch(e){} } },
         secondary:{ t:'Остаться здесь', fn:function(){} }
       });
@@ -65629,7 +65663,7 @@ window.bw2How = function(){
     '<div class="bw2-sheet-t">Как проходит вывод</div>' +
     '<div class="bw2-sheet-s">Честно о том, что происходит с деньгами после нажатия «Вывести».</div>' +
     '<div class="bw2-steps">' +
-      '<div class="bw2-step done"><span class="bw2-step-d">' + I.tick + '</span><div><div class="bw2-step-n">Заявка создаётся сразу</div><div class="bw2-step-s">Сумма уходит из «Доступно» и резервируется под выплату. Комиссия сервиса 4 % — единственная, со сделок мы не берём ничего.</div></div></div>' +
+      '<div class="bw2-step done"><span class="bw2-step-d">' + I.tick + '</span><div><div class="bw2-step-n">Заявка создаётся сразу</div><div class="bw2-step-s">Сумма уходит из «Доступно» и резервируется под выплату. Вывод — без комиссии.</div></div></div>' +
       '<div class="bw2-step now"><span class="bw2-step-d"></span><div><div class="bw2-step-n">Ждёт в очереди</div><div class="bw2-step-s">Выплаты ещё не подключены. Пока заявка в очереди, её можно отменить в любой момент — деньги вернутся на баланс целиком, без комиссии.</div></div></div>' +
       '<div class="bw2-step"><span class="bw2-step-d"></span><div><div class="bw2-step-n">Отправка ' + (blg ? 'на вашу карту' : 'на карту') + '</div><div class="bw2-step-s">Появится вместе с приёмом платежей. Срок зачисления назовём тогда же — обещать его сейчас нечем.</div></div></div>' +
     '</div>' +
@@ -70889,7 +70923,9 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
   function payCfg(){
     if(_payCfg && Date.now() - _payCfgAt < 60000) return Promise.resolve(_payCfg);
     return srv().raw('GET', '/api/pay/config').then(function(j){
-      _payCfg = j || {}; _payCfgAt = Date.now(); return _payCfg;
+      _payCfg = j || {}; _payCfgAt = Date.now();
+      try{ if(typeof window.bpFeesSet === 'function') window.bpFeesSet(_payCfg); }catch(_){}
+      return _payCfg;
     }).catch(function(){ return _payCfg || { mode: 'test' }; });
   }
   function rub(n){ return (Math.round(Number(n) || 0)).toLocaleString('ru') + ' ₽'; }
@@ -70962,7 +70998,7 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
     var ov = document.getElementById('bpPayWait'); if(ov) ov.remove();
     tuRelease(btn);
   }
-  function payWait(btn, payId, url, amount){
+  function payWait(btn, payId, url, amount, gross){
     payWaitClose(null);
     var mySeq = _paySeq;
     if(!document.getElementById('bpPaySpinCss')){
@@ -70975,7 +71011,7 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
     ov.innerHTML = '<div style="width:100%;max-width:420px;box-sizing:border-box;background:var(--card,#191e28);border:1px solid rgba(255,255,255,.1);border-radius:22px 22px 0 0;padding:24px 18px calc(env(safe-area-inset-bottom,0px) + 20px);text-align:center;font-family:inherit">'
       + '<div style="width:52px;height:52px;margin:0 auto 14px;border-radius:50%;border:3px solid rgba(91,147,245,.22);border-top-color:var(--acc2,#5b93f5);animation:bpPaySpin 1s linear infinite"></div>'
       + '<div style="font-size:16px;font-weight:800;color:var(--t1)">Ждём подтверждения оплаты</div>'
-      + '<div style="font-size:12px;color:var(--t2);line-height:1.6;margin-top:8px">Страница оплаты на ' + rub(amount) + ' открыта. Оплатите и вернитесь сюда — деньги зачислятся на баланс автоматически.</div>'
+      + '<div style="font-size:12px;color:var(--t2);line-height:1.6;margin-top:8px">Страница оплаты на ' + rub(gross || amount) + (gross && gross > amount ? ' (на баланс ' + rub(amount) + ' + комиссия ' + rub(gross - amount) + ')' : '') + ' открыта. Оплатите и вернитесь сюда — деньги зачислятся на баланс автоматически.</div>'
       + '<div id="bpPayWaitSt" style="min-height:16px;font-size:11px;color:var(--t3);margin-top:8px">Проверяем оплату каждые 5 секунд…</div>'
       + '<button id="bpPayCheck" type="button" style="width:100%;margin-top:12px;border:none;border-radius:14px;padding:14px;background:linear-gradient(180deg,#3573e6,#2b64d6);color:#fff;font-family:inherit;font-size:14px;font-weight:800;cursor:pointer">Я оплатил — проверить</button>'
       + '<button id="bpPayAgain" type="button" style="width:100%;margin-top:8px;border:1px solid rgba(255,255,255,.14);border-radius:14px;padding:12px;background:rgba(255,255,255,.05);color:var(--t1);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">Открыть страницу оплаты ещё раз</button>'
@@ -71022,7 +71058,7 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
     srv().raw('POST', '/api/pay/create', { amount: amount }).then(function(j){
       if(!j || !j.url){ tuRelease(btn); toast('Касса не вернула страницу оплаты', 'err'); return; }
       pendingSet({ id: j.paymentId, amount: amount, at: Date.now() });
-      payWait(btn, j.paymentId, j.url, amount);
+      payWait(btn, j.paymentId, j.url, amount, Number(j.total) || amount);
       openOutside(j.url);
     }).catch(function(err){
       tuRelease(btn);
@@ -77025,7 +77061,7 @@ function render(card){
       '<div class="pay2-p-num" id="pay2Num"></div>' +
       '<div class="pay2-p-foot">' +
         '<div><span class="pay2-p-cap">Получатель</span><span class="pay2-p-val" id="pay2Who">—</span></div>' +
-        '<div class="r"><span class="pay2-p-cap">Комиссия</span><span class="pay2-p-val">4 %</span></div>' +
+        '<div class="r"><span class="pay2-p-cap">Комиссия</span><span class="pay2-p-val">0 %</span></div>' +
       '</div>' +
     '</div>' +
 
@@ -95124,7 +95160,8 @@ function howBlock(body, c){
   else if(rules) body.appendChild(el);
   else { var sec = body.querySelector(':scope > .tk-sec'); if(sec) body.insertBefore(el, sec); else body.appendChild(el); }
 }
-var RI = { pl:'M5 4.5h14a1.5 1.5 0 0 1 1.5 1.5v12a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 18V6A1.5 1.5 0 0 1 5 4.5z M10 9v6l5-3z', one:'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M9 12.5l2 2 4-4.5' };
+var RI = { pl:'M5 4.5h14a1.5 1.5 0 0 1 1.5 1.5v12a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 18V6A1.5 1.5 0 0 1 5 4.5z M10 9v6l5-3z', one:'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M9 12.5l2 2 4-4.5',
+  fee:'M18.5 5.5l-13 13 M7.5 10a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z M16.5 19a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z' };
 function rulesRows(body, c){
   var rules = body.querySelector(':scope > .tk-rules'); if(!rules) return;
   [].forEach.call(rules.querySelectorAll('.tk-rule-k'), function(k){
@@ -95146,6 +95183,9 @@ function rulesRows(body, c){
   /* 11.10.2026: у фикса сервер платит один раз — в момент зачёта (или когда
      наберётся порог), «30 дней по росту» про него неправда */
   add('one', 'one', 'Оплата', payTxt(c));
+  /* 14.10.2026: комиссия сервиса с выплат — блогеру видно, сколько придёт на баланс */
+  var fp = typeof window.bpFeeCamp === 'function' ? window.bpFeeCamp(c, 'payout') : 0;
+  if(fp > 0) add('fee', 'fee', 'Комиссия сервиса', fp + '% с каждой выплаты — со 100 ₽ на баланс придёт ' + (100 - fp) + ' ₽');
 }
 function payTxt(c){
   var t = terms(c);
@@ -100130,18 +100170,21 @@ function paintAcc(el, c, bd){
   if(st === 'draft'){
     var minB = typeof window.bpTmMinBudget === 'number' ? window.bpTmMinBudget : 5000;
     var need = Math.max(0, Math.round(num(bx.planned)) - Math.round(num(bx.held))) || budgetLocal(c);
-    var lack = Math.max(0, need - bal);
+    /* 14.10.2026: с баланса уходит бюджет + комиссия сервиса сверху (bp-fees) */
+    var fp = typeof window.bpFeeCamp === 'function' ? window.bpFeeCamp(c, 'task') : 0;
+    var fee = Math.round(need * fp / 100), tot = need + fee;
+    var lack = Math.max(0, tot - bal);
     cls += ' out';
     h = jt('Задание не запущено');
     if(!need || need < minB){
       h += js_('Минимальный бюджет задания — ' + rub(minB) + '. Укажите его в условиях — после этого задание можно оплатить и запустить.')
         + '<div class="mvt-join-b">' + b1('data-cdo="edit"', 'Указать бюджет') + '</div>';
     } else if(lack > 0){
-      h += js_('В кошельке не хватает ' + rub(lack) + '. Пополните его — после пополнения вы вернётесь сюда и запустите задание одной кнопкой.')
+      h += js_('В кошельке не хватает ' + rub(lack) + (fee ? ' с учётом комиссии сервиса ' + fp + '%' : '') + '. Пополните его — после пополнения вы вернётесь сюда и запустите задание одной кнопкой.')
         + '<div class="mvt-join-b">' + b1('data-cdo="fund"', 'Пополнить на ' + rub(lack)) + b2('data-cdo="edit"', 'Изменить условия') + '</div>';
     } else {
-      h += js_(rub(need) + ' заморозятся на счёте задания и будут уходить блогерам только за засчитанные видео.')
-        + '<div class="mvt-join-b">' + b1('data-cdo="pay-launch"', 'Оплатить и запустить · ' + rub(need)) + b2('data-cdo="edit"', 'Изменить условия') + '</div>';
+      h += js_(rub(need) + ' заморозятся на счёте задания и будут уходить блогерам только за засчитанные видео.' + (fee ? ' Комиссия сервиса ' + fp + '% — ' + rub(fee) + ', спишется вместе с бюджетом.' : ''))
+        + '<div class="mvt-join-b">' + b1('data-cdo="pay-launch"', 'Оплатить и запустить · ' + rub(tot)) + b2('data-cdo="edit"', 'Изменить условия') + '</div>';
     }
     h += '<div class="mvt-join-f">В кошельке: <b>' + rub(bal) + '</b></div>';
   } else if(st === 'done'){
@@ -100170,7 +100213,8 @@ function paintAcc(el, c, bd){
        будущие выплаты живым роликам); без кассы — местный счёт */
     var canBack = bd && bd.free != null ? num(bd.free) > 0 : num(bx.free) > 0;
     h += '<div class="mvt-join-b">' + (canBack ? b2('data-mvt="giveback" aria-label="Вернуть остаток в кошелёк"', 'Вернуть остаток') : '') + b1('data-mvt="topup"', 'Пополнить') + '</div>'
-      + '<div class="mvt-join-f">В кошельке: <b>' + rub(bal) + '</b></div>';
+      + '<div class="mvt-join-f">В кошельке: <b>' + rub(bal) + '</b>'
+      + (typeof window.bpFeeCamp === 'function' && window.bpFeeCamp(c, 'task') ? '<i class="mvt-feei">Пополнение бюджета — комиссия сервиса ' + window.bpFeeCamp(c, 'task') + '% сверху суммы</i>' : '') + '</div>';
   }
   setHtml(el, h);
   if(el.className !== cls) el.className = cls;
@@ -100245,6 +100289,12 @@ function rule(ico, k, v){
   return '<div class="tk-rule" data-mvt-ri="' + esc(riOf(k, ico)) + '"><svg class="tk-rule-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + RI[ico] + '"/></svg>'
     + '<span class="tk-rule-k">' + esc(k) + '</span><span class="tk-rule-v">' + esc(v) + '</span></div>';
 }
+/* «Комиссия сервиса» в правилах автора (14.10.2026): ставки этого задания */
+function feeRule(c){
+  if(typeof window.bpFeeCamp !== 'function') return '';
+  var a = window.bpFeeCamp(c, 'task'), p = window.bpFeeCamp(c, 'payout');
+  return [a ? a + '% сверху бюджета' : '', p ? p + '% с выплат блогерам' : ''].filter(Boolean).join(' · ');
+}
 function taskHtml(c){
   var id = String(c.id);
   var minV = num(c.minViews) || num(c.viewsMin), minD = num(c.minDuration) || num(c.videoMinSec);
@@ -100262,6 +100312,7 @@ function taskHtml(c){
     + rule('user', 'Тип аккаунта', c.accountType || 'Любой')
     + rule('pl', 'Площадки для видео', plats.join(', '))
     + rule('pay', 'Оплата', (typeof window.bpVbPayTxt === 'function' && window.bpVbPayTxt(c)) || (fixed ? 'сразу после зачёта' : '30 дней по росту просмотров'))
+    + rule('info', 'Комиссия сервиса', feeRule(c))
     + rule('chk', 'Проверка видео', 'до 72 часов, потом засчитается само')
     + rule('mk', 'Маркировка', mkTxt)
     + '</div>'
@@ -100270,7 +100321,7 @@ function taskHtml(c){
     + '<li>Вы проверяете рекламу и маркировку — до 72 часов. Не ответите — видео засчитается само.</li>'
     + (fixed ? '<li>Засчитанное видео оплачивается сразу: ' + esc(rub(fixed)) + ' за ролик.</li>'
              : '<li>Засчитанное видео 30 дней оплачивается по мере роста просмотров — до максимума за ролик.' + (minV ? ' Начисления — с ' + esc(int(minV)) + ' ' + plural(minV, 'просмотра', 'просмотров', 'просмотров') + '.' : '') + '</li>')
-    + '<li>Деньги уходят со счёта задания. Свободный остаток можно вернуть в кошелёк.</li></ol></div>';
+    + '<li>Деньги уходят со счёта задания. Свободный остаток можно вернуть в кошелёк' + (typeof window.bpFeeCamp === 'function' && window.bpFeeCamp(c, 'task') ? ' — вместе с комиссией сервиса за него' : '') + '.</li></ol></div>';
   var desc = c.description || c.desc || '', rules = Array.isArray(c.rules) ? c.rules : [];
   if(desc) h += '<div class="tk-sec">Описание задания</div><div class="tk-desc">' + esc(desc).replace(/\n/g, '<br>') + '</div>';
   if(rules.length) h += '<div class="tk-desc tk-desc-rules">' + rules.map(function(r){ return '<div class="tk-li">' + esc(r) + '</div>'; }).join('') + '</div>';
@@ -100599,7 +100650,8 @@ function openAct(){
     rows.push('<button type="button" class="mta-row' + (cls ? ' ' + cls : '') + '" data-mta="' + k + '"' + (off ? ' disabled' : '') + '><i>' + ico + '</i><span><b>' + esc(t) + '</b>' + (sub ? '<em>' + esc(sub) + '</em>' : '') + '</span></button>');
   }
   if(st === 'active' || st === 'paused'){
-    row('topup', AI.plus, 'Пополнить бюджет', 'Из кошелька на счёт задания, без комиссии', 'key');
+    var fpt = typeof window.bpFeeCamp === 'function' ? window.bpFeeCamp(c, 'task') : 0;
+    row('topup', AI.plus, 'Пополнить бюджет', 'Из кошелька на счёт задания' + (fpt ? ' · комиссия ' + fpt + '% сверху' : ', без комиссии'), 'key');
     var fr = bd && bd.free != null ? num(bd.free) : num(bx.free);
     if(fr > 0) row('giveback', AI.back, 'Вернуть в кошелёк', 'Свободно на счёте задания: ' + rub(fr));
   }
@@ -100870,8 +100922,10 @@ function install(){
     busy(btn, bk ? 'Возвращаем…' : 'Пополняем…');
     (bk ? Promise.resolve() : syncBal()).then(function(){
       if(!bk){
-        var bal = myBal();
-        if(bal < v){ var er = new Error('В кошельке ' + money(bal) + ' ₽ — не хватает ' + money(v - bal) + ' ₽'); er.status = 400; throw er; }
+        var bal = myBal(), fv = 0;
+        /* сверху суммы — комиссия сервиса задания (14.10.2026, bp-fees) */
+        try{ if(typeof window.bpFeeCamp === 'function') fv = Math.round(v * Math.max(0, num(window.bpFeeCamp(id, 'task'))) / 100); }catch(_){}
+        if(bal < v + fv){ var er = new Error('В кошельке ' + money(bal) + ' ₽ — не хватает ' + money(v + fv - bal) + ' ₽' + (fv ? ' (сумма + комиссия ' + money(fv) + ' ₽)' : '')); er.status = 400; throw er; }
       }
       return op((bk ? 'ret:' : 'add:') + id + ':' + v, bk ? '/api/deals/refund' : '/api/deals/topup', { dealId:'camp:' + id, amount:v });
     }).then(function(){
@@ -103069,7 +103123,7 @@ function plural(n, a, b, c){ n = Math.abs(Math.round(n)) % 100; var d = n % 10; 
 function nbsp(s){ return String(s).replace(/(^|[\s«(])(в|во|с|со|к|о|об|у|и|а|не|на|по|за|из|от|до|без|для)\s/gi, '$1$2' + NB); }
 function modal(id, o){ return typeof window.bpMvModal === 'function' ? window.bpMvModal(id, o) : null; }
 function screen(id, t, h, c){ return typeof window.bpMvScreen === 'function' ? window.bpMvScreen(id, t, h, c) : null; }
-var MIN_WD = 1000, FEE = 0.04;
+var MIN_WD = 1000, FEE = 0;   /* вывод без комиссии (14.10.2026, было 4%) */
 
 var SV = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
 var IC0 = window.bpMvIco || {};
@@ -103212,7 +103266,8 @@ function vfHtml(){
   if(sv === 'none') return h;
   var rows = '';
   /* 1 · телефон */
-  if(p) rows += stepRow(1, 'done', 'Номер телефона подтверждён', esc(phoneMask() || 'Номер привязан к аккаунту'), btnS('phone', 'Изменить'));
+  /* 14.10 (владелец): подтверждённый номер изменить нельзя — кнопки «Изменить» нет */
+  if(p) rows += stepRow(1, 'done', 'Номер телефона подтверждён', esc((phoneMask() ? phoneMask() + ' · ' : '') + 'изменить нельзя'), '');
   else rows += stepRow(1, 'now', 'Подтвердите номер телефона', 'Это нужно для безопасности аккаунта и выплат.', btnP('phone', 'Подтвердить'));
   /* 2 · паспорт и селфи */
   var fe = String(idn().formError || '');
@@ -103244,7 +103299,7 @@ function vfHtml(){
   else rows += stepRow(3, 'lock', 'Реквизиты для выплат', 'Откроются после проверки личности.', BTN_L);
   h += '<section class="mvv-steps" aria-label="Шаги верификации">' + rows + '</section>';
   if(k.all){
-    h += '<section class="mvv-info ok">' + I.star + '<div><h3>Верификация пройдена полностью</h3><p>Спасибо! Вывод открыт: от 1' + NB + '000' + NB + '₽, комиссия сервиса 4' + NB + '%.</p></div></section>'
+    h += '<section class="mvv-info ok">' + I.star + '<div><h3>Верификация пройдена полностью</h3><p>Спасибо! Вывод открыт: от 1' + NB + '000' + NB + '₽, без комиссии.</p></div></section>'
       + '<button type="button" class="mx-b mx-bp mx-bfull" data-vf="withdraw">Перейти к выводу</button>';
   } else {
     h += '<section class="mvv-info">' + I.info + '<div><h3>Зачем это нужно?</h3><p>' + esc(nbsp('Деньги выводятся только на ваш счёт — так они не уйдут чужому человеку. Документы видит только оператор выплат.')) + ' <button type="button" class="mvv-lnk in" data-vf="privacy">Политика конфиденциальности</button></p></div></section>';
@@ -103333,8 +103388,14 @@ function items(){
       if(/^(withdraw|wd-cancel|wd-reject|wd-paid|fee)$/.test(k)) return;   /* вывод — строками заявок */
       var m = /^camp:(.+)$/.exec(ref), cid = m ? m[1] : '';
       var it = { key:'l' + r.id, ts:ts(r.created_at), amount:a, kind:k, campId:cid, st:'ok', stText:'Выполнено' };
-      if(k === 'topup'){ it.title = 'Пополнение счёта'; it.method = /ЮKassa/i.test(ref) ? 'Банковская карта' : /тестов/i.test(ref) ? 'Тестовое зачисление' : ''; }
+      if(k === 'topup'){
+        it.title = 'Пополнение счёта'; it.method = /ЮKassa/i.test(ref) ? 'Банковская карта' : /тестов/i.test(ref) ? 'Тестовое зачисление' : /по сч[её]ту/i.test(ref) ? 'По счёту' : '';
+        /* 14.10.2026: комиссия сверху — касса пишет в строку «оплачено N, комиссия M» */
+        var fm = /оплачено (\d+), комиссия (\d+)/.exec(ref); if(fm){ it.tuPaid = Number(fm[1]); it.tuFee = Number(fm[2]); }
+      }
       else if(k === 'hold') it.title = cid ? 'Бюджет задания' : 'Оплата';
+      else if(k === 'task-fee') it.title = 'Комиссия сервиса';
+      else if(k === 'task-fee-back') it.title = 'Возврат комиссии';
       else if(k === 'refund' || k === 'settle-refund' || k === 'release') it.title = cid ? 'Возврат бюджета задания' : 'Возврат';
       else if(k === 'payout' || k === 'settle-payout') it.title = cid ? 'Выплата за видео' : 'Выплата';
       else if(k === 'admin_adjust') it.title = 'Корректировка баланса';
@@ -103438,7 +103499,9 @@ function walHtml(){
     + '<div class="mvw-body" aria-hidden="true"></div>'
     + '<div class="mvw-stack">' + stack.map(function(s){ return '<button type="button" class="mvw-cc" data-mw="cc-' + s[0] + '"><span>' + esc(s[1]) + '</span><b>' + rub(s[2]) + I.chev + '</b></button>'; }).join('') + '</div>'
     + '<div class="mvw-pocket">' + POCKET + '</div>'
-    + '<div class="mvw-bal"><span>Текущий баланс</span><b>' + rub(mo.total) + '</b></div>'
+    /* 14.10 (владелец: «сумма сверху и сам баланс не совпадают»): здесь тот же
+       доступный баланс, что в шапке; деньги в заданиях — своей карточкой выше */
+    + '<div class="mvw-bal"><span>Текущий баланс</span><b>' + rub(mo.bal) + '</b></div>'
     + (logo ? '<div class="mvw-mark"><img data-mvlogo="1" alt=""></div>' : '')
     + '</section>';
   h += '<div class="mvw-stats" role="list">' + statsRow().map(function(s){
@@ -103459,7 +103522,7 @@ function walHtml(){
   h += '<div class="mvw-hist" id="mvWalHist">' + groups.map(function(gr){
     return '<section class="mvw-mon"><h3>' + esc(gr.g) + '</h3><div class="mvw-rows">' + gr.rows.map(function(i){
       var it = shown[i], pos = it.amount > 0;
-      var sub = it.campName ? (it.title === 'Выплата за видео' ? 'За задание' : it.title) : (pos ? 'Пополнение' : 'Списание');
+      var sub = it.campName ? (it.title === 'Выплата за видео' ? 'За задание' : it.title) : (pos ? 'Пополнение' + (it.tuFee ? ' · комиссия ' + rub(it.tuFee) : '') : 'Списание');
       var main = it.campName ? (it.title === 'Выплата за видео' ? it.campName : it.title + ': ' + it.campName) : it.title;
       return '<button type="button" class="mvw-op" data-mwi="' + i + '"><div class="mvw-op-r"><div class="mvw-op-l">'
         + '<span class="mvw-op-k">' + esc(sub) + (pos ? I.inArr.replace('<svg ', '<svg class="in" ') : I.outArr.replace('<svg ', '<svg class="out" ')) + '</span>'
@@ -103524,10 +103587,19 @@ function openOp(it){
     + '<div class="mvo-tr"><span>Дата</span><b>' + esc(tstr(it.ts)) + '</b></div>';
   if(it.method) rows += '<div class="mvo-tr"><span>Метод оплаты</span><b>' + esc(it.method) + '</b></div>';
   if(it.campName) rows += '<div class="mvo-tr"><span>Задание</span><b>' + esc(it.campName) + '</b></div>';
+  /* комиссии сервиса (14.10.2026) — из чего сложилась сумма */
+  if(it.tuFee) rows += '<div class="mvo-tr"><span>Оплачено</span><b>' + rub(it.tuPaid) + '</b></div>'
+    + '<div class="mvo-tr"><span>Комиссия сервиса</span><b>' + rub(it.tuFee) + '</b></div>'
+    + '<div class="mvo-tr"><span>Зачислено на баланс</span><b>' + rub(it.amount) + '</b></div>';
+  var fc = typeof window.bpFeeCamp === 'function' && it.campId ? window.bpFeeCamp(it.campId, it.kind === 'task-fee' || it.kind === 'task-fee-back' ? 'task' : 'payout') : 0;
+  if(it.kind === 'task-fee') rows += '<div class="mvo-tr"><span>За что</span><b>' + (fc ? fc + '% сверху бюджета задания' : 'Комиссия задания') + '</b></div>';
+  if(it.kind === 'task-fee-back') rows += '<div class="mvo-tr"><span>За что</span><b>Комиссия за неистраченный бюджет</b></div>';
+  if((it.kind === 'payout' || it.kind === 'settle-payout') && fc > 0) rows += '<div class="mvo-tr"><span>Комиссия сервиса</span><b>' + fc + '% удержано из выплаты</b></div>';
   if(w){
     var amt = num(w.amount), fee = w.fee != null ? num(w.fee) : Math.round(amt * FEE), net = w.net != null ? num(w.net) : amt - fee;
     rows += '<div class="mvo-tr"><span>Сумма</span><b>' + rub(amt) + '</b></div>'
-      + '<div class="mvo-tr"><span>Комиссия сервиса, 4' + NB + '%</span><b>' + rub(fee) + '</b></div>'
+      /* вывод без комиссии с 14.10.2026; у заявок раньше — записанная 4% */
+      + '<div class="mvo-tr"><span>Комиссия за вывод</span><b>' + (fee > 0 ? rub(fee) : 'без комиссии') + '</b></div>'
       + '<div class="mvo-tr"><span>К получению</span><b>' + rub(net) + '</b></div>'
       + (w.requisites ? '<div class="mvo-tr"><span>Куда</span><b>' + esc(reqLabel(w.requisites)) + '</b></div>' : '')
       + (w.note && w.status === 'rejected' ? '<div class="mvo-tr"><span>Причина</span><b>' + esc(String(w.note).slice(0, 200)) + '</b></div>' : '');
@@ -103586,7 +103658,10 @@ function openTopup(){
   var step1 = '<p class="mx-q">Как вы хотите пополнить кошелёк?</p><div class="mvm-opts">'
     + '<button type="button" class="mvm-opt" data-tu="card"><span class="mvm-ico">' + I.card64 + '</span><span><b>Банковская карта (₽)</b><i>Физ. лица</i></span></button>'
     + '<button type="button" class="mvm-opt" data-tu="bill"><span class="mvm-ico">' + I.bank64 + '</span><span><b>По счёту (₽)</b><i>Компании, ИП и ООО</i></span></button>'
-    + '</div>';
+    + '</div>'
+    /* 14.10.2026: комиссия пополнения — сверху суммы (ставка с сервера, bp-fees) */
+    + (function(){ var f = window.bpFees, p = f && f.topup != null ? Number(f.topup) || 0 : 7; if(!p) return '';
+        return '<p class="mvm-feenote">' + I.info + '<span>' + esc(nbsp('Комиссия сервиса — ' + p + ' % сверху суммы: пополняете на 10 000 ₽ — оплачиваете ' + int(10000 + p * 100) + ' ₽, на баланс приходят все 10 000 ₽.')) + '</span></p>'; })();
   var m = modal('mvTu', { title:'Пополнение кошелька', body:step1 });
   if(!m) return;
   function bill(){
@@ -103596,6 +103671,8 @@ function openTopup(){
       + '<li class="on"><span>1</span><b>Заявка</b></li><li><span>2</span><b>Счёт в' + NB + 'Telegram</b></li><li><span>3</span><b>Зачисление</b></li></ol>'
       + '<p class="mvi-lead">' + esc(nbsp('Укажите плательщика и сумму — менеджер выставит счёт и пришлёт его вам в Telegram.')) + '</p>'
       + invFld('mviAmt', 'Сумма пополнения', 'От ' + rub(INV.min), '', 'inputmode="numeric" autocomplete="off"', '₽')
+      /* 14.10.2026: счёт выставляется на сумму + комиссию 7%, на баланс — вся сумма */
+      + '<div class="mvi-fee" id="mviFee" aria-live="polite"></div>'
       + invFld('mviCo', 'Компания или ИП', 'ООО «Ромашка»', d.co || '', 'autocomplete="organization" maxlength="160"')
       + invFld('mviInn', 'ИНН', '10 цифр у компании, 12 у ИП', d.inn || '', 'inputmode="numeric" maxlength="12" autocomplete="off"')
       + invFld('mviMail', 'Почта для счёта', 'name@company.ru', d.mail || u.email || '', 'type="email" inputmode="email" autocomplete="email" maxlength="160"')
@@ -103607,7 +103684,15 @@ function openTopup(){
     var amt = $('mviAmt'), co = $('mviCo'), inn = $('mviInn'), mail = $('mviMail'), cm = $('mviCm'), go = $('mviGo'), er = $('mviErr');
     function bad(el, t){ er.textContent = t; if(el){ var w = el.closest('.mx-ctl'); if(w) w.classList.add('bad'); try{ el.focus({ preventScroll:true }); el.scrollIntoView({ block:'center', behavior:'smooth' }); }catch(_){} } }
     [amt, co, inn, mail, cm].forEach(function(el){ el.addEventListener('input', function(){ var w = el.closest('.mx-ctl'); if(w) w.classList.remove('bad'); er.textContent = ''; }); });
-    amt.addEventListener('input', function(){ var v = String(amt.value).replace(/\D/g, '').slice(0, 9); amt.value = v ? int(Number(v)) : ''; });
+    function feeLine(){
+      var a = Number(String(amt.value).replace(/\D/g, '')) || 0, f = window.bpFees, p = f && f.topup != null ? Number(f.topup) || 0 : 7;
+      var fee = Math.round(a * p / 100), box = $('mviFee'); if(!box) return;
+      box.innerHTML = a > 0 && p > 0
+        ? '<span>На баланс <b>' + rub(a) + '</b></span><span>Комиссия ' + p + NB + '% <b>+' + NB + rub(fee) + '</b></span><span class="mvi-fee-t">Счёт на <b>' + rub(a + fee) + '</b></span>'
+        : (p > 0 ? '<span>Комиссия сервиса ' + p + NB + '% — сверху суммы: на баланс придёт вся сумма</span>' : '');
+    }
+    amt.addEventListener('input', function(){ var v = String(amt.value).replace(/\D/g, '').slice(0, 9); amt.value = v ? int(Number(v)) : ''; feeLine(); });
+    feeLine();
     inn.addEventListener('input', function(){ inn.value = String(inn.value).replace(/\D/g, '').slice(0, 12); });
     go.addEventListener('click', function(){
       if(go.disabled) return;
@@ -103646,7 +103731,8 @@ function openTopup(){
       + '<li class="done"><span>' + I.check + '</span><b>Заявка</b></li><li class="on"><span>2</span><b>Счёт в' + NB + 'Telegram</b></li><li><span>3</span><b>Зачисление</b></li></ol>'
       + '<div class="mvi-ok"><div class="mvi-ok-i">' + I.tg + '</div>'
       + '<h3>Осталось открыть Telegram</h3>'
-      + '<p>' + esc(nbsp('Нажмите кнопку ниже и «Запустить» в боте @' + INV.bot + ' — менеджер пришлёт туда счёт на ' + rub(j.amount) + '. Там же можно задать вопрос.')) + '</p></div>'
+      + '<p>' + esc(nbsp('Нажмите кнопку ниже и «Запустить» в боте @' + INV.bot + ' — менеджер пришлёт туда счёт на ' + rub(j.total || j.amount)
+        + (j.total && j.total > j.amount ? ' (на баланс ' + rub(j.amount) + ' + комиссия ' + rub(j.total - j.amount) + ')' : '') + '. Там же можно задать вопрос.')) + '</p></div>'
       + '<a class="mx-b mx-bp mx-bfull mvi-go" id="mviTg" href="' + esc(url) + '" target="_blank" rel="noopener">' + I.tg + '<span>Открыть Telegram</span></a>'
       + '<button type="button" class="mx-b mx-bg mx-bfull" data-tu="done">Готово</button>'
       + '<p class="mvi-note">' + esc(nbsp('Заявка сохранена — вернуться к ней можно здесь же: «Пополнить → По счёту».')) + '</p>';
@@ -103695,7 +103781,7 @@ function openWithdraw(){
   var mo = money(), k = kycInfo(), po = payoutInfo();
   var avail = Math.floor(mo.bal);
   var sub = po ? '<i class="ok">' + esc(po.label) + '</i>' : '<i>Нет подключённого счёта</i>';
-  var body = '<div class="mx-pl blue">' + esc(nbsp('Вывод — от 1 000 ₽, комиссия сервиса 4 %. Деньги приходят на банковскую карту или по СБП после проверки заявки.')) + '</div>'
+  var body = '<div class="mx-pl blue">' + esc(nbsp('Вывод — от 1 000 ₽, без комиссии. Деньги приходят на банковскую карту или по СБП после проверки заявки.')) + '</div>'
     + '<div><div class="mvm-av"><span>Доступно к выводу:</span><b>' + rub(avail) + '</b></div><p class="mx-q" style="margin-top:8px">Куда вывести средства?</p></div>'
     + '<section class="mvm-sec"><h3>Для резидентов РФ</h3>'
     + '<button type="button" class="mvm-opt" data-wd="rub"><span class="mvm-tag">Для граждан РФ</span><span class="mvm-ico">' + I.rub64 + '</span><span><b>Рубли (₽)</b>' + sub + '</span></button></section>'
@@ -104395,6 +104481,8 @@ function act(a, b){
 var _code = '', _tick = null;
 function phoneStart(){
   var k = K(); if(!k) return;
+  /* 14.10 (владелец): подтверждённый номер изменить нельзя */
+  if(phoneOk()){ try{ if(typeof showAuthToast === 'function') showAuthToast('Номер уже подтверждён — изменить его нельзя', 'info'); }catch(e){} return; }
   var val = k.phone && k.phone.value ? fmtPhone(k.phone.value) : '';
   var card = paint(1,
     hero(IC.phone, 'blue', 'Подтвердите номер', nb('Номер защищает выплаты: деньги уходят только владельцу аккаунта.')) +
@@ -105262,10 +105350,10 @@ var HINT = {
   fmt: 'Клипы — нарезки из ваших материалов. UGC — блогер снимает свой ролик с товаром. Баннеры — блогер размещает ваш баннер в ролике или профиле.',
   plat: 'Ролики принимаем из TikTok и YouTube: блогер подключает аккаунт, и площадка сама сообщает просмотры — накрутить их в приложении нельзя.',
   dates: 'Задание начинается сразу после публикации. «Пока не кончится бюджет» — блогеры загружают ролики, пока на счёте задания есть деньги.',
-  req: 'Пример: 100 ₽ за 1 000 просмотров. Ролик набрал 50 000 — блогер получит 5 000 ₽, но не больше максимальной выплаты за видео. Начисления — с порога просмотров.',
+  req: 'Пример: 100 ₽ за 1 000 просмотров. Ролик набрал 50 000 — из бюджета уйдёт 5 000 ₽ (блогеру на баланс — 4 650 ₽ после комиссии сервиса 7%), но не больше максимальной выплаты за видео. Начисления — с порога просмотров.',
   desc: 'Задание видят блогеры и вы при проверке ролика. Опишите, что показать, ключевые сообщения и чего избегать — по этим пунктам вы принимаете или возвращаете видео.',
   mk: 'Строку маркировки блогер поставит в описание ролика. erid выдаёт оператор рекламных данных (ОРД) после регистрации креатива.',
-  budget: 'Сумма резервируется на счёте задания. Деньги уходят только за засчитанные ролики; свободный остаток можно вернуть в кошелёк.'
+  budget: 'Сумма резервируется на счёте задания. Деньги уходят только за засчитанные ролики; свободный остаток можно вернуть в кошелёк. Комиссия сервиса — 7% сверху бюджета; за возвращённый остаток её тоже вернём.'
 };
 
 /* ── черновик на устройстве ── */
@@ -105594,8 +105682,27 @@ function stepMark(){
 }
 
 /* ── шаг 4 · бюджет ── */
+/* комиссия сервиса (14.10.2026): 7% СВЕРХУ бюджета — бюджет целиком идёт на
+   выплаты блогерам, с баланса спишется бюджет + комиссия; ставка — с сервера
+   (слой bp-fees, /api/pay/config), до ответа — 7% */
+function feeP(){ var f = window.bpFees; return f && f.task != null ? Math.max(0, Number(f.task) || 0) : 7; }
+function payP(){ var f = window.bpFees; return f && f.payout != null ? Math.max(0, Number(f.payout) || 0) : 7; }
+function feeOf(b){ return Math.round(Math.max(0, num(b)) * feeP() / 100); }
+function totalOf(b){ return Math.round(num(b)) + feeOf(b); }
+function feeInner(b){
+  var p = feeP(); b = Math.round(num(b));
+  if(!p) return '';
+  if(!(b > 0)) return '<p class="mvz-note mvz-fee-hint">' + (IC.info || '') + '<span>' + esc(nb('Комиссия сервиса — ' + p + '% сверху бюджета: сам бюджет целиком идёт на выплаты блогерам')) + '</span></p>';
+  var fee = feeOf(b);
+  return '<div class="mvz-fee" role="group" aria-label="Сколько спишется с баланса">'
+    + '<div><span>Бюджет задания</span><b>' + rub(b) + '</b></div>'
+    + '<div class="fee"><span>Комиссия сервиса<em>' + p + NB + '%</em></span><b>+' + NB + rub(fee) + '</b></div>'
+    + '<div class="tot"><span>Спишется с баланса</span><b>' + rub(b + fee) + '</b></div></div>'
+    + '<p class="mvz-note">' + esc(nb('Бюджет целиком идёт на выплаты блогерам. Не потратите' + NB + '— остаток вернём в кошелёк вместе с комиссией за него.')) + '</p>';
+}
+function paintFee(){ var w = $('mvzFeeW'); if(w && W) w.innerHTML = feeInner(W.d.budget); }
 function stepBudget(){
-  var d = W.d, bal = balance(), b = num(d.budget), need = b - bal;
+  var d = W.d, bal = balance(), b = num(d.budget), need = totalOf(b) - bal;
   var r = num(d.rate), cap = num(d.maxPay);
   var est = '';
   if(b && r){
@@ -105610,7 +105717,8 @@ function stepBudget(){
     + sec('Бюджет кампании', 'budget',
         fld('budget', 'Бюджет', 'От ' + int(minBudget()), d.budget ? int(d.budget) : '', 'inputmode="numeric" maxlength="11"', '₽')
       + '<p class="mvz-note">Минимальный бюджет — ' + rub(minBudget()) + '</p>'
-      + (b && need > 0 ? '<div class="mvz-warn" role="alert">' + (IC.warn || '') + '<span>' + esc(nb('Не хватает ' + rub(need) + ' — пополните кошелёк, и задание запустится')) + '</span>'
+      + '<div id="mvzFeeW">' + feeInner(b) + '</div>'
+      + (b && need > 0 ? '<div class="mvz-warn" role="alert">' + (IC.warn || '') + '<span>' + esc(nb('Не хватает ' + rub(need) + (feeP() ? ' с учётом комиссии' : '') + ' — пополните кошелёк, и задание запустится')) + '</span>'
           + '<button type="button" class="mvz-mini" data-z="topup">Пополнить</button></div>' : ''))
     + est;
 }
@@ -105621,7 +105729,7 @@ function paintBal(){
   if(!W || STEPS[W.step].k !== 'budget') return;
   var v = $('mvzBalV'); if(v) v.textContent = rub(balance());
   var b = num(W.d.budget);
-  if(b && (b - balance() > 0) !== !!document.querySelector('#mvzBd .mvz-warn')) render(true);
+  if(b && (totalOf(b) - balance() > 0) !== !!document.querySelector('#mvzBd .mvz-warn')) render(true);
 }
 
 /* ── шаг 5 · предпросмотр ── */
@@ -105651,12 +105759,15 @@ function stepPreview(){
     + rl('Порог начислений', num(d.minViews) ? int(d.minViews) + ' просмотров' : 'с первого просмотра', 'eye')
     + rl('Макс. выплата за видео', cap ? rub(cap) : 'без лимита', 'star') + rl('Мин. длина видео', num(d.minSec) ? int(d.minSec) + ' сек.' : '', 'clock')
     + rl('Тип аккаунта', d.acct, 'user') + rl('Площадки', d.plats.map(function(k){ return PLAT[k]; }).join(', '), 'link')
-    + rl('Маркировка', d.mk.erid ? 'erid ' + d.mk.erid : '', 'shield') + '</div>'
+    + rl('Маркировка', d.mk.erid ? 'erid ' + d.mk.erid : '', 'shield')
+    + rl('Комиссия сервиса', payP() ? payP() + '% с каждой выплаты блогеру' : '', 'coin') + '</div>'
     + (d.desc ? '<h4 class="mvz-pv-h">Задание</h4><div class="mvz-pv-desc">' + esc(d.desc).replace(/\n/g, '<br>') + '</div>' : '')
     + (rules.length ? '<div class="mvz-pv-desc mvz-pv-li">' + rules.map(function(x){ return '<div>' + esc(x) + '</div>'; }).join('') + '</div>' : '')
     + (tags ? '<h4 class="mvz-pv-h">Хештеги и отметки</h4><div class="mvz-pv-tags">' + esc(tags) + '</div>' : '')
     + (mats ? '<h4 class="mvz-pv-h">Материалы</h4><div class="mvz-pv-desc">' + esc(mats) + (d.mats.length ? ' · ещё ' + d.mats.length + NB + plural(d.mats.length, 'ссылка', 'ссылки', 'ссылок') : '') + '</div>' : '')
-    + '<div class="mvz-pv-note">' + (IC.lock || '') + '<span>' + esc(nb('После публикации ' + rub(b) + ' зарезервируем на счёте задания. Блогеры увидят задание сразу.')) + '</span></div>'
+    + '<div class="mvz-pv-note">' + (IC.lock || '') + '<span>' + esc(nb(feeOf(b) > 0
+        ? 'После публикации с баланса спишется ' + rub(totalOf(b)) + ': ' + rub(b) + ' — бюджет на счёте задания и ' + rub(feeOf(b)) + ' — комиссия сервиса ' + feeP() + '%. Блогеры увидят задание сразу.'
+        : 'После публикации ' + rub(b) + ' зарезервируем на счёте задания. Блогеры увидят задание сразу.')) + '</span></div>'
     + '</div>';
 }
 
@@ -105698,7 +105809,7 @@ function check(step){
     var b = num(d.budget);
     if(!b) e.budget = 'Укажите бюджет задания';
     else if(b < minBudget()) e.budget = 'Минимальный бюджет — ' + rub(minBudget());
-    else if(b > balance()) e.budget = 'Не хватает ' + rub(b - balance()) + ' на балансе — пополните кошелёк';
+    else if(totalOf(b) > balance()) e.budget = 'Не хватает ' + rub(totalOf(b) - balance()) + ' на балансе' + (feeOf(b) > 0 ? ' (бюджет + комиссия ' + feeP() + '%)' : '') + ' — пополните кошелёк';
     else if(num(d.maxPay) && b < num(d.maxPay)) e.budget = 'Бюджет меньше максимальной выплаты за одно видео';
   }
   return e;
@@ -105822,7 +105933,7 @@ function watchLaunch(id, budget){
     var m = typeof window.bpMvModal === 'function' ? window.bpMvModal('mvWizOk', {
       title:'Задание опубликовано', mid:true,
       body:'<div class="mvz-ok"><span class="mvz-ok-i">' + (IC.rocket || IC.checkC || '') + '</span><h3>Блогеры уже видят задание</h3>'
-        + '<p>' + esc(nb('Бюджет ' + rub(budget) + ' зарезервирован на счёте задания. Ролики на проверке появятся во вкладке «Видео».')) + '</p></div>',
+        + '<p>' + esc(nb('Бюджет ' + rub(budget) + ' зарезервирован на счёте задания' + (feeOf(budget) > 0 ? ', комиссия сервиса ' + rub(feeOf(budget)) + ' списана' : '') + '. Ролики на проверке появятся во вкладке «Видео».')) + '</p></div>',
       foot:'<button type="button" class="mx-b mx-bg" data-mx="x">Готово</button><button type="button" class="mx-b mx-bp" id="mvzOpen">Открыть задание</button>'
     }) : null;
     if(m){
@@ -105873,7 +105984,7 @@ function onInput(e){
   var c = W.el.querySelector('[data-c="' + f + '"]'); if(c) c.textContent = String(v).length + '/' + (t.getAttribute('maxlength') || '');
   if(f === 'rate' || f === 'maxPay'){ var cl = $('mvzCalc'); if(cl) cl.outerHTML = calcLine(); }
   if(f.indexOf('mk.') === 0){ var pv = $('mvzMkPrev'); if(pv){ var tmp = document.createElement('div'); tmp.innerHTML = stepMark(); var np = tmp.querySelector('#mvzMkPrev'); if(np) pv.parentNode.replaceChild(np, pv); } }
-  if(f === 'budget') budgetLive();
+  if(f === 'budget'){ paintFee(); budgetLive(); }
   saveDraft();
 }
 var _bT = null;
@@ -106017,7 +106128,7 @@ function onClick(e){
 /* пополнить и вернуться: черновик сохранён, после пополнения мастер
    откроется сам на шаге бюджета */
 function topup(){
-  var need = Math.max(0, num(W.d.budget) - balance());
+  var need = Math.max(0, totalOf(W.d.budget) - balance());
   saveDraft(true);
   try{ sessionStorage.setItem('bpMvWizBack', JSON.stringify({ at:Date.now(), need:need })); }catch(e){}
   close(true);
@@ -106032,7 +106143,7 @@ function resumeCheck(){
   if(!r || Date.now() - (r.at || 0) > 30 * 60000){ try{ sessionStorage.removeItem('bpMvWizBack'); }catch(e){} return; }
   var dr = readDraft(); if(!dr){ try{ sessionStorage.removeItem('bpMvWizBack'); }catch(e){} return; }
   var b = num(dr.d && dr.d.budget);
-  if(b && balance() >= b){
+  if(b && balance() >= totalOf(b)){
     try{ sessionStorage.removeItem('bpMvWizBack'); }catch(e){}
     open({ step:3 });
     later(function(){ toast('Баланс пополнен — продолжаем создание задания', 'ok'); }, 360);
@@ -106107,6 +106218,9 @@ window.bpMvWizOpen = open;
      теперь счётчик на колокольчике. Баланс — синий кошелёк: градиент
      .mvw-body, подпись «Баланс» и карманчик с тремя карточками.
    · Центр уведомлений #bpn2 (туда ведёт колокольчик) — тот же язык MV.
+   · 14.10, позже: полка прозрачнее (.78, затухание под ней слабее);
+     шторки (бокового меню) и кнопки ☰ в MV больше нет; колокольчик без
+     рамки; полка видна и на «Кошельке».
    Всё — только под html.bp-mv: в полном доступе полка и шапка прежние.
    Откат: удалить style#bp-mv-glass-css и script#bp-mv-glass.           */
 
@@ -106115,8 +106229,8 @@ html body #bpTabbar .bptab-lg{ display:none }
 html.bp-mv body #bpTabbar #bpTabbarIn.bptab-in{
   position:relative; isolation:isolate;
   background:
-    linear-gradient(180deg,rgba(255,255,255,.075) 0%,rgba(255,255,255,.02) 44%,rgba(255,255,255,0) 62%,rgba(255,255,255,.035) 100%),
-    rgba(30,31,35,.9)!important;
+    linear-gradient(180deg,rgba(255,255,255,.09) 0%,rgba(255,255,255,.025) 44%,rgba(255,255,255,0) 62%,rgba(255,255,255,.045) 100%),
+    rgba(30,31,35,.78)!important;   /* 14.10: «прозрачным немного» (было .9) */
   border:1px solid rgba(255,255,255,.07)!important;
   box-shadow:
     0 16px 36px rgba(0,0,0,.5), 0 2px 10px rgba(0,0,0,.3),
@@ -106174,11 +106288,16 @@ html.bp-mv body #bpTabbar .bptab-in.lg-on.lg-pend .bptab-i.on:not(.lg-to) span:n
 html.bp-mv body #bpTabbar .bptab-in.lg-on .bptab-i.lg-to svg,
 html.bp-mv body #bpTabbar .bptab-in.lg-on .bptab-i.lg-to span:not(.bptab-b){ opacity:1; transition:opacity .34s ease var(--lg-d,0ms) }
 html.bp-mv body #bpTabbar .bptab-b{ border-color:#1e1f23!important }
+/* «Кошелёк» (pg-balance) — не раздел полки, но полка на нём остаётся: класс
+   ставит скрипт, пока страница открыта. Шторки и окна (#mvTu, #mvWd, KYC)
+   её прячут/накрывают как раньше; пополнение и вывод — отдельные страницы */
+html.bp-mv body.mvg-tab-bal #bpTabbar{ display:block }
 /* содержимое под полкой затухает к низу экрана — полка «висит» над ним */
 html.bp-mv body #bpTabbar::before{
   content:''; position:absolute; left:50%; bottom:0; z-index:-1; width:100vw; height:calc(100% + 28px);
   transform:translateX(-50%); pointer-events:none;
-  background:linear-gradient(0deg,rgba(16,19,25,.97) 0%,rgba(16,19,25,.9) 30%,rgba(16,19,25,.55) 64%,rgba(16,19,25,0) 100%);
+  /* затухание слабее: иначе сквозь прозрачную полку видно только его */
+  background:linear-gradient(0deg,rgba(16,19,25,.82) 0%,rgba(16,19,25,.56) 34%,rgba(16,19,25,.24) 66%,rgba(16,19,25,0) 100%);
 }
 
 /* корневые разделы MV (Главная · Мои задания · Чаты · Профиль, у
@@ -106203,27 +106322,34 @@ html.bp-mv body #mainTopbar.topbar{
   border:1px solid rgba(255,255,255,.09)!important;
   box-shadow:0 14px 32px rgba(0,0,0,.44),inset 0 1px 0 rgba(255,255,255,.13),inset 0 -1px 0 rgba(255,255,255,.035)!important;
 }
+/* шторки (боковое меню) в MV больше нет — 14.10 «удали шторку полностью»:
+   всё из неё есть на полке, в профиле (настройки, поддержка, выход) и
+   на колокольчике. Кнопку ☰ прячем, саму шторку — тоже; если старый код
+   её всё же откроет, скрипт сразу закроет (и вернёт прокрутку body) */
+html.bp-mv body #mainTopbar .tb-ham,
+html.bp-mv body #drw,
+html.bp-mv body #drwOverlay{ display:none!important }
 /* профиль — на полке; в шапке на его месте уведомления */
 html.bp-mv body #mainTopbar .tb-ava{ display:none!important }
 html.bp-mv body #hamRedDot{ display:none!important }
 html.bp-mv body #mainTopbar .tb-ham.cl-has-notif,
 html.bp-mv body #mainTopbar .tb-ham.cl-has-notif::after{ animation:none!important }
 html body #mainTopbar .tb-bell{ display:none }
+/* 14.10, второй заход: «колокольчик без рамки» — только значок; область
+   нажатия прежние 42 px, при нажатии — мягкая подсветка */
 html.bp-mv body #mainTopbar .tb-bell{
   position:relative; display:flex; align-items:center; justify-content:center; flex:none;
   width:42px; height:42px; margin:0; padding:0; box-sizing:border-box; border-radius:50%;
-  background:linear-gradient(180deg,rgba(255,255,255,.11),rgba(255,255,255,.04));
-  border:1px solid rgba(255,255,255,.12);
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.15),0 4px 12px rgba(0,0,0,.24);
+  background:transparent; border:0; box-shadow:none;
   color:#fff; font:inherit; cursor:pointer; -webkit-tap-highlight-color:transparent;
-  transition:transform .22s cubic-bezier(.22,1,.36,1);
+  transition:transform .22s cubic-bezier(.22,1,.36,1),background-color .2s ease;
 }
-html.bp-mv body #mainTopbar .tb-bell:active{ transform:scale(.9) }
+html.bp-mv body #mainTopbar .tb-bell:active{ transform:scale(.9); background:rgba(255,255,255,.08) }
 html.bp-mv body #mainTopbar .tb-bell:focus-visible{ outline:2px solid #92a1ff; outline-offset:2px }
-html.bp-mv body #mainTopbar .tb-bell-g{ display:flex; width:22px; height:22px; transform-origin:50% 14% }
-html.bp-mv body #mainTopbar .tb-bell-g svg{ display:block; width:22px; height:22px }
+html.bp-mv body #mainTopbar .tb-bell-g{ display:flex; width:25px; height:25px; transform-origin:50% 14% }
+html.bp-mv body #mainTopbar .tb-bell-g svg{ display:block; width:25px; height:25px }
 html.bp-mv body #mainTopbar .tb-bell-n{
-  position:absolute; top:-4px; right:-5px; display:none; min-width:19px; height:19px; padding:0 5px;
+  position:absolute; top:1px; right:0; display:none; min-width:19px; height:19px; padding:0 5px;
   box-sizing:border-box; border-radius:10px; border:2px solid #1e1f23; background:#f0435f; color:#fff;
   font-size:10.5px; font-weight:800; line-height:15px; text-align:center; font-variant-numeric:tabular-nums;
 }
@@ -106699,8 +106825,39 @@ function paintBell(){
   }catch(e){ E(e); }
 }
 
+/* ═══ 2½ · полка на «Кошельке» ═══ */
+function balTab(){
+  var pg = $('pg-balance'), b = document.body; if(!b) return;
+  var on = !!(mvOn() && pg && pg.classList.contains('on'));
+  if(b.classList.contains('mvg-tab-bal') !== on) b.classList.toggle('mvg-tab-bal', on);
+}
+function watchBal(){
+  var pg = $('pg-balance');
+  if(!pg || pg.__mvgBal || typeof MutationObserver === 'undefined') return;
+  pg.__mvgBal = 1;
+  new MutationObserver(balTab).observe(pg, { attributes:true, attributeFilter:['class'] });
+  balTab();
+}
+
+/* ═══ 3 · шторки нет ═══ */
+function shutDrawer(){
+  var d = $('drw');
+  if(!mvOn() || !d || !d.classList.contains('open')) return;
+  try{ if(typeof window.closeDrawer === 'function') window.closeDrawer(); }catch(e){ E(e); }
+  if(d.classList.contains('open')) d.classList.remove('open');
+  var o = $('drwOverlay'); if(o && o.classList.contains('open')) o.classList.remove('open');
+  if(document.body && document.body.style.overflow === 'hidden') document.body.style.overflow = '';
+}
+function guardDrawer(){
+  var d = $('drw');
+  if(!d || d.__mvgGuard || typeof MutationObserver === 'undefined') return;
+  d.__mvgGuard = 1;
+  new MutationObserver(shutDrawer).observe(d, { attributes:true, attributeFilter:['class'] });
+  shutDrawer();
+}
+
 function boot(){
-  watch(); mountBar();
+  watch(); mountBar(); guardDrawer(); watchBal();
   /* бургер раньше носил красную точку непрочитанного — её меняет
      paint() центра уведомлений; следим за ней и рисуем колокольчик */
   var dot = $('hamRedDot');
@@ -106709,11 +106866,11 @@ function boot(){
   window.addEventListener('storage', function(e){ if(!e || !e.key || e.key === 'bp_notifs') paintBell(); });
   setInterval(function(){ if(!document.hidden){ watch(); paintBell(); } }, 2500);
   /* полка и шапка достраиваются после входа и смены роли */
-  [400, 1300, 3200].forEach(function(ms){ setTimeout(function(){ watch(); check(true); mountBar(); }, ms); });
+  [400, 1300, 3200].forEach(function(ms){ setTimeout(function(){ watch(); check(true); mountBar(); watchBal(); balTab(); }, ms); });
   /* режим MV может включиться/выключиться после загрузки (проверка полного доступа) */
   if(typeof MutationObserver !== 'undefined'){
     var was = mvOn();
-    new MutationObserver(function(){ var on = mvOn(); if(on !== was){ was = on; check(true); paintBell(); } })
+    new MutationObserver(function(){ var on = mvOn(); if(on !== was){ was = on; check(true); paintBell(); balTab(); } })
       .observe(document.documentElement, { attributes:true, attributeFilter:['class'] });
   }
 }
@@ -106734,7 +106891,9 @@ if(document.readyState === 'loading') document.addEventListener('DOMContentLoade
      своём цвете (палитра без зелёного — его перекрашивает deGreen),
      точка «в сети», «Вы:» у своего последнего сообщения, непрочитанное —
      жирнее и с градиентным счётчиком. Пустой список, «ничего не
-     нашлось» и «всё прочитано» — карточкой как у заданий.
+     нашлось» и «всё прочитано» — карточкой как у заданий. Совсем пустой
+     список (14.10, второй заход) — без коробки: картинка, «Здесь будут
+     ваши чаты», два шага «как появится чат», кнопка «Найти задание».
    · Диалог: шапка — плавающая стеклянная панель (как верхняя панель),
      круглая «назад», под именем — «в сети» или роль собеседника (вместо
      «был(а) недавно» у всех подряд); пузыри — входящие #27292a, свои — синим градиентом
@@ -106862,32 +107021,66 @@ html.bp-mv body #pg-chats #chatsList .bp-skel-wrap > div{
   min-height:80px; box-sizing:border-box; padding:14px 16px!important; gap:14px!important;
   border-radius:24px; background:#1d1e20; border:.8px solid rgba(255,255,255,.05);
 }
-/* пустые экраны — большая карточка, как «Пока нет заданий» */
-html.bp-mv body #pg-chats .chats-empty,
+/* ── совсем пусто (чатов нет) — 14.10, второй заход: владельцу не понравилась
+   огромная пустая карточка. Теперь без коробки: картинка-переписка со
+   свечением, заголовок, понятные два шага «как появится чат» и одна
+   главная кнопка. Счётчик «0» в шапке не показываем. ── */
+html.bp-mv body #pg-chats.mvch-none > .mvch-hd .mvch-cnt{ display:none }
+html.bp-mv body #pg-chats .chats-empty{
+  display:flex!important; flex-direction:column; align-items:center; justify-content:center; text-align:center;
+  min-height:calc(100dvh - 250px); box-sizing:border-box; margin:0; padding:8px 8px 24px!important;
+  background:none!important; border:0!important; border-radius:0!important; box-shadow:none!important;
+}
+html.bp-mv body #pg-chats .chats-empty > .bp-empty-art{ display:none!important }
+html.bp-mv body #pg-chats .mvch-art{ position:relative; width:184px; height:150px; margin:0 0 4px }
+html.bp-mv body #pg-chats .mvch-art svg{ display:block; width:100%; height:100%; overflow:visible }
+html.bp-mv body #pg-chats .mvch-art .mvch-b1,
+html.bp-mv body #pg-chats .mvch-art .mvch-b2{ transform-box:fill-box; transform-origin:50% 50%; animation:mvchFloat 5.2s ease-in-out infinite }
+html.bp-mv body #pg-chats .mvch-art .mvch-b1{ animation-delay:-2.6s }
+html.bp-mv body #pg-chats .mvch-art .mvch-dot{ animation:mvchDot 1.5s ease-in-out infinite }
+html.bp-mv body #pg-chats .mvch-art .mvch-dot:nth-of-type(2){ animation-delay:.18s }
+html.bp-mv body #pg-chats .mvch-art .mvch-dot:nth-of-type(3){ animation-delay:.36s }
+@keyframes mvchFloat{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-5px) } }
+@keyframes mvchDot{ 0%,100%{ opacity:.45 } 40%{ opacity:1 } }
+html.bp-mv body #pg-chats .mvch-et{ max-width:310px; margin:0 0 8px; font-size:22px; font-weight:800; line-height:1.25; letter-spacing:-.45px; color:#fff }
+html.bp-mv body #pg-chats .mvch-es{ max-width:300px; margin:0 0 22px; font-size:15px; font-weight:500; line-height:1.45; color:rgba(255,255,255,.58) }
+html.bp-mv body #pg-chats .mvch-steps{
+  list-style:none; display:flex; flex-direction:column; gap:12px; width:100%; max-width:330px; box-sizing:border-box;
+  margin:0 0 26px; padding:14px 16px; text-align:left;
+  border-radius:22px; background:rgba(29,30,32,.86); border:.8px solid rgba(255,255,255,.06);
+}
+html.bp-mv body #pg-chats .mvch-steps li{ display:flex; align-items:center; gap:12px; margin:0; font-size:14px; line-height:1.38; color:rgba(255,255,255,.84) }
+html.bp-mv body #pg-chats .mvch-steps i{
+  flex:none; display:grid; place-items:center; width:28px; height:28px; border-radius:50%;
+  background:rgba(97,118,255,.18); color:#c3cbff; font-style:normal; font-size:13px; font-weight:700;
+}
+html.bp-mv body #pg-chats .mvch-cta{
+  display:inline-flex; align-items:center; justify-content:center; gap:10px; min-height:52px; padding:0 26px; box-sizing:border-box;
+  border:0; border-radius:9999px; color:#fff; font:inherit; font-size:16px; font-weight:600; cursor:pointer;
+  background:linear-gradient(180deg,#92a1ff 0%,#3d55ed 52%,#6176ff 100%);
+  box-shadow:0 8px 22px rgba(40,60,200,.35),inset 0 1px 0 rgba(255,255,255,.22);
+  -webkit-tap-highlight-color:transparent; transition:transform .18s cubic-bezier(.22,1,.36,1);
+}
+html.bp-mv body #pg-chats .mvch-cta:active{ transform:scale(.96) }
+html.bp-mv body #pg-chats .mvch-cta svg{ width:20px; height:20px }
+/* «ничего не нашлось» / «всё прочитано» — небольшая карточка в списке */
 html.bp-mv body #pg-chats .mvch-empty{
   display:flex!important; flex-direction:column; align-items:center; justify-content:center; text-align:center;
-  min-height:calc(100dvh - 330px); box-sizing:border-box; margin:0; padding:24px 22px 28px!important;
-  border-radius:32px; background:#1d1e20; border:.8px solid rgba(255,255,255,.05);
+  box-sizing:border-box; margin:0; padding:30px 22px 32px!important;
+  border-radius:24px; background:#1d1e20; border:.8px solid rgba(255,255,255,.05);
 }
-html.bp-mv body #pg-chats.mvch-none .chats-empty{ min-height:calc(100dvh - 210px) }
-html.bp-mv body #pg-chats .chats-empty > .bp-empty-art{ display:none!important }
 html.bp-mv body #pg-chats .mvch-ico{
-  display:grid; place-items:center; width:72px; height:72px; margin:0 0 18px; border-radius:50%;
+  display:grid; place-items:center; width:64px; height:64px; margin:0 0 16px; border-radius:50%;
   background:radial-gradient(circle at 50% 30%,rgba(146,161,255,.24),rgba(61,85,237,.1) 70%);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 0 0 8px rgba(97,118,255,.05);
   color:#c3cbff;
 }
-html.bp-mv body #pg-chats .mvch-ico svg{ width:32px; height:32px }
-html.bp-mv body #pg-chats .chats-empty > div:not(.bp-empty-art):not(.mvch-ico):not([onclick]),
-html.bp-mv body #pg-chats .mvch-empty b{
-  font-size:17px!important; font-weight:800!important; line-height:1.3!important; color:#fff!important; margin:0 0 7px!important; letter-spacing:-.3px!important;
+html.bp-mv body #pg-chats .mvch-ico svg{ width:30px; height:30px }
+html.bp-mv body #pg-chats .mvch-empty b{ font-size:17px; font-weight:800; line-height:1.3; color:#fff; margin:0 0 6px; letter-spacing:-.3px }
+html.bp-mv body #pg-chats .mvch-empty span{ display:block; max-width:270px; font-size:13px; font-weight:500; line-height:1.5; color:rgb(143,151,165) }
+@media (prefers-reduced-motion:reduce){
+  html.bp-mv body #pg-chats .mvch-art .mvch-b1,html.bp-mv body #pg-chats .mvch-art .mvch-b2,html.bp-mv body #pg-chats .mvch-art .mvch-dot{ animation:none }
 }
-html.bp-mv body #pg-chats .chats-empty > div:not(.bp-empty-art):not(.mvch-ico):not([onclick]) + div:not([onclick]),
-html.bp-mv body #pg-chats .mvch-empty span{
-  display:block; max-width:270px!important; font-size:13px!important; font-weight:500!important; line-height:1.5!important;
-  color:rgb(143,151,165)!important; margin:0!important; letter-spacing:0!important;
-}
-html.bp-mv body #pg-chats .chats-empty > [onclick]{ margin-top:22px!important }
 
 /* ═══ 2 · диалог ═══ */
 html.bp-mv body #pg-chat-dialog{ background:#101319!important }
@@ -107165,6 +107358,32 @@ function mountHead(pg){
   }
   return hd;
 }
+/* картинка «переписка»: тёмный пузырь собеседника и синий свой с «печатает…» */
+var ART = '<svg viewBox="0 0 184 150" fill="none" aria-hidden="true" focusable="false"><defs>'
+  + '<linearGradient id="mvchA1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3b3d42"/><stop offset="1" stop-color="#232427"/></linearGradient>'
+  + '<linearGradient id="mvchA2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#97a6ff"/><stop offset=".55" stop-color="#5068f2"/><stop offset="1" stop-color="#3d55ed"/></linearGradient>'
+  + '<radialGradient id="mvchA3" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#6176ff" stop-opacity=".34"/><stop offset="1" stop-color="#6176ff" stop-opacity="0"/></radialGradient>'
+  + '</defs><ellipse cx="92" cy="78" rx="88" ry="66" fill="url(#mvchA3)"/>'
+  + '<g class="mvch-b1"><path d="M36 26h62a15 15 0 0 1 15 15v27a15 15 0 0 1-15 15H58l-15 12V83h-7a15 15 0 0 1-15-15V41a15 15 0 0 1 15-15z" fill="url(#mvchA1)" stroke="#fff" stroke-opacity=".14"/>'
+  + '<rect x="36" y="43" width="48" height="7" rx="3.5" fill="#fff" fill-opacity=".3"/><rect x="36" y="58" width="32" height="7" rx="3.5" fill="#fff" fill-opacity=".16"/></g>'
+  + '<g class="mvch-b2"><path d="M86 58h56a15 15 0 0 1 15 15v24a15 15 0 0 1-15 15h-4v12l-15-12H86a15 15 0 0 1-15-15V73a15 15 0 0 1 15-15z" fill="url(#mvchA2)"/>'
+  + '<path d="M86 59h56a14 14 0 0 1 14 14" stroke="#fff" stroke-opacity=".5" stroke-width="1.3" stroke-linecap="round"/>'
+  + '<circle class="mvch-dot" cx="99" cy="85" r="5" fill="#fff"/><circle class="mvch-dot" cx="114" cy="85" r="5" fill="#fff"/><circle class="mvch-dot" cx="129" cy="85" r="5" fill="#fff"/></g>'
+  + '<path d="M158 22l2.4 6.3 6.3 2.4-6.3 2.4-2.4 6.3-2.4-6.3-6.3-2.4 6.3-2.4z" fill="#c3cbff"/>'
+  + '<circle cx="18" cy="112" r="3.4" fill="#8f9dff" fill-opacity=".6"/><circle cx="170" cy="126" r="2.4" fill="#fff" fill-opacity=".35"/><circle cx="26" cy="18" r="2" fill="#fff" fill-opacity=".3"/>'
+  + '</svg>';
+var GO_I = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13.4M13 6.4l5.6 5.6-5.6 5.6"/></svg>';
+function emptyHTML(){
+  var adv = isAdv();
+  var t = adv ? 'Здесь будут чаты с блогерами' : 'Здесь будут ваши чаты';
+  var s = adv ? 'Пишите блогерам, которые выполняют ваши задания' : 'Сюда придут сообщения от рекламодателей по вашим заданиям';
+  var st = adv ? ['Запустите задание', 'Откройте «Участники» и нажмите «Чат» у блогера']
+               : ['Вступите в задание на главной', 'Рекламодатель напишет вам — переписка появится здесь'];
+  return '<div class="mvch-art">' + ART + '</div>'
+    + '<div class="mvch-et">' + esc(t) + '</div><div class="mvch-es">' + esc(s) + '</div>'
+    + '<ol class="mvch-steps">' + st.map(function(x, i){ return '<li><i>' + (i + 1) + '</i><span>' + esc(x) + '</span></li>'; }).join('') + '</ol>'
+    + '<button type="button" class="mvch-cta" data-mvch-go="' + (adv ? 'campaigns' : 'tasks') + '">' + (adv ? 'Мои задания' : 'Найти задание') + GO_I + '</button>';
+}
 function emptyCard(title, text){
   return '<div class="mvch-empty"><div class="mvch-ico">' + CHAT_SVG + '</div><b>' + esc(title) + '</b><span>' + esc(text) + '</span></div>';
 }
@@ -107217,13 +107436,11 @@ function paintList(){
     /* пусто: весь список / ничего не нашлось / всё прочитано */
     var empty = list.querySelector('.chats-empty');
     if(empty){
-      if(!empty.querySelector('.mvch-ico')){
-        var ic = document.createElement('div'); ic.className = 'mvch-ico'; ic.innerHTML = CHAT_SVG;
-        empty.insertBefore(ic, empty.firstChild);
+      var role = isAdv() ? 'adv' : 'blogger';
+      if(empty.getAttribute('data-mvch') !== role){
+        empty.setAttribute('data-mvch', role);
+        empty.innerHTML = emptyHTML();
       }
-      [].forEach.call(empty.children, function(k){
-        if(/^Чатов пока нет$/.test(String(k.textContent || '').trim())) k.textContent = 'Пока нет чатов';
-      });
     } else if(!rows.length && !list.querySelector('.bp-skel-wrap') && !list.querySelector('.mvch-empty')){
       var q = queryNow();
       if(q) list.innerHTML = emptyCard('Ничего не нашлось', 'По запросу «' + q + '» чатов и сообщений нет. Попробуйте короче.');
@@ -107340,6 +107557,11 @@ function watchDialog(){
   if(d) new MutationObserver(function(){ if(d.classList.contains('on')) paintDialog(); }).observe(d, { attributes:true, attributeFilter:['class'] });
 }
 
+document.addEventListener('click', function(e){
+  var b = e.target && e.target.closest ? e.target.closest('#pg-chats [data-mvch-go]') : null;
+  if(!b || !mv()) return;
+  try{ if(typeof window.goTo === 'function') window.goTo(b.getAttribute('data-mvch-go')); }catch(err){ E(err); }
+});
 function boot(){
   watchList(); watchDialog();
   var pg = $('pg-chats');
@@ -107354,6 +107576,161 @@ function boot(){
 }
 window.bpMvChatPaint = function(){ watchList(); watchDialog(); paintList(); paintDialog(); };
 if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+})();
+</script>
+<style id="bp-fees-css">
+/* Комиссии сервиса (14.10.2026) — вид расчётов. Мастер задания: «Бюджет ·
+   Комиссия 7% · Спишется с баланса»; счёт по реквизитам: «На баланс ·
+   Комиссия · Счёт на»; шторка бюджета задания — строка комиссии. Логика и
+   ставки — скрипт bp-fees ниже. */
+html.bp-mv .mvz-fee{ display:grid; padding:4px 16px; border-radius:18px; background:#1d1e20; border:1px solid rgba(255,255,255,.06) }
+html.bp-mv .mvz-fee > div{ display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:46px; border-bottom:1px solid rgba(255,255,255,.06) }
+html.bp-mv .mvz-fee > div:last-child{ border-bottom:0 }
+html.bp-mv .mvz-fee span{ display:inline-flex; align-items:center; gap:8px; min-width:0; font-size:14px; line-height:18px; color:var(--mx-t3) }
+html.bp-mv .mvz-fee b{ font-size:15px; font-weight:600; color:#fff; font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap }
+html.bp-mv .mvz-fee em{ font-style:normal; font-size:12px; line-height:16px; font-weight:600; padding:2px 8px; border-radius:999px; color:#9fdcff; background:rgba(15,179,250,.14) }
+html.bp-mv .mvz-fee .fee b{ color:#9fdcff }
+html.bp-mv .mvz-fee .tot span{ color:#fff; font-weight:600 }
+html.bp-mv .mvz-fee .tot b{ font-size:18px; line-height:24px; font-weight:700 }
+html.bp-mv .mvz-fee-hint{ display:flex; align-items:flex-start; gap:8px }
+html.bp-mv .mvz-fee-hint svg{ flex:none; width:16px; height:16px; margin-top:1px; color:#9fdcff }
+/* счёт по реквизитам */
+html.bp-mv .mvi-fee:empty{ display:none }
+html.bp-mv .mvi-fee{ display:grid; gap:6px; margin:-4px 0 4px; padding:12px 14px; border-radius:14px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.06); font-size:13.5px; line-height:18px; color:var(--mx-t3) }
+html.bp-mv .mvi-fee > span{ display:flex; justify-content:space-between; gap:12px }
+html.bp-mv .mvi-fee b{ color:#fff; font-weight:600; font-variant-numeric:tabular-nums; white-space:nowrap }
+html.bp-mv .mvi-fee .mvi-fee-t{ padding-top:7px; border-top:1px solid rgba(255,255,255,.07); color:#fff; font-weight:600 }
+/* «Пополнение кошелька»: пояснение под способами */
+html.bp-mv .mvm-feenote{ display:flex; align-items:flex-start; gap:10px; margin:14px 2px 0; font-size:13px; line-height:18px; color:var(--mx-t3) }
+html.bp-mv .mvm-feenote svg{ flex:none; width:16px; height:16px; margin-top:1px; color:#9fdcff }
+/* шторка бюджета задания, блок «Бюджет задания», пополнение bw2 */
+.bptm2-row b.fee{ color:#9fdcff }
+html.bp-mv .mvt-join-f .mvt-feei{ display:block; margin-top:4px; font-style:normal; font-size:12.5px; line-height:17px; opacity:.75 }
+.bw2-row.bw2-after .bw2-rk, .bw2-row.bw2-after .bw2-rv{ opacity:.72 }
+</style>
+<script id="bp-fees">
+/* Комиссии сервиса (14.10.2026, решение владельца): пополнение — 7% сверху
+   суммы; задание — 7% сверху бюджета с рекламодателя и 7% с каждой выплаты
+   блогеру; вывод — без комиссии. Деньги считает касса (server.js:
+   TOPUP_FEE_PCT, TASK_FEE_PCT, PAYOUT_FEE_PCT, WITHDRAW_FEE_PCT); здесь — вид:
+     · window.bpFees {topup, task, payout, withdraw} — ставки с сервера
+       (/api/pay/config; до ответа — 7/7/7/0), bpFeesSet(cfg) их принимает;
+     · bpFeeCamp(c|id, 'task'|'payout') — ставка ИМЕННО этого задания: она
+       записана в заморозку при запуске (у заданий до 14.10 — 0). Правду
+       отдают доска (feePct/payFeePct) и сводка (payFeePct), до них — общая;
+     · bpFeeTask(сумма, c) — комиссия рекламодателя с суммы бюджета;
+     · блогеру суммы роликов и доски — «на баланс»: сервер отдаёт paidNet /
+       earnedNet / maxPayNet и viewer, ответы /api/tasks/videos|video|board
+       поправляются здесь, на входе в приложение, — строки роликов, «Мои
+       задания», профиль и лидерборд сходятся с кошельком. Автору задания —
+       суммы из бюджета (viewer 'owner', me.owner на доске).
+   Работает в обоих видах сайта: это правда о деньгах, а не оформление.
+   Откат: удалить этот слой (ставки по умолчанию в bw2 и мастере — 7%). */
+(function(){
+'use strict';
+if(window.__bpFees) return; window.__bpFees = 1;
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'bp-fees'); }catch(_){} }
+function num(v){ var n = Number(v); return isFinite(n) ? n : 0; }
+function pctOf(sum, p){ return Math.round(Math.max(0, num(sum)) * num(p) / 100); }
+function netOf(g, p){ g = Math.max(0, Math.round(num(g))); return g - pctOf(g, p); }
+
+var F = window.bpFees = window.bpFees || { topup:7, task:7, payout:7, withdraw:0, src:'default' };
+var MAP = { topupFeePct:'topup', taskFeePct:'task', payoutFeePct:'payout', withdrawFeePct:'withdraw' };
+window.bpFeesSet = function(cfg){
+  if(!cfg || typeof cfg !== 'object') return;
+  var ch = false, got = false;
+  for(var k in MAP){
+    if(cfg[k] == null || cfg[k] === '' || !isFinite(Number(cfg[k]))) continue;
+    var v = Math.max(0, Math.min(50, Number(cfg[k])));
+    got = true;
+    if(F[MAP[k]] !== v){ F[MAP[k]] = v; ch = true; }
+  }
+  if(got) F.src = 'server';
+  if(ch) try{ document.dispatchEvent(new CustomEvent('bp:fees', { detail:F })); }catch(_){}
+};
+
+/* ставки задания: доска (автор и участник) и сводка (витрина) */
+var CAMP = {};
+function campId(c){ return String(c && typeof c === 'object' ? c.id : (c == null ? '' : c)); }
+window.bpFeeCamp = function(c, kind){
+  var id = campId(c), x = CAMP[id], pay = kind !== 'task';
+  if(x && x.budget > 0) return pay ? x.payFeePct : x.feePct;
+  if(pay){
+    try{
+      var m = typeof window.bpMvSummary === 'function' ? window.bpMvSummary() : null, s = m && m[id];
+      if(s && num(s.budget) > 0 && s.payFeePct != null) return Math.max(0, num(s.payFeePct));
+    }catch(e){}
+  }
+  return Math.max(0, num(pay ? F.payout : F.task));
+};
+window.bpFeeTask = function(sum, c){ return pctOf(sum, c == null ? F.task : window.bpFeeCamp(c, 'task')); };
+window.bpFeeNet = netOf;
+
+/* ── ответы кассы: блогеру — суммы «на баланс» ── */
+function fixVid(v){
+  if(!v || typeof v !== 'object' || v.viewer !== 'blogger' || v.__bpNet) return;
+  var p = num(v.feePct); if(!(p > 0)) return;
+  v.__bpNet = 1;
+  v.paidGross = v.paid; v.earnedGross = v.earned; v.maxPayGross = v.maxPay;
+  if(v.paid != null) v.paid = v.paidNet != null ? num(v.paidNet) : netOf(v.paid, p);
+  if(v.earned != null) v.earned = v.earnedNet != null ? num(v.earnedNet) : netOf(v.earned, p);
+  if(v.maxPay != null) v.maxPay = v.maxPayNet != null ? num(v.maxPayNet) : netOf(v.maxPay, p);
+  if(v.reserved != null) v.reserved = netOf(v.reserved, p);
+  if(v.budgetCap != null) v.budgetCap = netOf(v.budgetCap, p);
+}
+function fixBoard(j){
+  if(!j || typeof j !== 'object' || j.__bpNet) return;
+  j.__bpNet = 1;
+  var id = String(j.campId || '');
+  if(id && j.budget != null) CAMP[id] = { feePct:Math.max(0, num(j.feePct)), payFeePct:Math.max(0, num(j.payFeePct)), budget:num(j.budget) };
+  var p = num(j.payFeePct);
+  if(!(p > 0) || (j.me && j.me.owner)) return;
+  [j.leaders, j.participants].forEach(function(a){
+    (Array.isArray(a) ? a : []).forEach(function(r){ if(r && r.earned != null) r.earned = netOf(r.earned, p); });
+  });
+  if(j.me && j.me.earned != null) j.me.earned = netOf(j.me.earned, p);
+}
+function fix(path, j){
+  try{
+    if(!j || typeof j !== 'object') return j;
+    var p = String(path || '');
+    if(/^\/api\/tasks\/board\b/.test(p)) fixBoard(j);
+    else if(/^\/api\/tasks\/video/.test(p)){
+      if(Array.isArray(j.videos)) j.videos.forEach(fixVid);
+      if(j.video) fixVid(j.video);
+    }
+    else if(p === '/api/pay/config') window.bpFeesSet(j);
+  }catch(e){ E(e); }
+  return j;
+}
+var RX = /^\/api\/(tasks\/(board|video)|pay\/config)/;
+function hook(){
+  var s = window.bpSrv;
+  if(!s || typeof s.raw !== 'function' || s.raw.__bpFees) return;
+  var o = s.raw;
+  var w = function(m, path){
+    var r = o.apply(this, arguments);
+    if(r && typeof r.then === 'function' && RX.test(String(path || ''))) return r.then(function(j){ return fix(path, j); });
+    return r;
+  };
+  w.__bpFees = 1; w.__orig = o;
+  s.raw = w;
+}
+hook();
+
+/* ставки — с сервера при загрузке; не ответил — ещё раз позже */
+var asked = 0;
+function ask(){
+  try{
+    var s = window.bpSrv;
+    if(!s || !s.configured || !s.configured() || asked > 2) return;
+    asked++;
+    s.raw('GET', '/api/pay/config').then(function(j){ window.bpFeesSet(j); asked = 9; }, function(){});
+  }catch(e){ E(e); }
+}
+function boot(){ hook(); ask(); setTimeout(ask, 8000); }
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(boot, 300); });
+else setTimeout(boot, 300);
 })();
 </script>
 </body>
