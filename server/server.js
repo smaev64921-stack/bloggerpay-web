@@ -352,6 +352,13 @@ const TASK_FEE_PCT = feeEnv('TASK_FEE_PCT', 7);      /* рекламодател
 const PAYOUT_FEE_PCT = feeEnv('PAYOUT_FEE_PCT', 7);  /* блогер: с каждой выплаты за задание */
 /* процент от суммы в рублях (целые рубли, округление до ближайшего) */
 function pctOf(sum, pct) { return Math.round((Number(sum) || 0) * (Number(pct) || 0) / 100); }
+/* Комиссия задания с рекламодателя — по каждой операции отдельно, поэтому
+   округление не должно давать обхода (разбор 15.10.2026): бюджет, пополненный
+   по 7 ₽, шёл без комиссии (0,49 → 0), а возврат по 8 ₽ отдавал лишнюю (0,56 → 1).
+   Взять — вверх, вернуть часть — вниз; закрытие задания возвращает всю
+   невыбранную комиссию (dealFeeBackAll), и в итоге остаётся ровно % от потраченного. */
+function pctUp(sum, pct) { return Math.ceil(Math.max(0, Number(sum) || 0) * (Number(pct) || 0) / 100); }
+function pctDown(sum, pct) { return Math.floor(Math.max(0, Number(sum) || 0) * (Number(pct) || 0) / 100); }
 const MAX_AMOUNT = 100_000_000;          /* больше — опечатка, не бюджет */
 const SESSION_DAYS = 30;
 
@@ -1822,13 +1829,14 @@ function moneyOp(opKey, userId, kind, build) {
 
 /* Сколько комиссии задания вернуть вместе с возвратом части бюджета
    (14.10.2026): комиссия — за ПОТРАЧЕННОЕ. Возвращаем % от возвращаемой
-   суммы, но не больше, чем взято минус уже возвращённое минус % от уже
-   выплаченного блогерам. Ставит возврат в той же операции. */
+   суммы (с округлением вниз — см. pctDown), но не больше, чем взято минус
+   уже возвращённое минус % от уже выплаченного блогерам. Ставит возврат в
+   той же операции. */
 function dealFeeBack(add, d, sum) {
   const p = Number(d && d.fee_pct) || 0;
   if (p <= 0 || sum <= 0) return 0;
   const room = (Number(d.fee_in) || 0) - (Number(d.fee_back) || 0) - pctOf(d.paid, p);
-  const back = Math.max(0, Math.min(room, pctOf(sum, p)));
+  const back = Math.max(0, Math.min(room, pctDown(sum, p)));
   if (back > 0) {
     add(0, 'available', -back, 'task-fee-back', d.id);
     add(d.payer_id, 'available', back, 'task-fee-back', d.id);
@@ -1874,6 +1882,9 @@ function dealPayMoves(add, d, payeeId, sum, fee) {
   const done = (d.paid + sum) >= d.amount;
   q.payDeal.run(sum, done ? 'released' : 'held', d.id);
   if (done) q.updDeal.run('released', d.payee_id != null ? d.payee_id : payeeId, d.id);
+  /* бюджет задания потрачен весь — сверх % от потраченного комиссии не держим
+     (рубль-другой от округления вверх при запуске и пополнениях — назад) */
+  if (done && Number(d.fee_pct) > 0) dealFeeBackAll(add, Object.assign({}, d, { paid: d.paid + sum }));
   return done;
 }
 
@@ -4037,7 +4048,7 @@ const routes = {
        идёт на выплаты, комиссия списывается отдельной строкой. У обычной
        сделки комиссии нет. Ставки записываем в заморозку: дальше по ним
        считаются пополнения бюджета, выплаты блогерам и возврат остатка. */
-    const fee = asCamp ? pctOf(amount, TASK_FEE_PCT) : 0;
+    const fee = asCamp ? pctUp(amount, TASK_FEE_PCT) : 0;
     return moneyOp(String(body.opKey || ''), u.id, 'hold', (add) => {
       add(u.id, 'available', -amount, 'hold', dealId);
       add(u.id, 'hold', amount, 'hold', dealId);
@@ -4320,7 +4331,7 @@ const routes = {
     if (d.payer_id !== u.id) return { status: 403, body: { error: 'Это бюджет чужой кампании' } };
     if (d.status !== 'held') return { status: 409, body: { error: 'Сделка уже закрыта: ' + d.status } };
     if (!userKey(body.opKey)) return badKey;
-    const fee = pctOf(amount, d.fee_pct || 0);
+    const fee = pctUp(amount, d.fee_pct || 0);
     return moneyOp(String(body.opKey || ''), u.id, 'hold', (add) => {
       add(u.id, 'available', -amount, 'hold', dealId);
       add(u.id, 'hold', amount, 'hold', dealId);
@@ -4380,9 +4391,10 @@ const routes = {
       add(d.payer_id, 'hold', -rest, 'settle', dealId);
       if (toBlogger > 0) add(payee.id, 'available', toBlogger, 'settle-payout', dealId);
       if (toPayer > 0) add(d.payer_id, 'available', toPayer, 'settle-refund', dealId);
-      /* задание с комиссией: за вернувшуюся плательщику долю — и её 7% (14.10.2026);
-         доля исполнителя — решение арбитра, её не режем */
-      if (toPayer > 0) dealFeeBack(add, d, toPayer);
+      /* задание с комиссией: заморозка закрывается целиком — плательщику вся
+         невыбранная комиссия, кроме % от потраченного (выплаченное + доля
+         исполнителя), 14–15.10.2026; доля исполнителя — решение арбитра, её не режем */
+      dealFeeBackAll(add, Object.assign({}, d, { paid: d.paid + toBlogger }));
       q.payDeal.run(toBlogger, 'released', dealId);
       if (payee) q.updDeal.run('released', payee.id, dealId);
       q.closeDisputesAll.run(dealId);          /* решение вынесено — замок снят */

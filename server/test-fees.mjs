@@ -141,6 +141,27 @@ ok(b.available === before + 5900 + 413 && b.hold === 0, 'на счёте рек�
 /* итог: рекламодатель потратил на задание 2 100 ₽ выплат + 7% = 147 ₽ */
 ok(b.available === 60000 - 1000 - 2100 - 147, 'итого задание стоило 2 100 ₽ выплат + 147 ₽ комиссии (7% от потраченного)', b);
 
+/* ── 6б · округление не даёт обойти комиссию (разбор 15.10.2026) ──
+   по 7 ₽ комиссия была 0 (0,49 → 0), возврат по 8 ₽ отдавал лишнюю (0,56 → 1) */
+const D3 = 'camp:fee3' + tag;
+const a3 = (await bal(ADV)).available;
+const h3 = await api('POST', '/api/deals/hold', { dealId: D3, amount: 7, opKey: op('hold') }, ADV);
+ok(h3.status === 200 && h3.body.fee === 1, 'задание на 7 ₽: комиссия 1 ₽, а не 0 (берём с округлением вверх)', h3.body);
+const t3 = await api('POST', '/api/deals/topup', { dealId: D3, amount: 7, opKey: op('dtop') }, ADV);
+ok(t3.status === 200 && t3.body.fee === 1, 'пополнение бюджета на 7 ₽: комиссия 1 ₽', t3.body);
+const r3 = await api('POST', '/api/deals/refund', { dealId: D3, amount: 8, opKey: op('ref') }, ADV);
+ok(r3.status === 200 && r3.body.feeBack === 0, 'вернули 8 ₽ из 14: комиссии за них — 0 ₽ (возвращаем с округлением вниз)', r3.body);
+const r4 = await api('POST', '/api/deals/refund', { dealId: D3, opKey: op('ref') }, ADV);
+ok(r4.status === 200 && r4.body.feeBack === 2 && (await bal(ADV)).available === a3, 'закрыли задание без трат: вернулся остаток и вся комиссия (2 ₽) — на счёте как до него', [r4.body, a3]);
+
+/* бюджет 10 001 ₽: комиссия 701 ₽ (вверх); потрачен целиком — за 7% от
+   10 001 = 700 ₽ лишний рубль возвращается при закрытии */
+const D4 = 'camp:fee4' + tag;
+const a4 = (await bal(ADV)).available;
+const h4 = await api('POST', '/api/deals/hold', { dealId: D4, amount: 10001, opKey: op('hold') }, ADV);
+const p4 = await api('POST', '/api/deals/release', { dealId: D4, toUserId: blg2Id, amount: 10001, opKey: op('rel') }, ADV);
+ok(h4.body.fee === 701 && p4.status === 200 && (await bal(ADV)).available === a4 - 10001 - 700, 'бюджет потрачен целиком: комиссия ровно 7% от потраченного (700 ₽), лишний рубль вернулся', [h4.body, p4.body, a4]);
+
 /* ── 7 · пополнение по счёту: счёт на сумму + 7%, на баланс — сумма ── */
 const inv = await api('POST', '/api/topup/invoice', { amount: 20000, company: 'ООО Ромашка', inn: '7707083893', email: 'a@b.ru' }, ADV);
 ok(inv.status === 200 && inv.body.fee === 1400 && inv.body.total === 21400 && inv.body.feePct === 7, 'заявка на счёт 20 000 ₽: счёт на 21 400 ₽ (комиссия 1 400 ₽)', inv.body);
@@ -162,8 +183,9 @@ ok(pd.status === 200 && pd.body.net === 1000 && pd.body.fee === 0, 'выплат
 /* ── 9 · сверка и доход сервиса ── */
 ov = await overview();
 /* комиссии: пополнения 700 + 3 500 + 70 (блогер 1 000) · задание 700 + 70 − 210 − 413 ·
-   выплаты 147 · счёт 1 400 */
-const income = 700 + 3500 + 70 + 700 + 70 - 210 - 413 + 147 + 1400;
+   выплаты 147 · счёт 1 400 · бюджет 10 001: 701 − 1 (назад при закрытии) + 700 с выплаты;
+   задания по 7 ₽ — в ноль (2 взято, 2 вернули) */
+const income = 700 + 3500 + 70 + 700 + 70 - 210 - 413 + 147 + 1400 + 701 - 1 + 700;
 ok(ov.доход_платформы === income, 'доход сервиса = сумма всех комиссий (' + income + ' ₽)', ov.доход_платформы);
 ok(ov.сверка.сходится && ov.сверка.расхождение === 0, 'сверка денег сходится: всё внесённое лежит в системе или выплачено', ov.сверка);
 ok(ov.выплачено_наружу === 1000, 'наружу выплачено 1 000 ₽ — ровно сумма вывода', ov.выплачено_наружу);

@@ -50964,7 +50964,8 @@ function _tm2Read(inp){ return Math.floor(num(String((inp && inp.value) || '').r
    возврат остатка — % возвращается вместе с ним; ставка — та, что записана
    кассой при запуске (bp-fees: bpFeeCamp) */
 function _tm2Fee(campId){ try{ return typeof window.bpFeeCamp === 'function' ? Math.max(0, num(window.bpFeeCamp(campById(campId) || campId, 'task'))) : 0; }catch(e){ return 0; } }
-function _tm2FeeOf(campId, v){ return Math.round(Math.max(0, num(v)) * _tm2Fee(campId) / 100); }
+function _tm2FeeOf(campId, v){ return Math.ceil(Math.max(0, num(v)) * _tm2Fee(campId) / 100); }     /* взять — вверх */
+function _tm2FeeBackOf(campId, v){ return Math.floor(Math.max(0, num(v)) * _tm2Fee(campId) / 100); }  /* вернуть — вниз */
 function _tm2Max(campId, back){
   var c = campById(campId); if(!c) return 0;
   if(back) return Math.max(0, Math.round(campEscrow(c).free));
@@ -51052,7 +51053,7 @@ window.bpTmMoneyPreview = function(campId, back){
   if(rows){
     if(back){
       var fee = (typeof bpCampRefundFee === 'function') ? bpCampRefundFee(Math.min(v, max)) : 0;
-      var fb = _tm2FeeOf(campId, Math.min(v, max));   /* комиссия за возвращённое — назад */
+      var fb = _tm2FeeBackOf(campId, Math.min(v, max));   /* комиссия за возвращённое — назад */
       rows.innerHTML =
           row('Свободно в бюджете', money(box.free) + ' ₽', 'g')
         + (v > 0 && v <= max
@@ -100172,7 +100173,7 @@ function paintAcc(el, c, bd){
     var need = Math.max(0, Math.round(num(bx.planned)) - Math.round(num(bx.held))) || budgetLocal(c);
     /* 14.10.2026: с баланса уходит бюджет + комиссия сервиса сверху (bp-fees) */
     var fp = typeof window.bpFeeCamp === 'function' ? window.bpFeeCamp(c, 'task') : 0;
-    var fee = Math.round(need * fp / 100), tot = need + fee;
+    var fee = Math.ceil(need * fp / 100), tot = need + fee;   /* как касса: вверх */
     var lack = Math.max(0, tot - bal);
     cls += ' out';
     h = jt('Задание не запущено');
@@ -100924,7 +100925,7 @@ function install(){
       if(!bk){
         var bal = myBal(), fv = 0;
         /* сверху суммы — комиссия сервиса задания (14.10.2026, bp-fees) */
-        try{ if(typeof window.bpFeeCamp === 'function') fv = Math.round(v * Math.max(0, num(window.bpFeeCamp(id, 'task'))) / 100); }catch(_){}
+        try{ if(typeof window.bpFeeCamp === 'function') fv = Math.ceil(v * Math.max(0, num(window.bpFeeCamp(id, 'task'))) / 100); }catch(_){}
         if(bal < v + fv){ var er = new Error('В кошельке ' + money(bal) + ' ₽ — не хватает ' + money(v + fv - bal) + ' ₽' + (fv ? ' (сумма + комиссия ' + money(fv) + ' ₽)' : '')); er.status = 400; throw er; }
       }
       return op((bk ? 'ret:' : 'add:') + id + ':' + v, bk ? '/api/deals/refund' : '/api/deals/topup', { dealId:'camp:' + id, amount:v });
@@ -105687,7 +105688,7 @@ function stepMark(){
    (слой bp-fees, /api/pay/config), до ответа — 7% */
 function feeP(){ var f = window.bpFees; return f && f.task != null ? Math.max(0, Number(f.task) || 0) : 7; }
 function payP(){ var f = window.bpFees; return f && f.payout != null ? Math.max(0, Number(f.payout) || 0) : 7; }
-function feeOf(b){ return Math.round(Math.max(0, num(b)) * feeP() / 100); }
+function feeOf(b){ return Math.ceil(Math.max(0, num(b)) * feeP() / 100); }   /* как касса: вверх */
 function totalOf(b){ return Math.round(num(b)) + feeOf(b); }
 function feeInner(b){
   var p = feeP(); b = Math.round(num(b));
@@ -107618,7 +107619,8 @@ html.bp-mv .mvt-join-f .mvt-feei{ display:block; margin-top:4px; font-style:norm
      · bpFeeCamp(c|id, 'task'|'payout') — ставка ИМЕННО этого задания: она
        записана в заморозку при запуске (у заданий до 14.10 — 0). Правду
        отдают доска (feePct/payFeePct) и сводка (payFeePct), до них — общая;
-     · bpFeeTask(сумма, c) — комиссия рекламодателя с суммы бюджета;
+     · bpFeeTask(сумма, c) — комиссия рекламодателя с суммы бюджета (вверх),
+       bpFeeTaskBack — сколько её вернётся с частью остатка (вниз);
      · блогеру суммы роликов и доски — «на баланс»: сервер отдаёт paidNet /
        earnedNet / maxPayNet и viewer, ответы /api/tasks/videos|video|board
        поправляются здесь, на входе в приложение, — строки роликов, «Мои
@@ -107632,6 +107634,10 @@ if(window.__bpFees) return; window.__bpFees = 1;
 function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'bp-fees'); }catch(_){} }
 function num(v){ var n = Number(v); return isFinite(n) ? n : 0; }
 function pctOf(sum, p){ return Math.round(Math.max(0, num(sum)) * num(p) / 100); }
+/* комиссия задания — как у кассы (pctUp/pctDown в server.js): взять — вверх,
+   вернуть за часть остатка — вниз, чтобы мелкими суммами её не обойти */
+function pctUp(sum, p){ return Math.ceil(Math.max(0, num(sum)) * num(p) / 100); }
+function pctDown(sum, p){ return Math.floor(Math.max(0, num(sum)) * num(p) / 100); }
 function netOf(g, p){ g = Math.max(0, Math.round(num(g))); return g - pctOf(g, p); }
 
 var F = window.bpFees = window.bpFees || { topup:7, task:7, payout:7, withdraw:0, src:'default' };
@@ -107663,7 +107669,8 @@ window.bpFeeCamp = function(c, kind){
   }
   return Math.max(0, num(pay ? F.payout : F.task));
 };
-window.bpFeeTask = function(sum, c){ return pctOf(sum, c == null ? F.task : window.bpFeeCamp(c, 'task')); };
+window.bpFeeTask = function(sum, c){ return pctUp(sum, c == null ? F.task : window.bpFeeCamp(c, 'task')); };
+window.bpFeeTaskBack = function(sum, c){ return pctDown(sum, c == null ? F.task : window.bpFeeCamp(c, 'task')); };
 window.bpFeeNet = netOf;
 
 /* ── ответы кассы: блогеру — суммы «на баланс» ── */
