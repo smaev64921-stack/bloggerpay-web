@@ -106084,5 +106084,1277 @@ else later(install, 0);
 window.bpMvWizOpen = open;
 })();
 </script>
+<style id="bp-mv-glass-css">
+/* ══ ЖИДКОЕ СТЕКЛО · полка и шапка (bp-mv-glass, 14.10.2026) ═════════
+   Владелец: «переключение нижней полки (Главная · Мои задания · Чаты ·
+   Профиль) — плавным, не резко и не по отдельности, как жидкое стекло;
+   в шапке вместо иконки профиля — уведомления, слева от баланса; баланс —
+   в стиле внутреннего баланса» (синий кошелёк страницы «Кошелёк»).
+   · Полка — стеклянная таблетка (кромка светлее сверху, блик, глубина).
+     Подсветка пунктов — ОДНА капля .bptab-lg: она перетекает к новому
+     пункту пружиной и тянется по скорости (script#bp-mv-glass). Двигаем
+     только transform/opacity — капля едет на композиторе и не дёргается,
+     даже когда страница раздела тяжело рисуется. Значки и подписи
+     гаснут/зажигаются прозрачностью, а не цветом (тоже композитор).
+     Касание пальцем двигает каплю сразу, до перехода.
+   · Корневые разделы не въезжают из нуля — тёмной вспышки нет.
+   · Под полкой содержимое мягко затухает (#bpTabbar::before), как у
+     iOS. backdrop-filter НЕ ставим: на полке и шапке он моргал
+     (см. bp-tabbar-css, bp-overlay-flicker).
+   · Шапка — тот же материал. Колокольчик #mvBell (центр уведомлений
+     bpOpenNotifications, счётчик bpNotifCount) слева от баланса; аватар
+     профиля скрыт (профиль есть на полке); красная точка бургера —
+     теперь счётчик на колокольчике. Баланс — синий кошелёк: градиент
+     .mvw-body, подпись «Баланс» и карманчик с тремя карточками.
+   · Центр уведомлений #bpn2 (туда ведёт колокольчик) — тот же язык MV.
+   Всё — только под html.bp-mv: в полном доступе полка и шапка прежние.
+   Откат: удалить style#bp-mv-glass-css и script#bp-mv-glass.           */
+
+/* ═══ 1 · полка: стекло ═══ */
+html body #bpTabbar .bptab-lg{ display:none }
+html.bp-mv body #bpTabbar #bpTabbarIn.bptab-in{
+  position:relative; isolation:isolate;
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.075) 0%,rgba(255,255,255,.02) 44%,rgba(255,255,255,0) 62%,rgba(255,255,255,.035) 100%),
+    rgba(30,31,35,.9)!important;
+  border:1px solid rgba(255,255,255,.07)!important;
+  box-shadow:
+    0 16px 36px rgba(0,0,0,.5), 0 2px 10px rgba(0,0,0,.3),
+    inset 0 1px 0 rgba(255,255,255,.13), inset 0 -1px 0 rgba(255,255,255,.04),
+    inset 0 0 26px rgba(255,255,255,.025)!important;
+}
+/* блик стекла и светлая кромка (ярче сверху, гаснет к бокам) */
+html.bp-mv body #bpTabbar #bpTabbarIn.bptab-in::before{
+  content:''; position:absolute; inset:0; z-index:-1; border-radius:inherit; pointer-events:none;
+  background:radial-gradient(120% 130% at 22% -38%,rgba(255,255,255,.13),rgba(255,255,255,0) 56%);
+}
+html.bp-mv body #bpTabbar #bpTabbarIn.bptab-in::after{
+  content:''; position:absolute; inset:-1px; z-index:2; border-radius:inherit; pointer-events:none;
+  padding:1px; box-sizing:border-box;
+  background:linear-gradient(180deg,rgba(255,255,255,.3) 0%,rgba(255,255,255,.08) 38%,rgba(255,255,255,.03) 70%,rgba(255,255,255,.12) 100%);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor; mask-composite:exclude;
+}
+/* капля: одна на всю полку, едет к активному пункту */
+html.bp-mv body #bpTabbar .bptab-lg{
+  display:block; position:absolute; left:0; top:7px; width:25%; height:58px; z-index:0;
+  border-radius:9999px; pointer-events:none; transform-origin:50% 50%; will-change:transform;
+  background:
+    radial-gradient(90% 75% at 50% -12%,rgba(255,255,255,.2),rgba(255,255,255,0) 70%),
+    radial-gradient(75% 60% at 50% 122%,rgba(146,161,255,.17),rgba(146,161,255,0) 72%),
+    linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.045));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.3), inset 0 -1px 0 rgba(255,255,255,.07),
+    inset 0 0 0 1px rgba(255,255,255,.075), inset 0 0 16px rgba(255,255,255,.045),
+    0 6px 18px rgba(0,0,0,.28);
+  transition:opacity .24s ease;
+}
+html.bp-mv body #bpTabbar .bptab-lg.off{ opacity:0 }
+/* пункты: своя подложка у активного больше не нужна — её рисует капля */
+html.bp-mv body #bpTabbar .bptab-in.lg-on .bptab-i,
+html.bp-mv body #bpTabbar .bptab-in.lg-on .bptab-i.on{
+  z-index:1; color:#fff!important;
+  background:transparent!important; border-color:transparent!important; box-shadow:none!important;
+  transition:transform .24s cubic-bezier(.22,1,.36,1)!important;
+}
+html.bp-mv body #bpTabbar .bptab-in.lg-on .bptab-i svg,
+html.bp-mv body #bpTabbar .bptab-in.lg-on .bptab-i span:not(.bptab-b){
+  opacity:.52; transition:opacity .3s ease;
+}
+html.bp-mv body #bpTabbar .bptab-in.lg-on .bptab-i.on svg,
+html.bp-mv body #bpTabbar .bptab-in.lg-on .bptab-i.on span:not(.bptab-b){
+  opacity:1; transition:opacity .34s ease var(--lg-d,0ms);
+}
+html.bp-mv body #bpTabbar .bptab-in.lg-on .bptab-i:active{ transform:scale(.93) }
+/* касание полки — наше: капля едет сразу по пальцу, страницу полка не листает */
+html.bp-mv body #bpTabbar #bpTabbarIn.bptab-in{ touch-action:none; -webkit-user-select:none; user-select:none }
+/* нажатый пункт зажигается сразу, прежний гаснет — не дожидаясь перехода */
+html.bp-mv body #bpTabbar .bptab-in.lg-on.lg-pend .bptab-i.on:not(.lg-to) svg,
+html.bp-mv body #bpTabbar .bptab-in.lg-on.lg-pend .bptab-i.on:not(.lg-to) span:not(.bptab-b){ opacity:.52; transition-delay:0ms }
+html.bp-mv body #bpTabbar .bptab-in.lg-on .bptab-i.lg-to svg,
+html.bp-mv body #bpTabbar .bptab-in.lg-on .bptab-i.lg-to span:not(.bptab-b){ opacity:1; transition:opacity .34s ease var(--lg-d,0ms) }
+html.bp-mv body #bpTabbar .bptab-b{ border-color:#1e1f23!important }
+/* содержимое под полкой затухает к низу экрана — полка «висит» над ним */
+html.bp-mv body #bpTabbar::before{
+  content:''; position:absolute; left:50%; bottom:0; z-index:-1; width:100vw; height:calc(100% + 28px);
+  transform:translateX(-50%); pointer-events:none;
+  background:linear-gradient(0deg,rgba(16,19,25,.97) 0%,rgba(16,19,25,.9) 30%,rgba(16,19,25,.55) 64%,rgba(16,19,25,0) 100%);
+}
+
+/* корневые разделы MV (Главная · Мои задания · Чаты · Профиль, у
+   рекламодателя — его задания): страница больше не въезжает из нуля
+   (clPageEnter), а блоки каскада проявляются с 0.5, а не из 0 (bpRise) —
+   на слабом телефоне экран при переходе стоял тёмным 0,1–0,25 с. Правило
+   постоянное, на открытой странице ничего не переключаем (иначе въезд
+   начнётся заново). Задержки каскада — прежние; vb-swpg («Все задания /
+   Мои задания») со своим !important главнее. bp-settled ставим сами
+   (bp-calm ждёт окончания именно bpRise). */
+html.bp-mv body .pg.on:is(#pg-tasks,#pg-mytasks,#pg-chats,#pg-profile,#pg-campaigns){ animation:none }
+html.bp-mv body .pg.on:is(#pg-tasks,#pg-mytasks,#pg-chats,#pg-profile,#pg-campaigns) > *:not(.camps-empty):not(.sp-body):not(.wd-body):not(#abc-scroll):not(#chatsSectionWrap),
+html.bp-mv body .pg.on:is(#pg-tasks,#pg-mytasks,#pg-chats,#pg-profile,#pg-campaigns) > .sp-body > *,
+html.bp-mv body .pg.on:is(#pg-tasks,#pg-mytasks,#pg-chats,#pg-profile,#pg-campaigns) > #chatsSectionWrap > *{ animation-name:bpMvRise }
+@keyframes bpMvRise{ from{ opacity:.5; transform:translateY(6px) } }
+
+/* ═══ 2 · шапка: тот же материал ═══ */
+html.bp-mv body #mainTopbar.topbar{
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.07) 0%,rgba(255,255,255,.018) 48%,rgba(255,255,255,0) 66%,rgba(255,255,255,.03) 100%),
+    rgba(30,31,35,.9)!important;
+  border:1px solid rgba(255,255,255,.09)!important;
+  box-shadow:0 14px 32px rgba(0,0,0,.44),inset 0 1px 0 rgba(255,255,255,.13),inset 0 -1px 0 rgba(255,255,255,.035)!important;
+}
+/* профиль — на полке; в шапке на его месте уведомления */
+html.bp-mv body #mainTopbar .tb-ava{ display:none!important }
+html.bp-mv body #hamRedDot{ display:none!important }
+html.bp-mv body #mainTopbar .tb-ham.cl-has-notif,
+html.bp-mv body #mainTopbar .tb-ham.cl-has-notif::after{ animation:none!important }
+html body #mainTopbar .tb-bell{ display:none }
+html.bp-mv body #mainTopbar .tb-bell{
+  position:relative; display:flex; align-items:center; justify-content:center; flex:none;
+  width:42px; height:42px; margin:0; padding:0; box-sizing:border-box; border-radius:50%;
+  background:linear-gradient(180deg,rgba(255,255,255,.11),rgba(255,255,255,.04));
+  border:1px solid rgba(255,255,255,.12);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.15),0 4px 12px rgba(0,0,0,.24);
+  color:#fff; font:inherit; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  transition:transform .22s cubic-bezier(.22,1,.36,1);
+}
+html.bp-mv body #mainTopbar .tb-bell:active{ transform:scale(.9) }
+html.bp-mv body #mainTopbar .tb-bell:focus-visible{ outline:2px solid #92a1ff; outline-offset:2px }
+html.bp-mv body #mainTopbar .tb-bell-g{ display:flex; width:22px; height:22px; transform-origin:50% 14% }
+html.bp-mv body #mainTopbar .tb-bell-g svg{ display:block; width:22px; height:22px }
+html.bp-mv body #mainTopbar .tb-bell-n{
+  position:absolute; top:-4px; right:-5px; display:none; min-width:19px; height:19px; padding:0 5px;
+  box-sizing:border-box; border-radius:10px; border:2px solid #1e1f23; background:#f0435f; color:#fff;
+  font-size:10.5px; font-weight:800; line-height:15px; text-align:center; font-variant-numeric:tabular-nums;
+}
+html.bp-mv body #mainTopbar .tb-bell.has .tb-bell-n{ display:block }
+html.bp-mv body #mainTopbar .tb-bell.ring .tb-bell-g{ animation:bpMvBellRing .9s cubic-bezier(.36,.07,.19,.97) }
+@keyframes bpMvBellRing{
+  0%{ transform:rotate(0) } 14%{ transform:rotate(15deg) } 30%{ transform:rotate(-13deg) }
+  46%{ transform:rotate(9deg) } 62%{ transform:rotate(-6deg) } 78%{ transform:rotate(3deg) } 100%{ transform:rotate(0) }
+}
+/* баланс — синий кошелёк, как «Текущий баланс» на странице «Кошелёк» */
+html body #mainTopbar .tb-mvl,html body #mainTopbar .tb-mvw{ display:none }
+html.bp-mv body #mainTopbar .tb-bal{
+  height:42px; box-sizing:border-box; padding:0 5px 0 13px!important; gap:9px!important;
+  border:0!important; border-radius:15px!important;
+  background:linear-gradient(180deg,#508aff 0%,#3765f6 50%,#7185ff 100%)!important;
+  box-shadow:0 8px 20px rgba(55,101,246,.3),inset 0 1px 0 rgba(255,255,255,.3),inset 0 -1px 0 rgba(12,30,140,.2)!important;
+  -webkit-tap-highlight-color:transparent; transition:transform .22s cubic-bezier(.22,1,.36,1);
+}
+html.bp-mv body #mainTopbar .tb-bal:active{ transform:scale(.95) }
+html.bp-mv body #mainTopbar .tb-bal::before{
+  background:radial-gradient(120% 100% at 18% -30%,rgba(255,255,255,.26),rgba(255,255,255,0) 58%)!important;
+  border-radius:inherit!important;
+}
+html.bp-mv body #mainTopbar .tb-bal::after{ display:none!important }
+html.bp-mv body #mainTopbar .tb-bal .tb-mvl{
+  display:block; position:relative; z-index:10; margin:0 0 1px;
+  font-size:10px; line-height:12px; font-weight:500; letter-spacing:.1px; color:rgba(255,255,255,.8); white-space:nowrap;
+}
+html.bp-mv body #mainTopbar .tb-bal .num{
+  font-size:15px!important; line-height:18px!important; font-weight:700!important; letter-spacing:-.2px!important;
+  color:#fff!important; white-space:nowrap; font-variant-numeric:tabular-nums;
+}
+html.bp-mv body #mainTopbar .tb-wal{ display:none!important }
+html.bp-mv body #mainTopbar .tb-mvw{
+  position:relative; z-index:10; order:2; display:flex; align-items:center; justify-content:center; flex:none;
+  width:32px; height:32px; border-radius:11px;
+  background:rgba(14,32,124,.26);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.16),inset 0 0 0 1px rgba(255,255,255,.12);
+}
+html.bp-mv body #mainTopbar .tb-mvw svg{ display:block; width:24px; height:24px }
+
+/* ═══ 3 · центр уведомлений (сюда ведёт колокольчик) — язык MV ═══
+   Шапка — плавающая стеклянная панель с круглыми кнопками, фильтры —
+   таблетки «Всех заданий», группы — карточки #1d1e20 r24, значки —
+   круги. Механику bp-notif2 (свайп, «Отменить», фильтры) не трогаем. */
+html.bp-mv body #bpn2{ background:#101319!important }
+html.bp-mv body #bpn2 .bpn2-hd{
+  gap:10px!important; min-height:62px; box-sizing:border-box;
+  margin:calc(env(safe-area-inset-top,0px) + 8px) 10px 0; padding:9px!important;
+  border:1px solid rgba(255,255,255,.09)!important; border-radius:22px;
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.07) 0%,rgba(255,255,255,.018) 48%,rgba(255,255,255,0) 66%,rgba(255,255,255,.03) 100%),
+    rgba(30,31,35,.94)!important;
+  box-shadow:0 14px 32px rgba(0,0,0,.44),inset 0 1px 0 rgba(255,255,255,.13)!important;
+}
+html.bp-mv body #bpn2 .bpn2-ib{
+  width:42px!important; height:42px!important; border-radius:50%!important; color:#fff!important;
+  background:linear-gradient(180deg,rgba(255,255,255,.11),rgba(255,255,255,.04))!important;
+  border:1px solid rgba(255,255,255,.12)!important; box-shadow:inset 0 1px 0 rgba(255,255,255,.14)!important;
+}
+html.bp-mv body #bpn2 .bpn2-ib svg{ width:18px; height:18px }
+html.bp-mv body #bpn2 .bpn2-t{ font-size:17px!important; font-weight:700!important; letter-spacing:-.3px; color:#fff!important }
+html.bp-mv body #bpn2 .bpn2-s{ font-size:12.5px!important; color:rgba(255,255,255,.45)!important }
+html.bp-mv body #bpn2 .bpn2-s b{ color:#a9b6ff!important }
+html.bp-mv body #bpn2 .bpn2-chips{ gap:8px!important; padding:14px 14px 4px!important }
+html.bp-mv body #bpn2 .bpn2-chip{
+  height:40px; box-sizing:border-box; padding:0 18px!important; gap:8px!important;
+  font-size:15px!important; font-weight:600!important; letter-spacing:0;
+  background:#1d1e20!important; border:1px solid rgba(255,255,255,.06)!important; color:rgba(255,255,255,.55)!important;
+}
+html.bp-mv body #bpn2 .bpn2-chip.on{ background:rgba(61,85,237,.16)!important; border-color:rgba(108,128,255,.75)!important; color:#fff!important }
+html.bp-mv body #bpn2 .bpn2-chip-n{
+  min-width:20px; height:20px; border-radius:10px; font-size:12px!important; font-weight:700!important;
+  background:linear-gradient(180deg,#92a1ff 0%,#3d55ed 52%,#6176ff 100%)!important; color:#fff!important;
+}
+html.bp-mv body #bpn2 .bpn2-list{ padding:8px 14px calc(env(safe-area-inset-bottom,0px) + 28px)!important }
+html.bp-mv body #bpn2 .bpn2-day{
+  margin:16px 6px 8px!important; font-size:13px!important; font-weight:600!important;
+  letter-spacing:0!important; text-transform:none!important; color:rgba(255,255,255,.45)!important;
+}
+html.bp-mv body #bpn2 .bpn2-day:first-child{ margin-top:6px!important }
+html.bp-mv body #bpn2 .bpn2-group{
+  border-radius:24px!important; border:.8px solid rgba(255,255,255,.05)!important; background:#1d1e20!important;
+}
+html.bp-mv body #bpn2 .bpn2-item,
+html.bp-mv body #bpn2 .bpn2-row{ background-color:#1d1e20!important }
+html.bp-mv body #bpn2 .bpn2-row{ gap:14px!important; padding:14px 16px 14px 14px!important }
+html.bp-mv body #bpn2 .bpn2-row:active{ background-color:#232427!important }
+html.bp-mv body #bpn2 .bpn2-item.unread .bpn2-row{ background-image:linear-gradient(rgba(97,118,255,.075),rgba(97,118,255,.075))!important }
+html.bp-mv body #bpn2 .bpn2-item + .bpn2-item .bpn2-row::before{ left:72px!important; background:rgba(255,255,255,.06)!important }
+html.bp-mv body #bpn2 .bpn2-under{ background:linear-gradient(90deg,#1d1e20 0%,#2a1218 40%,rgba(240,71,94,.3))!important }
+html.bp-mv body #bpn2 .bpn2-ico{ width:44px!important; height:44px!important; border-radius:50%!important }
+html.bp-mv body #bpn2 .bpn2-ico.deal{ --bpn-bg:rgba(97,118,255,.18); --bpn-c:#aab6ff }
+html.bp-mv body #bpn2 .bpn2-ico.system{ --bpn-bg:rgba(255,255,255,.08); --bpn-c:#e2e4e9 }
+html.bp-mv body #bpn2 .bpn2-title{ font-size:15px!important; font-weight:600!important; color:rgba(255,255,255,.88)!important }
+html.bp-mv body #bpn2 .bpn2-item.unread .bpn2-title{ font-weight:700!important; color:#fff!important }
+html.bp-mv body #bpn2 .bpn2-desc{ font-size:13.5px!important; line-height:1.42!important; color:rgba(255,255,255,.62)!important }
+html.bp-mv body #bpn2 .bpn2-item:not(.unread) .bpn2-desc{ color:rgba(255,255,255,.45)!important }
+html.bp-mv body #bpn2 .bpn2-time{ font-size:12px!important; font-weight:500!important; color:rgba(255,255,255,.4)!important }
+html.bp-mv body #bpn2 .bpn2-dot{ background:#7c8cff!important; box-shadow:0 0 0 3px rgba(124,140,255,.2)!important }
+html.bp-mv body #bpn2 .bpn2-go{ color:#a9b6ff!important; font-size:12.5px!important; font-weight:600!important }
+html.bp-mv body #bpn2 .bpn2-clear{
+  height:44px; box-sizing:border-box; padding:0 20px!important; border-radius:9999px!important;
+  background:#1d1e20!important; border:1px solid rgba(255,255,255,.08)!important;
+  font-size:14px!important; font-weight:600!important; color:rgba(255,255,255,.72)!important;
+}
+html.bp-mv body #bpn2 .bpn2-clear.arm{ background:rgba(240,71,94,.12)!important; border-color:rgba(240,71,94,.4)!important; color:#ff8d9c!important }
+html.bp-mv body #bpn2 .bpn2-empty{
+  margin:6px 0 0; padding:44px 24px!important; border-radius:32px; background:#1d1e20; border:.8px solid rgba(255,255,255,.05);
+}
+html.bp-mv body #bpn2 .bpn2-empty-art{
+  width:72px!important; height:72px!important; border-radius:50%!important; border:0!important; color:#c3cbff!important;
+  background:radial-gradient(circle at 50% 30%,rgba(146,161,255,.24),rgba(61,85,237,.1) 70%)!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 0 0 8px rgba(97,118,255,.05);
+}
+html.bp-mv body #bpn2 .bpn2-empty-art svg{ width:32px!important; height:32px!important }
+html.bp-mv body #bpn2 .bpn2-empty-s{ color:rgb(143,151,165)!important; font-weight:500 }
+html.bp-mv body #bpn2 .bpn2-undo{
+  border-radius:20px!important; background:#27292a!important; border:1px solid rgba(255,255,255,.08)!important;
+}
+html.bp-mv body #bpn2 .bpn2-undo-b{
+  border-radius:9999px!important; border:0!important; padding:9px 16px!important;
+  background:linear-gradient(180deg,#92a1ff 0%,#3d55ed 52%,#6176ff 100%)!important; color:#fff!important; font-weight:700!important;
+}
+
+@media (prefers-reduced-motion:reduce){
+  html.bp-mv body #bpTabbar .bptab-lg{ transition:none }
+  html.bp-mv body #mainTopbar .tb-bell.ring .tb-bell-g{ animation:none }
+}
+</style>
+<script id="bp-mv-glass">
+(function(){
+'use strict';
+/* Жидкое стекло полки и шапки — пара к style#bp-mv-glass-css.
+   Капля .bptab-lg живёт внутри #bpTabbarIn: полка пересобирает пункты
+   через innerHTML (build в bp-tabbar-js) — наблюдатель возвращает её на
+   место. Активный пункт читаем по классу .on (его ставит sync полки по
+   классам страниц) — поэтому капля едет при ЛЮБОМ переходе: нажатие
+   полки, переключатель «Все задания / Мои задания», goTo из кода.
+   Только под html.bp-mv; без него — ничего не делаем.                 */
+if(window.__bpMvGlass) return;
+window.__bpMvGlass = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e); }catch(_){} }
+function $(id){ return document.getElementById(id); }
+function mvOn(){ return document.documentElement.classList.contains('bp-mv'); }
+var RM = null; try{ RM = window.matchMedia ? matchMedia('(prefers-reduced-motion: reduce)') : null; }catch(e){}
+function still(){ return !!(RM && RM.matches); }
+
+/* ═══ 1 · полка: капля ═══ */
+var G = { el:null, k:null, x:0, w:0, a:null, sim:null, hid:true, idx:-1 };
+
+function box(){ return $('bpTabbarIn'); }
+function lens(b){
+  if(!b) return null;
+  var l = G.el;
+  if(!l){
+    l = G.el = document.createElement('div');
+    l.className = 'bptab-lg off';
+    l.setAttribute('aria-hidden', 'true');
+  }
+  if(l.parentNode !== b) b.insertBefore(l, b.firstChild);
+  return l;
+}
+function itemsOf(b){ return b.querySelectorAll('.bptab-i'); }
+function geo(it){ return { x:it.offsetLeft, y:it.offsetTop, w:it.offsetWidth, h:it.offsetHeight }; }
+function tr(x, sx, sy){ return 'translate3d(' + x.toFixed(2) + 'px,0,0)' + (sx == null ? '' : ' scale(' + sx.toFixed(4) + ',' + sy.toFixed(4) + ')'); }
+
+/* пружина: шаг 1/240 с, отсчёты по кадру 1/60 с */
+var DT = 1 / 60;
+function spring(x0, v0, x1){
+  var K = 175, Z = .74, C = 2 * Z * Math.sqrt(K), h = 1 / 240;
+  var x = x0, v = v0, t = 0, acc = 0, f = [{ x:x, v:v }];
+  for(var n = 0; n < 240 * 1.6; n++){
+    var a = -K * (x - x1) - C * v;
+    v += a * h; x += v * h; t += h; acc += h;
+    if(acc >= DT - 1e-9){
+      acc -= DT; f.push({ x:x, v:v });
+      if(t > .22 && Math.abs(x - x1) < .25 && Math.abs(v) < 5) break;
+    }
+  }
+  f.push({ x:x1, v:0 });
+  return { f:f, x0:x0, x1:x1 };
+}
+/* кадры: тянется по скорости, чуть «приподнимается» и светлеет в полёте */
+function frames(s){
+  var f = s.f, n = f.length, out = [];
+  for(var i = 0; i < n; i++){
+    var v = Math.abs(f[i].v);
+    var st = .34 * (1 - Math.exp(-v / 900));
+    var lift = 1 + .055 * (1 - Math.exp(-v / 260));
+    out.push({
+      offset: i / (n - 1),
+      transform: i === n - 1 ? tr(s.x1, 1, 1) : tr(f[i].x, lift * (1 + st), lift * (1 - st * .5)),
+      opacity: i === n - 1 ? 1 : +(1 - .12 * (1 - Math.exp(-v / 420))).toFixed(3)
+    });
+  }
+  return out;
+}
+/* где капля сейчас — для нового толчка посреди полёта */
+function current(){
+  var s = G.sim, a = G.a;
+  if(!s || !a) return { x:G.x, v:0 };
+  var ms = a.currentTime;
+  if(ms == null || ms < 0) ms = 0;
+  var i = Math.floor(ms / 1000 / DT);
+  if(i >= s.f.length - 1) return { x:s.x1, v:0 };
+  return { x:s.f[i].x, v:s.f[i].v };
+}
+function stop(){
+  if(G.a){ try{ G.a.cancel(); }catch(e){} }
+  G.a = null; G.sim = null;
+}
+function size(l, g){
+  var w = g.w + 'px', h = g.h + 'px', t = g.y + 'px';
+  if(l.style.width !== w) l.style.width = w;
+  if(l.style.height !== h) l.style.height = h;
+  if(l.style.top !== t) l.style.top = t;
+}
+function put(l, g){
+  stop(); size(l, g);
+  l.style.transform = tr(g.x);
+  G.x = g.x; G.w = g.w;
+}
+function appear(l, g){
+  put(l, g);
+  if(l.classList.contains('off')) l.classList.remove('off');
+  if(still() || !l.animate) return;
+  try{
+    G.a = l.animate([
+      { transform:tr(g.x, .72, .72), opacity:0 },
+      { transform:tr(g.x, 1.05, 1.05), opacity:1, offset:.62 },
+      { transform:tr(g.x, 1, 1), opacity:1 }
+    ], { duration:360, easing:'cubic-bezier(.22,1,.36,1)' });
+    var a = G.a; a.onfinish = function(){ if(G.a === a) G.a = null; };
+  }catch(e){ E(e); }
+}
+function pop(it, delay){
+  var s = it && it.querySelector('svg');
+  if(!s || !s.animate || still()) return;
+  try{
+    s.animate([{ scale:'1' }, { scale:'.88', offset:.3 }, { scale:'1.1', offset:.68 }, { scale:'1' }],
+      { duration:420, delay:delay, easing:'cubic-bezier(.3,.7,.4,1)' });
+  }catch(e){}
+}
+function glide(l, it, g){
+  var c = current();
+  stop(); size(l, g);
+  l.style.transform = tr(g.x);   /* конечное место — анимация играет поверх */
+  G.x = g.x; G.w = g.w;
+  if(l.classList.contains('off')) l.classList.remove('off');
+  if(still() || !l.animate || Math.abs(c.x - g.x) < 1) return;
+  var s = spring(c.x, c.v, g.x), kf = frames(s);
+  try{
+    var a = l.animate(kf, { duration:(s.f.length - 1) * DT * 1000, easing:'linear' });
+    G.a = a; G.sim = s;
+    a.onfinish = function(){ if(G.a === a){ G.a = null; G.sim = null; } };
+  }catch(e){ E(e); return; }
+  /* значок «принимает» каплю, когда она прошла ~60% пути */
+  var d = Math.abs(g.x - c.x), arr = 0;
+  for(var i = 0; i < s.f.length; i++){ if(Math.abs(s.f[i].x - c.x) >= d * .6){ arr = i * DT * 1000; break; } }
+  pop(it, Math.max(0, Math.round(arr - 60)));
+}
+
+/* касание: капля едет сразу, а не когда страница уже нарисовалась */
+var P = { k:null, at:0, it:null, t:null };
+function now(){ return (window.performance && performance.now) ? performance.now() : Date.now(); }
+function clearPend(){
+  clearTimeout(P.t); P.t = null;
+  var b = box();
+  if(P.it && P.it.classList.contains('lg-to')) P.it.classList.remove('lg-to');
+  if(b && b.classList.contains('lg-pend')) b.classList.remove('lg-pend');
+  P.k = null; P.it = null;
+}
+function settleLater(ms){ clearTimeout(P.t); P.t = setTimeout(function(){ clearPend(); check(false); }, ms); }
+function squish(l){
+  if(still() || !l.animate || G.a) return;
+  try{
+    l.animate([{ transform:tr(G.x, 1, 1) }, { transform:tr(G.x, .94, .94), offset:.35 }, { transform:tr(G.x, 1.025, 1.025), offset:.7 }, { transform:tr(G.x, 1, 1) }],
+      { duration:380, easing:'ease-out' });
+  }catch(e){}
+}
+function onDown(e){
+  try{
+    if(!mvOn() || e.isPrimary === false || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    var b = box(), it = e.target && e.target.closest ? e.target.closest('.bptab-i') : null;
+    if(!b || !it || !b.contains(it) || !b.offsetWidth) return;
+    var l = G.el; if(!l || l.parentNode !== b) return;
+    var list = itemsOf(b), idx = [].indexOf.call(list, it);
+    var k = it.getAttribute('data-k') + '|' + list.length;
+    if(k === G.k){ squish(l); return; }
+    if(l.classList.contains('off')) return;   /* активного нет — капля появится по факту перехода */
+    clearPend();
+    var steps = G.idx >= 0 ? Math.abs(idx - G.idx) : 1;
+    b.style.setProperty('--lg-d', Math.min(150, 50 + 34 * steps) + 'ms');
+    P.k = k; P.at = now(); P.it = it;
+    it.classList.add('lg-to'); b.classList.add('lg-pend');
+    glide(l, it, geo(it));
+    G.k = k; G.idx = idx;
+    settleLater(1400);   /* перехода так и не было — вернётся на место */
+  }catch(err){ E(err); }
+}
+function onUp(){ if(P.k) settleLater(600); }
+
+/* «страница осела» (bp-calm): после каскада новые блоки видны сразу.
+   bp-calm ждёт окончания bpRise, а у корневых разделов MV каскад теперь
+   bpMvRise — ставим bp-settled сами и снимаем, когда страницу скрыли */
+function leaveWatch(pg){
+  if(pg.__mvgLeave || typeof MutationObserver === 'undefined') return;
+  pg.__mvgLeave = new MutationObserver(function(){
+    if(pg.classList.contains('on')) return;
+    clearTimeout(pg.__mvgSettle);
+    if(pg.classList.contains('bp-settled')) pg.classList.remove('bp-settled');
+  });
+  pg.__mvgLeave.observe(pg, { attributes:true, attributeFilter:['class'] });
+}
+document.addEventListener('animationend', function(e){
+  if(e.animationName !== 'bpMvRise') return;
+  var pg = e.target && e.target.closest ? e.target.closest('.pg') : null;
+  if(!pg || !pg.classList.contains('on')) return;
+  leaveWatch(pg);
+  clearTimeout(pg.__mvgSettle);
+  pg.__mvgSettle = setTimeout(function(){
+    if(pg.classList.contains('on') && !pg.classList.contains('bp-settled')) pg.classList.add('bp-settled');
+  }, 120);
+}, true);
+
+function check(force){
+  try{
+    var b = box(); if(!b) return;
+    if(!mvOn()){
+      if(b.classList.contains('lg-on')) b.classList.remove('lg-on');
+      if(G.el && G.el.parentNode) G.el.parentNode.removeChild(G.el);
+      G.k = null; G.hid = true; stop();
+      return;
+    }
+    var l = lens(b);
+    if(!b.classList.contains('lg-on')) b.classList.add('lg-on');
+    var list = itemsOf(b), it = null, idx = -1;
+    for(var i = 0; i < list.length; i++){ if(list[i].classList.contains('on')){ it = list[i]; idx = i; break; } }
+    var k = it ? it.getAttribute('data-k') + '|' + list.length : '';
+    /* палец уже увёл каплю — ждём перехода, назад её не дёргаем */
+    if(P.k){
+      if(k === P.k) clearPend();
+      else if(now() - P.at < 1400 && !force) return;
+      else clearPend();
+    }
+    /* полка скрыта (шторка, чат, не корневая страница) — мерить нечего */
+    if(!b.offsetWidth){ G.hid = true; G.k = k; G.idx = idx; stop(); return; }
+    if(!it){
+      if(!l.classList.contains('off')) l.classList.add('off');
+      G.k = ''; G.idx = -1; G.hid = false;
+      return;
+    }
+    var wasOff = l.classList.contains('off') || G.k === '' || G.k == null;
+    if(G.hid || force || wasOff){
+      /* число шагов заранее — задержка зажигания нового значка */
+      b.style.setProperty('--lg-d', '0ms');
+      var g0 = geo(it);
+      if(wasOff && !G.hid && !force) appear(l, g0);
+      else{ put(l, g0); if(l.classList.contains('off')) l.classList.remove('off'); }
+    } else if(k !== G.k){
+      var steps = G.idx >= 0 ? Math.abs(idx - G.idx) : 1;
+      b.style.setProperty('--lg-d', Math.min(150, 50 + 34 * steps) + 'ms');
+      glide(l, it, geo(it));
+    } else {
+      /* тот же пункт: подогнать размер (поворот экрана, шрифт) */
+      var g1 = geo(it);
+      if(!G.a && (Math.abs(g1.x - G.x) > .5 || Math.abs(g1.w - G.w) > .5)) put(l, g1);
+    }
+    G.k = k; G.idx = idx; G.hid = false;
+  }catch(e){ E(e); }
+}
+
+var moBox = null, roBox = null, watchedBox = null;
+var barBound = null;
+function watch(){
+  var b = box();
+  var tb = $('bpTabbar');
+  if(tb && barBound !== tb){
+    barBound = tb;
+    if(window.PointerEvent) tb.addEventListener('pointerdown', onDown, true);
+    tb.addEventListener('pointerup', onUp, true);
+    tb.addEventListener('pointercancel', onUp, true);
+  }
+  if(!b || watchedBox === b) return;
+  watchedBox = b;
+  if(typeof MutationObserver !== 'undefined'){
+    if(moBox) moBox.disconnect();
+    moBox = new MutationObserver(function(recs){
+      /* пересборка пунктов (innerHTML) — ставим на место без полёта */
+      var rebuilt = false;
+      for(var i = 0; i < recs.length; i++){ if(recs[i].type === 'childList' && recs[i].target === b){ rebuilt = true; break; } }
+      check(rebuilt);
+    });
+    moBox.observe(b, { childList:true, subtree:true, attributes:true, attributeFilter:['class'] });
+  }
+  if(typeof ResizeObserver !== 'undefined'){
+    if(roBox) roBox.disconnect();
+    roBox = new ResizeObserver(function(){ check(true); });
+    roBox.observe(b);
+  }
+  check(true);
+}
+
+/* ═══ 2 · шапка: колокольчик и баланс-кошелёк ═══ */
+var BELL_FB = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.2 16.2V11a5.8 5.8 0 0 1 11.6 0v5.2l1.5 1.8H4.7z"/><path d="M10 20.6a2.2 2.2 0 0 0 4 0"/></svg>';
+/* карманчик кошелька: три карточки (оранжевая · зелёная · синяя) и карман */
+var WAL = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">'
+  + '<defs><linearGradient id="bpMvTbW" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9db8ff"/><stop offset="1" stop-color="#5b83ff"/></linearGradient></defs>'
+  + '<rect x="4.6" y="2.9" width="14.8" height="9" rx="2.5" fill="#ef531b" stroke="#fff" stroke-opacity=".9" stroke-width=".7"/>'
+  + '<rect x="4.6" y="5.6" width="14.8" height="9" rx="2.5" fill="#1f9054" stroke="#fff" stroke-opacity=".9" stroke-width=".7"/>'
+  + '<rect x="4.6" y="8.3" width="14.8" height="9" rx="2.5" fill="#0a79aa" stroke="#fff" stroke-opacity=".9" stroke-width=".7"/>'
+  + '<path d="M2.8 11.4c3 1.5 6 2.2 9.2 2.2s6.2-.7 9.2-2.2v7.2a3.2 3.2 0 0 1-3.2 3.2H6a3.2 3.2 0 0 1-3.2-3.2z" fill="url(#bpMvTbW)" stroke="#fff" stroke-opacity=".85" stroke-width=".7"/>'
+  + '<path d="M5.2 14.6c2.2.8 4.5 1.2 6.8 1.2s4.6-.4 6.8-1.2" fill="none" stroke="#fff" stroke-opacity=".75" stroke-width=".75" stroke-dasharray="1.3 1.2" stroke-linecap="round"/>'
+  + '</svg>';
+
+var B = { n:-1, ringT:null };
+function mountBar(){
+  try{
+    var bar = $('mainTopbar'); if(!bar) return;
+    var bal = bar.querySelector('.tb-bal'); if(!bal) return;
+    var bell = $('mvBell');
+    if(!bell){
+      bell = document.createElement('button');
+      bell.type = 'button'; bell.id = 'mvBell'; bell.className = 'tb-bell';
+      bell.setAttribute('aria-label', 'Уведомления');
+      var ic = (window.bpMvIco && window.bpMvIco.bell) || BELL_FB;
+      bell.innerHTML = '<span class="tb-bell-g">' + ic + '</span><span class="tb-bell-n" aria-hidden="true"></span>';
+      bell.addEventListener('click', function(){
+        try{
+          if(typeof window.bpOpenNotifications === 'function') window.bpOpenNotifications();
+          else if(typeof window.bpToggleNotifPanel === 'function') window.bpToggleNotifPanel(true);
+        }catch(e){ E(e); }
+        setTimeout(paintBell, 400);
+      });
+    }
+    if(bell.parentNode !== bar || bell.nextElementSibling !== bal) bar.insertBefore(bell, bal);
+    var col = $('topbarBalance') && $('topbarBalance').parentNode;
+    if(col && col !== bal && !col.querySelector('.tb-mvl')){
+      var lb = document.createElement('span');
+      lb.className = 'tb-mvl'; lb.textContent = 'Баланс';
+      col.insertBefore(lb, col.firstChild);
+    }
+    if(!bal.querySelector('.tb-mvw')){
+      var w = document.createElement('span');
+      w.className = 'tb-mvw'; w.setAttribute('aria-hidden', 'true'); w.innerHTML = WAL;
+      bal.appendChild(w);
+    }
+    paintBell();
+  }catch(e){ E(e); }
+}
+function paintBell(){
+  try{
+    var bell = $('mvBell'); if(!bell) return;
+    var n = 0;
+    try{ n = typeof window.bpNotifCount === 'function' ? (+window.bpNotifCount() || 0) : 0; }catch(e){ n = 0; }
+    var em = bell.querySelector('.tb-bell-n'), txt = n > 99 ? '99+' : (n > 0 ? String(n) : '');
+    if(em && em.textContent !== txt) em.textContent = txt;
+    var has = n > 0;
+    if(bell.classList.contains('has') !== has) bell.classList.toggle('has', has);
+    var lbl = 'Уведомления' + (n > 0 ? ', новых: ' + n : '');
+    if(bell.getAttribute('aria-label') !== lbl) bell.setAttribute('aria-label', lbl);
+    /* новое уведомление — колокольчик качнётся один раз */
+    if(B.n >= 0 && n > B.n && mvOn() && !still()){
+      if(bell.classList.contains('ring')) bell.classList.remove('ring');
+      void bell.offsetWidth;
+      bell.classList.add('ring');
+      clearTimeout(B.ringT);
+      B.ringT = setTimeout(function(){ if(bell.classList.contains('ring')) bell.classList.remove('ring'); }, 1000);
+    }
+    B.n = n;
+  }catch(e){ E(e); }
+}
+
+function boot(){
+  watch(); mountBar();
+  /* бургер раньше носил красную точку непрочитанного — её меняет
+     paint() центра уведомлений; следим за ней и рисуем колокольчик */
+  var dot = $('hamRedDot');
+  if(dot && typeof MutationObserver !== 'undefined')
+    new MutationObserver(paintBell).observe(dot, { attributes:true, attributeFilter:['style'] });
+  window.addEventListener('storage', function(e){ if(!e || !e.key || e.key === 'bp_notifs') paintBell(); });
+  setInterval(function(){ if(!document.hidden){ watch(); paintBell(); } }, 2500);
+  /* полка и шапка достраиваются после входа и смены роли */
+  [400, 1300, 3200].forEach(function(ms){ setTimeout(function(){ watch(); check(true); mountBar(); }, ms); });
+  /* режим MV может включиться/выключиться после загрузки (проверка полного доступа) */
+  if(typeof MutationObserver !== 'undefined'){
+    var was = mvOn();
+    new MutationObserver(function(){ var on = mvOn(); if(on !== was){ was = on; check(true); paintBell(); } })
+      .observe(document.documentElement, { attributes:true, attributeFilter:['class'] });
+  }
+}
+window.bpMvGlassCheck = function(){ watch(); check(true); mountBar(); };
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+})();
+</script>
+<style id="bp-mv-chat-css">
+/* ══ ЧАТЫ «КАК ГЛАВНАЯ ЗАДАНИЙ» (bp-mv-chat, 14.10.2026) ═════════════
+   Владелец: «переделай чаты полностью под стиль главного меню заданий,
+   сделай красиво и всё проработанее».
+   Язык «Все задания» (bp-mv-css): заголовок 28/800 и счётчик-таблетка
+   #27292a, поиск 54 px #1d1e20 r20, фильтры-таблетки 40 px (активная —
+   синяя рамка), карточки #1d1e20 с тонкой кромкой, пустой экран —
+   большая карточка r32. Цвета — те же токены MV.
+   · Список: «Чаты · N», поиск всегда (кроме совсем пустого списка),
+     фильтры «Все / Непрочитанные», строка — карточка r24: аватар 52 в
+     своём цвете (палитра без зелёного — его перекрашивает deGreen),
+     точка «в сети», «Вы:» у своего последнего сообщения, непрочитанное —
+     жирнее и с градиентным счётчиком. Пустой список, «ничего не
+     нашлось» и «всё прочитано» — карточкой как у заданий.
+   · Диалог: шапка — плавающая стеклянная панель (как верхняя панель),
+     круглая «назад», под именем — «в сети» или роль собеседника (вместо
+     «был(а) недавно» у всех подряд); пузыри — входящие #27292a, свои — синим градиентом
+     кошелька; даты по настоящему времени сообщений (было всегда
+     «Сегодня»); поле ввода — стеклянная таблетка, отправка — круглая
+     кнопка MV; пустой чат — подсказка и быстрые фразы (только вставляют
+     текст, отправляет человек сам).
+   · Меню вложений, удаление чата, меню сообщения — карточки MV, без
+     backdrop-filter.
+   Разметку и обработчики приложения НЕ меняем: правим вид и дописываем
+   свои узлы после отрисовки (наблюдатели за #chatsList и #cdMessages).
+   Всё только под html.bp-mv. Откат: удалить style#bp-mv-chat-css и
+   script#bp-mv-chat.                                                    */
+
+/* ═══ 1 · список чатов ═══ */
+html.bp-mv body #pg-chats{ padding:16px 14px 0!important; box-sizing:border-box }
+html.bp-mv body #pg-chats > .bp-mv-chtabs{ display:none!important }
+html body #pg-chats > .mvch-hd,html body #pg-chats .mvch-f{ display:none }
+html.bp-mv body #pg-chats > .mvch-hd{ display:flex; align-items:center; gap:12px; margin:0 0 14px; flex-shrink:0 }
+html.bp-mv body #pg-chats > .mvch-hd h1{ margin:0; font-size:28px; font-weight:800; line-height:1.3; letter-spacing:-.6px; color:#fff }
+html.bp-mv body #pg-chats > .mvch-hd .mvch-cnt{
+  display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; padding:0 10px;
+  box-sizing:border-box; border-radius:9999px; background:#27292a; color:#fff;
+  font-size:14px; font-weight:600; font-variant-numeric:tabular-nums;
+}
+html.bp-mv body #pg-chats #chatsSectionWrap{
+  padding:0 0 calc(var(--bptab-h,74px) + env(safe-area-inset-bottom,0px) + 28px)!important; overflow:visible!important;
+}
+/* поиск — как на «Всех заданиях» */
+html.bp-mv body #pg-chats #chatsSearchRow{ display:block!important; padding:0!important }
+html.bp-mv body #pg-chats.mvch-none #chatsSearchRow,
+html.bp-mv body #pg-chats.mvch-none .mvch-f{ display:none!important }
+html.bp-mv body #pg-chats #chatsSearchRow > div{
+  height:54px; box-sizing:border-box; padding:0 16px!important; gap:12px!important;
+  background:#1d1e20!important; border:1px solid rgba(255,255,255,.06)!important; border-radius:20px!important;
+  transition:border-color .2s ease;
+}
+html.bp-mv body #pg-chats #chatsSearchRow > div:focus-within{ border-color:rgba(97,118,255,.6)!important }
+html.bp-mv body #pg-chats #chatsSearchRow svg{ width:20px; height:20px; flex:none; stroke:rgba(255,255,255,.5) }
+html.bp-mv body #pg-chats #chatsSearchRow input{ height:100%; padding:0!important; font-size:16px!important; color:#fff!important }
+html.bp-mv body #pg-chats #chatsSearchRow input::placeholder{ color:rgba(255,255,255,.4) }
+/* фильтры-таблетки */
+html.bp-mv body #pg-chats .mvch-f{
+  display:flex; gap:8px; margin:14px 0 16px; padding:0 0 2px; overflow-x:auto; scrollbar-width:none; flex-shrink:0;
+}
+html.bp-mv body #pg-chats .mvch-f::-webkit-scrollbar{ display:none }
+/* таблетки — это .chat-tab (их ищет updateChatsBadge раз в 2 с, чтобы
+   перерисовать список с ТЕМ ЖЕ фильтром): у класса много старых
+   !important — перебиваем своими */
+html.bp-mv body #pg-chats .mvch-f button{
+  flex:none; display:inline-flex!important; align-items:center!important; justify-content:center!important; gap:8px;
+  height:40px; min-height:40px!important; box-sizing:border-box; padding:0 18px!important;
+  border-radius:9999px!important; border:1px solid rgba(255,255,255,.06)!important;
+  background:#1d1e20!important; background-image:none!important; box-shadow:none!important; color:rgba(255,255,255,.55)!important;
+  font-family:inherit!important; font-size:15px!important; font-weight:600!important; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  transition:background-color .2s ease,border-color .2s ease,color .2s ease,transform .18s cubic-bezier(.22,1,.36,1)!important;
+}
+html.bp-mv body #pg-chats .mvch-f button:hover{ background:#232427!important; border-color:rgba(255,255,255,.1)!important; color:rgba(255,255,255,.78)!important }
+html.bp-mv body #pg-chats .mvch-f button:active{ transform:scale(.96)!important }
+html.bp-mv body #pg-chats .mvch-f button.on{
+  background:rgba(61,85,237,.16)!important; border-color:rgba(108,128,255,.75)!important; color:#fff!important; font-weight:600!important;
+}
+html.bp-mv body #pg-chats .mvch-f em{
+  min-width:20px; height:20px; padding:0 6px; box-sizing:border-box; border-radius:10px;
+  background:linear-gradient(180deg,#92a1ff 0%,#3d55ed 52%,#6176ff 100%); color:#fff;
+  font-style:normal; font-size:12px; font-weight:700; line-height:20px; text-align:center; font-variant-numeric:tabular-nums;
+}
+html.bp-mv body #pg-chats .mvch-f em:empty{ display:none }
+/* строки — карточки */
+html.bp-mv body #pg-chats #chatsList{ display:flex; flex-direction:column; gap:10px; padding:0!important }
+html.bp-mv body #pg-chats #chatsList .chat-item{
+  position:relative; display:flex!important; align-items:center; gap:14px!important;
+  min-height:80px; box-sizing:border-box; margin:0!important; padding:14px 16px!important;
+  border-radius:24px!important; border:.8px solid rgba(255,255,255,.05)!important;
+  background:#1d1e20!important; background-image:none!important; box-shadow:none!important;
+  cursor:pointer; -webkit-tap-highlight-color:transparent;
+  transition:transform .18s cubic-bezier(.22,1,.36,1),background-color .2s ease!important;
+}
+html.bp-mv body #pg-chats #chatsList .chat-item::before,
+html.bp-mv body #pg-chats #chatsList .chat-item::after{ display:none!important }
+html.bp-mv body #pg-chats #chatsList .chat-item:active{ transform:scale(.98); background:#232427!important }
+html.bp-mv body #pg-chats #chatsList .chat-ava{
+  position:relative; flex:none; width:52px!important; height:52px!important; margin:0!important; border-radius:50%;
+}
+html.bp-mv body #pg-chats #chatsList .chat-ava > div{
+  font-size:20px!important; font-weight:700!important; letter-spacing:-.2px; border:0!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.28),inset 0 -2px 6px rgba(0,0,0,.12);
+}
+html.bp-mv body #pg-chats #chatsList .chat-ava > img{ width:100%; height:100%; display:block; border-radius:50%; object-fit:cover }
+html.bp-mv body #pg-chats #chatsList .chat-ava.mvch-online::after{
+  content:''; position:absolute; right:0; bottom:1px; width:13px; height:13px; box-sizing:border-box;
+  border-radius:50%; background:#35d670; border:2.5px solid #1d1e20;
+}
+html.bp-mv body #pg-chats #chatsList .chat-body{ flex:1; min-width:0; display:flex; flex-direction:column; gap:4px }
+html.bp-mv body #pg-chats #chatsList .chat-name-row{ display:flex; align-items:center; gap:10px; margin:0!important }
+html.bp-mv body #pg-chats #chatsList .chat-name{
+  flex:1; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;
+  font-size:16px!important; font-weight:600!important; line-height:22px!important; letter-spacing:-.2px; color:#fff!important;
+}
+html.bp-mv body #pg-chats #chatsList .chat-time{
+  flex:none; font-size:13px!important; font-weight:500!important; color:rgba(255,255,255,.42)!important;
+  background:none!important; padding:0!important; font-variant-numeric:tabular-nums;
+}
+html.bp-mv body #pg-chats #chatsList .chat-preview-row{ display:flex; align-items:center; gap:10px; margin:0!important }
+html.bp-mv body #pg-chats #chatsList .chat-preview{
+  flex:1; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;
+  font-size:14px!important; line-height:20px!important; font-weight:400!important; color:rgba(255,255,255,.55)!important;
+}
+html.bp-mv body #pg-chats #chatsList .chat-preview .mvch-you{ color:rgba(255,255,255,.82) }
+html.bp-mv body #pg-chats #chatsList .chat-preview.mvch-nomsg{ color:rgba(255,255,255,.38)!important; font-style:normal }
+html.bp-mv body #pg-chats #chatsList .chat-unread{
+  flex:none; min-width:22px!important; height:22px!important; padding:0 7px!important; box-sizing:border-box;
+  border-radius:11px!important; border:0!important;
+  background:linear-gradient(180deg,#92a1ff 0%,#3d55ed 52%,#6176ff 100%)!important;
+  box-shadow:0 3px 8px rgba(40,60,200,.35),inset 0 1px 0 rgba(255,255,255,.22)!important;
+  color:#fff!important; font-size:12px!important; font-weight:700!important; line-height:22px!important; text-align:center;
+  font-variant-numeric:tabular-nums;
+}
+html.bp-mv body #pg-chats #chatsList .chat-item.mvch-un .chat-name{ font-weight:700!important }
+html.bp-mv body #pg-chats #chatsList .chat-item.mvch-un .chat-preview{ color:rgba(255,255,255,.86)!important }
+html.bp-mv body #pg-chats #chatsList .chat-item.mvch-un .chat-time{ color:#9fb0ff!important }
+/* заготовка списка при первой загрузке — те же карточки */
+html.bp-mv body #pg-chats #chatsList .bp-skel-wrap{ display:flex; flex-direction:column; gap:10px }
+html.bp-mv body #pg-chats #chatsList .bp-skel-wrap > div{
+  min-height:80px; box-sizing:border-box; padding:14px 16px!important; gap:14px!important;
+  border-radius:24px; background:#1d1e20; border:.8px solid rgba(255,255,255,.05);
+}
+/* пустые экраны — большая карточка, как «Пока нет заданий» */
+html.bp-mv body #pg-chats .chats-empty,
+html.bp-mv body #pg-chats .mvch-empty{
+  display:flex!important; flex-direction:column; align-items:center; justify-content:center; text-align:center;
+  min-height:calc(100dvh - 330px); box-sizing:border-box; margin:0; padding:24px 22px 28px!important;
+  border-radius:32px; background:#1d1e20; border:.8px solid rgba(255,255,255,.05);
+}
+html.bp-mv body #pg-chats.mvch-none .chats-empty{ min-height:calc(100dvh - 210px) }
+html.bp-mv body #pg-chats .chats-empty > .bp-empty-art{ display:none!important }
+html.bp-mv body #pg-chats .mvch-ico{
+  display:grid; place-items:center; width:72px; height:72px; margin:0 0 18px; border-radius:50%;
+  background:radial-gradient(circle at 50% 30%,rgba(146,161,255,.24),rgba(61,85,237,.1) 70%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 0 0 8px rgba(97,118,255,.05);
+  color:#c3cbff;
+}
+html.bp-mv body #pg-chats .mvch-ico svg{ width:32px; height:32px }
+html.bp-mv body #pg-chats .chats-empty > div:not(.bp-empty-art):not(.mvch-ico):not([onclick]),
+html.bp-mv body #pg-chats .mvch-empty b{
+  font-size:17px!important; font-weight:800!important; line-height:1.3!important; color:#fff!important; margin:0 0 7px!important; letter-spacing:-.3px!important;
+}
+html.bp-mv body #pg-chats .chats-empty > div:not(.bp-empty-art):not(.mvch-ico):not([onclick]) + div:not([onclick]),
+html.bp-mv body #pg-chats .mvch-empty span{
+  display:block; max-width:270px!important; font-size:13px!important; font-weight:500!important; line-height:1.5!important;
+  color:rgb(143,151,165)!important; margin:0!important; letter-spacing:0!important;
+}
+html.bp-mv body #pg-chats .chats-empty > [onclick]{ margin-top:22px!important }
+
+/* ═══ 2 · диалог ═══ */
+html.bp-mv body #pg-chat-dialog{ background:#101319!important }
+html.bp-mv body #pg-chat-dialog .cd-header{
+  flex-shrink:0; gap:12px!important; min-height:62px; box-sizing:border-box;
+  margin:calc(env(safe-area-inset-top,0px) + 8px) 10px 0!important; padding:9px 14px 9px 9px!important;
+  border:1px solid rgba(255,255,255,.09)!important; border-radius:22px!important;
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.07) 0%,rgba(255,255,255,.018) 48%,rgba(255,255,255,0) 66%,rgba(255,255,255,.03) 100%),
+    rgba(30,31,35,.94)!important;
+  box-shadow:0 14px 32px rgba(0,0,0,.44),inset 0 1px 0 rgba(255,255,255,.13),inset 0 -1px 0 rgba(255,255,255,.035)!important;
+  -webkit-backdrop-filter:none!important; backdrop-filter:none!important;
+}
+html.bp-mv body #pg-chat-dialog .cd-back{
+  flex:none; width:42px!important; height:42px!important; border-radius:50%!important; margin:0!important;
+  display:flex!important; align-items:center; justify-content:center;
+  background:linear-gradient(180deg,rgba(255,255,255,.11),rgba(255,255,255,.04))!important;
+  border:1px solid rgba(255,255,255,.12)!important; box-shadow:inset 0 1px 0 rgba(255,255,255,.14)!important;
+  -webkit-tap-highlight-color:transparent; transition:transform .2s cubic-bezier(.22,1,.36,1);
+}
+html.bp-mv body #pg-chat-dialog .cd-back:active{ transform:scale(.9) }
+html.bp-mv body #pg-chat-dialog .cd-back svg{ width:18px; height:18px; fill:none!important; stroke:#fff!important; stroke-width:2.3!important; stroke-linecap:round; stroke-linejoin:round }
+html.bp-mv body #pg-chat-dialog #cdAva{ flex:none; width:42px!important; height:42px!important; border-radius:50%; overflow:hidden }
+html.bp-mv body #pg-chat-dialog #cdAva .cd-ava-inner{ width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-size:17px!important; font-weight:700!important; color:#fff }
+html.bp-mv body #pg-chat-dialog .cd-info{ min-width:0 }
+html.bp-mv body #pg-chat-dialog #cdName{
+  font-size:16px!important; font-weight:600!important; line-height:21px!important; letter-spacing:-.2px; color:#fff!important;
+  overflow:hidden; white-space:nowrap; text-overflow:ellipsis;
+}
+html.bp-mv body #pg-chat-dialog #cdStatus{ display:flex; align-items:center; gap:6px; margin-top:1px; font-size:12.5px!important; font-weight:500!important; line-height:17px }
+html.bp-mv body #pg-chat-dialog #cdStatus.mvch-st-on{ color:#5fe39b!important }
+html.bp-mv body #pg-chat-dialog #cdStatus.mvch-st-on::before{ content:''; flex:none; width:7px; height:7px; border-radius:50%; background:#5fe39b; box-shadow:0 0 0 3px rgba(95,227,155,.16) }
+html.bp-mv body #pg-chat-dialog #cdStatus.mvch-st-off{ color:rgba(255,255,255,.45)!important }
+/* лента */
+html.bp-mv body #pg-chat-dialog .cd-messages{ padding:14px 12px 12px!important; background:transparent!important }
+html.bp-mv body #pg-chat-dialog .cd-date-sep{
+  align-self:center; display:inline-block; width:auto!important; margin:6px auto 14px!important; padding:5px 12px!important;
+  border-radius:9999px!important; background:#1d1e20!important; border:1px solid rgba(255,255,255,.06)!important;
+  font-size:12px!important; font-weight:600!important; line-height:16px!important; letter-spacing:0!important; text-transform:none!important;
+  color:rgba(255,255,255,.55)!important;
+}
+html.bp-mv body #pg-chat-dialog .cd-date-sep::before,
+html.bp-mv body #pg-chat-dialog .cd-date-sep::after{ display:none!important }
+html.bp-mv body #pg-chat-dialog .cd-msg .cd-bubble{
+  font-size:15px!important; line-height:1.42!important; letter-spacing:-.1px; padding:9px 13px 7px!important;
+  max-width:min(78vw,330px)!important; border:0!important; word-break:break-word; overflow-wrap:anywhere;
+}
+html.bp-mv body #pg-chat-dialog .cd-msg.in .cd-bubble{
+  background:#27292a!important; background-image:none!important; color:#fff!important;
+  border-radius:20px 20px 20px 6px!important; box-shadow:none!important;
+}
+html.bp-mv body #pg-chat-dialog .cd-msg.out .cd-bubble{
+  background:linear-gradient(180deg,#5d8eff 0%,#3d63f3 100%)!important; color:#fff!important;
+  border-radius:20px 20px 6px 20px!important; box-shadow:0 6px 16px rgba(55,101,246,.22),inset 0 1px 0 rgba(255,255,255,.18)!important;
+}
+html.bp-mv body #pg-chat-dialog .cd-msg.out .cd-bubble a{ color:#fff!important; text-decoration:underline; text-decoration-color:rgba(255,255,255,.5) }
+html.bp-mv body #pg-chat-dialog .cd-msg.in .cd-bubble a{ color:#a9baff!important }
+html.bp-mv body #pg-chat-dialog .cd-msg.out .cd-bubble-meta{ color:rgba(255,255,255,.74)!important }
+html.bp-mv body #pg-chat-dialog .cd-msg.in .cd-bubble-meta{ color:rgba(255,255,255,.4)!important }
+html.bp-mv body #pg-chat-dialog .cd-msg.out .cd-bubble-meta .bm-ticks svg,
+html.bp-mv body #pg-chat-dialog .cd-msg.out .cd-bubble-meta .bm-ticks-read svg{ stroke:currentColor!important; color:#fff }
+html.bp-mv body #pg-chat-dialog .cd-edited-tag{ color:inherit!important; opacity:.6 }
+html.bp-mv body #pg-chat-dialog .cd-img-bubble{ border-radius:18px!important; background:#27292a!important }
+html.bp-mv body #pg-chat-dialog .cd-file-bubble{
+  border:0!important; border-radius:18px!important; padding:10px 14px 10px 10px!important; gap:10px!important;
+  background:#27292a!important; background-image:none!important; color:#fff!important;
+}
+html.bp-mv body #pg-chat-dialog .cd-msg.out .cd-file-bubble{ background:linear-gradient(180deg,#5d8eff 0%,#3d63f3 100%)!important }
+html.bp-mv body #pg-chat-dialog .cd-file-ico{
+  width:40px!important; height:40px!important; border-radius:50%!important; border:0!important;
+  background:rgba(255,255,255,.12)!important; color:#fff!important;
+}
+html.bp-mv body #pg-chat-dialog .cd-meta{ color:rgba(255,255,255,.4)!important; font-size:11px!important }
+html.bp-mv body #pg-chat-dialog .cd-typing-bubble{ background:#27292a!important; border:0!important; border-radius:20px 20px 20px 6px!important }
+/* пустой чат */
+html.bp-mv body #pg-chat-dialog .cd-empty{ gap:0!important; padding:30px 22px!important }
+html.bp-mv body #pg-chat-dialog .cd-empty > div:first-child{
+  width:72px!important; height:72px!important; border-radius:50%!important; margin:0 0 18px!important; border:0!important;
+  background:radial-gradient(circle at 50% 30%,rgba(146,161,255,.24),rgba(61,85,237,.1) 70%)!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 0 0 8px rgba(97,118,255,.05)!important;
+}
+html.bp-mv body #pg-chat-dialog .cd-empty > div:first-child svg{ width:32px; height:32px; stroke:#c3cbff!important; stroke-width:1.7 }
+html.bp-mv body #pg-chat-dialog .cd-empty > div:nth-child(2){ font-size:17px!important; font-weight:800!important; color:#fff!important; margin:0 0 7px!important; letter-spacing:-.3px }
+html.bp-mv body #pg-chat-dialog .cd-empty > div:nth-child(3){ font-size:13px!important; font-weight:500!important; color:rgb(143,151,165)!important; max-width:270px!important; line-height:1.5!important }
+html.bp-mv body #pg-chat-dialog .mvch-qr{ display:flex; flex-wrap:wrap; justify-content:center; gap:8px; margin:22px 0 0; max-width:340px }
+html.bp-mv body #pg-chat-dialog .mvch-qr button{
+  height:40px; box-sizing:border-box; padding:0 16px; border-radius:9999px; border:1px solid rgba(255,255,255,.08);
+  background:#1d1e20; color:rgba(255,255,255,.86); font:inherit; font-size:14px; font-weight:600; cursor:pointer;
+  -webkit-tap-highlight-color:transparent; transition:transform .18s cubic-bezier(.22,1,.36,1),border-color .2s ease,background-color .2s ease;
+}
+html.bp-mv body #pg-chat-dialog .mvch-qr button:active{ transform:scale(.95); border-color:rgba(108,128,255,.75); background:rgba(61,85,237,.16) }
+/* поле ввода — стеклянная таблетка над затуханием ленты */
+html.bp-mv body #pg-chat-dialog .cd-input-area{
+  background:transparent!important; border:0!important; box-shadow:none!important;
+  padding:6px 10px calc(env(safe-area-inset-bottom,0px) + 10px)!important;
+  -webkit-backdrop-filter:none!important; backdrop-filter:none!important;
+}
+html.bp-mv body #pg-chat-dialog .cd-input-area::before{
+  content:''; position:absolute; left:0; right:0; bottom:0; z-index:-1; height:calc(100% + 26px); pointer-events:none;
+  background:linear-gradient(0deg,rgba(16,19,25,.97) 0%,rgba(16,19,25,.88) 42%,rgba(16,19,25,0) 100%);
+}
+html.bp-mv body #pg-chat-dialog .cd-input-wrap{
+  align-items:flex-end!important; gap:6px!important; min-height:52px; box-sizing:border-box; padding:5px!important;
+  border-radius:26px!important; border:1px solid rgba(255,255,255,.09)!important;
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.07) 0%,rgba(255,255,255,.018) 46%,rgba(255,255,255,0) 64%,rgba(255,255,255,.03) 100%),
+    rgba(30,31,35,.94)!important;
+  box-shadow:0 12px 30px rgba(0,0,0,.42),inset 0 1px 0 rgba(255,255,255,.12)!important;
+  transition:border-color .2s ease;
+}
+html.bp-mv body #pg-chat-dialog .cd-input-wrap:focus-within{ border-color:rgba(108,128,255,.55)!important }
+html.bp-mv body #pg-chat-dialog .cd-attach{
+  flex:none; width:40px!important; height:40px!important; margin:0!important; border-radius:50%!important;
+  background:rgba(255,255,255,.07)!important; border:0!important; color:rgba(255,255,255,.75)!important;
+  display:flex!important; align-items:center; justify-content:center; -webkit-tap-highlight-color:transparent;
+  transition:transform .18s cubic-bezier(.22,1,.36,1),background-color .2s ease;
+}
+html.bp-mv body #pg-chat-dialog .cd-attach:active{ transform:scale(.9) }
+html.bp-mv body #pg-chat-dialog .cd-attach svg{ width:20px; height:20px; stroke:currentColor!important }
+html.bp-mv body #pg-chat-dialog #cdTextInput{
+  align-self:center; min-height:40px; box-sizing:border-box; padding:9px 4px!important; margin:0!important;
+  font-size:16px!important; line-height:22px!important; color:#fff!important; caret-color:#92a1ff;
+}
+html.bp-mv body #pg-chat-dialog #cdTextInput::placeholder{ color:rgba(255,255,255,.38)!important }
+html.bp-mv body #pg-chat-dialog .cd-send{
+  flex:none; width:40px!important; height:40px!important; margin:0!important; border-radius:50%!important; border:0!important;
+  align-items:center; justify-content:center;
+  background:linear-gradient(180deg,#92a1ff 0%,#3d55ed 52%,#6176ff 100%)!important;
+  box-shadow:0 4px 12px rgba(40,60,200,.4),inset 0 1px 0 rgba(255,255,255,.25)!important;
+  animation:mvchSendIn .28s cubic-bezier(.22,1,.36,1) backwards;
+  -webkit-tap-highlight-color:transparent;
+}
+html.bp-mv body #pg-chat-dialog .cd-send:active{ transform:scale(.9) }
+html.bp-mv body #pg-chat-dialog .cd-send svg{ width:18px; height:18px; margin-left:-1px }
+@keyframes mvchSendIn{ from{ opacity:0; transform:scale(.55) } }
+html.bp-mv body #pg-chat-dialog .cd-edit-bar{
+  margin:0 10px 6px!important; border-radius:18px!important; border:1px solid rgba(255,255,255,.07)!important;
+  background:#1d1e20!important; background-image:none!important;
+}
+/* меню вложений — лист MV */
+html.bp-mv body #cdAttachMenu{
+  background:#1d1e20!important; background-image:none!important;
+  border-top:1px solid rgba(255,255,255,.07)!important; border-radius:28px 28px 0 0!important;
+  padding:10px 16px calc(env(safe-area-inset-bottom,0px) + 22px)!important;
+  box-shadow:0 -14px 40px rgba(0,0,0,.5)!important;
+}
+html.bp-mv body #cdAttachMenu > div:first-child{ display:none!important }
+html.bp-mv body #cdAttachMenu > div:nth-child(2){ width:40px!important; height:4px!important; margin:0 auto 16px!important; background:rgba(255,255,255,.16)!important }
+html.bp-mv body #cdAttachMenu button{
+  gap:8px!important; padding:14px 6px 12px!important; border:0!important; border-radius:20px!important;
+  background:#27292a!important; transform:none!important;
+  transition:transform .18s cubic-bezier(.22,1,.36,1),background-color .2s ease!important;
+}
+html.bp-mv body #cdAttachMenu button:active{ transform:scale(.95)!important; background:#2e3032!important }
+html.bp-mv body #cdAttachMenu button > div{
+  width:46px!important; height:46px!important; border-radius:50%!important; border:0!important;
+  background:rgba(97,118,255,.18)!important;
+}
+html.bp-mv body #cdAttachMenu button[onclick*="triggerFileInput"]:nth-child(2) > div{ background:rgba(56,189,248,.16)!important }
+html.bp-mv body #cdAttachMenu button[onclick*="insertLink"] > div{ background:rgba(255,255,255,.09)!important }
+html.bp-mv body #cdAttachMenu button > div svg{ width:21px; height:21px; stroke:#fff!important }
+html.bp-mv body #cdAttachMenu button span{ font-size:13px!important; font-weight:600!important; color:rgba(255,255,255,.82)!important; letter-spacing:0!important }
+/* удаление чата долгим нажатием */
+html.bp-mv body #chatActionSheet{ background:rgba(8,9,12,.74)!important; -webkit-backdrop-filter:none!important; backdrop-filter:none!important }
+html.bp-mv body #chatActionSheet > div > div:first-child{
+  background:#1d1e20!important; border:1px solid rgba(255,255,255,.06)!important; border-radius:24px!important; margin-bottom:10px!important;
+}
+html.bp-mv body #chatActionSheet > div > div:first-child > div:first-child{ padding:16px 18px 14px!important; border-bottom:1px solid rgba(255,255,255,.06)!important }
+html.bp-mv body #chatActionSheet > div > div:first-child > div:first-child > div{ font-size:13px!important; color:rgba(255,255,255,.5)!important }
+html.bp-mv body #chatActionSheet button[onclick^="_chatConfirmDelete"]{ padding:17px!important; font-size:16px!important; font-weight:600!important; color:#ff5a6e!important }
+html.bp-mv body #chatActionSheet button[onclick^="_chatHideDelete"]{
+  padding:17px!important; border:0!important; border-radius:20px!important; background:#27292a!important;
+  font-size:16px!important; font-weight:600!important; color:#fff!important;
+}
+/* меню сообщения (копировать / изменить / удалить) */
+html.bp-mv body #cdCtxMenu.cd-ctx-menu{
+  min-width:190px; padding:6px!important; border-radius:18px!important; border:1px solid rgba(255,255,255,.08)!important;
+  background:#27292a!important; background-image:none!important; box-shadow:0 18px 44px rgba(0,0,0,.55)!important;
+  -webkit-backdrop-filter:none!important; backdrop-filter:none!important;
+}
+html.bp-mv body #cdCtxMenu .cd-ctx-item{
+  display:flex; align-items:center; gap:12px; padding:12px 14px!important; border-radius:12px!important;
+  font-size:15px!important; font-weight:500!important; color:#fff!important;
+}
+html.bp-mv body #cdCtxMenu .cd-ctx-item:active{ background:rgba(255,255,255,.07)!important }
+html.bp-mv body #cdCtxMenu .cd-ctx-item svg{ fill:none!important; stroke:currentColor!important; stroke-width:2!important; stroke-linecap:round; opacity:.8 }
+html.bp-mv body #cdCtxMenu .cd-ctx-item.danger{ color:#ff5a6e!important }
+@media (prefers-reduced-motion:reduce){
+  html.bp-mv body #pg-chat-dialog .cd-send{ animation:none }
+}
+</style>
+<script id="bp-mv-chat">
+(function(){
+'use strict';
+/* Чаты «как главная заданий» — пара к style#bp-mv-chat-css. Только вид и
+   свои узлы после отрисовки: список рисует renderChatsList, ленту —
+   renderChatMessages; мы смотрим за #chatsList и #cdMessages (только
+   childList самих контейнеров, чтобы свои правки внутри строк не
+   будили наблюдатель) и доделываем: шапку «Чаты · N», фильтры, цвет
+   аватара, «Вы:», «в сети», пустые карточки, даты в ленте, быстрые
+   фразы. Только под html.bp-mv.                                        */
+if(window.__bpMvChat) return;
+window.__bpMvChat = 1;
+
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'bp-mv-chat'); }catch(_){} }
+function $(id){ return document.getElementById(id); }
+function mv(){ return document.documentElement.classList.contains('bp-mv'); }
+function isAdv(){ try{ return !!(typeof _isAdvertiser !== 'undefined' && _isAdvertiser); }catch(e){ return false; } }
+function contacts(){ try{ return (typeof CHAT_CONTACTS !== 'undefined' && Array.isArray(CHAT_CONTACTS)) ? CHAT_CONTACTS : []; }catch(e){ return []; } }
+function byId(id){ var cs = contacts(); for(var i = 0; i < cs.length; i++) if(cs[i] && String(cs[i].id) === String(id)) return cs[i]; return null; }
+function filterNow(){ try{ return (typeof _chatFilterCurrent !== 'undefined' && _chatFilterCurrent) || 'all'; }catch(e){ return 'all'; } }
+function queryNow(){ try{ return (typeof _chatSearchQ !== 'undefined' && _chatSearchQ) || ''; }catch(e){ return ''; } }
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+function ico(n){ return (window.bpMvIco && window.bpMvIco[n]) || ''; }
+
+/* цвет аватара: своя палитра MV по имени (без зелёного — его ловит deGreen) */
+var PAL = [['#7c95ff','#3d55ed'], ['#b18cff','#6d4ae8'], ['#ffa26b','#ef5f2a'], ['#ff7eb6','#d6458f'],
+           ['#5cc8ff','#1f7fe0'], ['#ffc75a','#e8840c'], ['#ff8a8a','#e0435a'], ['#8fa2c9','#4f5f86']];
+function grad(name){
+  var s = String(name || '?'), h = 0;
+  for(var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  var p = PAL[h % PAL.length];
+  return 'linear-gradient(145deg,' + p[0] + ' 0%,' + p[1] + ' 100%)';
+}
+function paintAva(el, name){
+  if(!el) return;
+  var g = grad(name);
+  if(el.style.getPropertyValue('background-image') !== g || el.style.getPropertyPriority('background-image') !== 'important'){
+    el.style.setProperty('background-image', g, 'important');
+    el.style.setProperty('background-color', 'transparent', 'important');
+  }
+}
+function lastMsg(c){
+  var ms = (c && Array.isArray(c.messages)) ? c.messages : [];
+  for(var i = ms.length - 1; i >= 0; i--){ var m = ms[i]; if(m && m.dir !== 'system' && !m.sys && m.type !== 'system') return m; }
+  return null;
+}
+
+/* ═══ 1 · список ═══ */
+var CHAT_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+  + '<path d="M4.2 6.8a2.8 2.8 0 0 1 2.8-2.8h10a2.8 2.8 0 0 1 2.8 2.8v6.6a2.8 2.8 0 0 1-2.8 2.8h-5.4l-4.4 3.5v-3.5H7a2.8 2.8 0 0 1-2.8-2.8z" fill="currentColor" fill-opacity=".14"/>'
+  + '<path d="M4.2 6.8a2.8 2.8 0 0 1 2.8-2.8h10a2.8 2.8 0 0 1 2.8 2.8v6.6a2.8 2.8 0 0 1-2.8 2.8h-5.4l-4.4 3.5v-3.5H7a2.8 2.8 0 0 1-2.8-2.8z"/>'
+  + '<path d="M8.6 9.4h6.8M8.6 12.4h4.2"/></svg>';
+function mountHead(pg){
+  var hd = pg.querySelector(':scope > .mvch-hd');
+  if(!hd){
+    hd = document.createElement('div');
+    hd.className = 'mvch-hd';
+    hd.innerHTML = '<h1>Чаты</h1><span class="mvch-cnt">0</span>';
+    pg.insertBefore(hd, pg.firstChild);
+  }
+  var wrap = $('chatsSectionWrap'), sr = $('chatsSearchRow');
+  if(wrap && sr && !wrap.querySelector(':scope > .mvch-f')){
+    var f = document.createElement('div');
+    f.className = 'mvch-f'; f.setAttribute('role', 'tablist'); f.setAttribute('aria-label', 'Фильтр чатов');
+    /* .chat-tab + switchChatTab — штатный путь: updateChatsBadge раз в 2 с
+       перерисовывает список с фильтром из .chat-tab.on (без него фильтр
+       «Непрочитанные» сбрасывался на «Все») */
+    [['all', 'Все'], ['unread', 'Непрочитанные']].forEach(function(x, i){
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'chat-tab' + (i ? '' : ' on');
+      b.setAttribute('role', 'tab'); b.setAttribute('data-mvch-f', x[0]);
+      b.setAttribute('onclick', "switchChatTab(this,'" + x[0] + "')");
+      b.textContent = x[1];
+      if(i) b.appendChild(document.createElement('em'));
+      f.appendChild(b);
+    });
+    wrap.insertBefore(f, sr.nextSibling);
+  }
+  var inp = sr && sr.querySelector('input');
+  if(inp && inp.getAttribute('placeholder') !== 'Найти чат или сообщение'){
+    inp.setAttribute('placeholder', 'Найти чат или сообщение');
+    inp.setAttribute('aria-label', 'Поиск по чатам');
+    inp.setAttribute('enterkeyhint', 'search');
+  }
+  return hd;
+}
+function emptyCard(title, text){
+  return '<div class="mvch-empty"><div class="mvch-ico">' + CHAT_SVG + '</div><b>' + esc(title) + '</b><span>' + esc(text) + '</span></div>';
+}
+function paintList(){
+  if(!mv()) return;
+  try{
+    var pg = $('pg-chats'), list = $('chatsList'); if(!pg || !list) return;
+    var hd = mountHead(pg);
+    var cs = contacts();
+    var total = cs.length, un = 0;
+    for(var i = 0; i < cs.length; i++) if((Number(cs[i] && cs[i].unread) || 0) > 0) un++;
+    var cnt = hd.querySelector('.mvch-cnt');
+    if(cnt && cnt.textContent !== String(total)) cnt.textContent = String(total);
+    var none = total === 0;
+    if(pg.classList.contains('mvch-none') !== none) pg.classList.toggle('mvch-none', none);
+    /* фильтры */
+    var f = filterNow();
+    [].forEach.call(pg.querySelectorAll('.mvch-f [data-mvch-f]'), function(b){
+      var on = b.getAttribute('data-mvch-f') === (f === 'unread' ? 'unread' : 'all');
+      if(b.classList.contains('on') !== on) b.classList.toggle('on', on);
+      var sel = on ? 'true' : 'false';
+      if(b.getAttribute('aria-selected') !== sel) b.setAttribute('aria-selected', sel);
+      var em = b.querySelector('em');
+      if(em){ var t = un > 0 ? String(un > 99 ? '99+' : un) : ''; if(em.textContent !== t) em.textContent = t; }
+    });
+    /* строки */
+    var rows = list.querySelectorAll('.chat-item');
+    [].forEach.call(rows, function(row){
+      var m = /openChatDialog\(([^)]+)\)/.exec(row.getAttribute('onclick') || '');
+      var c = m ? byId(String(m[1]).replace(/['"\s]/g, '')) : null;
+      if(!c) return;
+      var ava = row.querySelector('.chat-ava'), inner = ava && ava.firstElementChild;
+      if(inner && inner.tagName !== 'IMG') paintAva(inner, c.name);
+      if(ava && ava.classList.contains('mvch-online') !== !!c.online) ava.classList.toggle('mvch-online', !!c.online);
+      var unr = (Number(c.unread) || 0) > 0;
+      if(row.classList.contains('mvch-un') !== unr) row.classList.toggle('mvch-un', unr);
+      var pv = row.querySelector('.chat-preview');
+      if(pv){
+        var lm = lastMsg(c), txt = String(pv.textContent || '').trim();
+        if(!txt && !lm){
+          if(!pv.classList.contains('mvch-nomsg')){ pv.classList.add('mvch-nomsg'); pv.textContent = 'Напишите первое сообщение'; }
+        } else if(lm && lm.dir === 'out' && !pv.querySelector('.mvch-you') && !/^Вы:/.test(txt)){
+          var y = document.createElement('span'); y.className = 'mvch-you'; y.textContent = 'Вы: ';
+          pv.insertBefore(y, pv.firstChild);
+        }
+      }
+      var nm = row.querySelector('.chat-name');
+      if(nm && !row.getAttribute('aria-label')) row.setAttribute('aria-label', 'Чат: ' + String(nm.textContent || '').trim() + (unr ? ', непрочитанных: ' + c.unread : ''));
+    });
+    /* пусто: весь список / ничего не нашлось / всё прочитано */
+    var empty = list.querySelector('.chats-empty');
+    if(empty){
+      if(!empty.querySelector('.mvch-ico')){
+        var ic = document.createElement('div'); ic.className = 'mvch-ico'; ic.innerHTML = CHAT_SVG;
+        empty.insertBefore(ic, empty.firstChild);
+      }
+      [].forEach.call(empty.children, function(k){
+        if(/^Чатов пока нет$/.test(String(k.textContent || '').trim())) k.textContent = 'Пока нет чатов';
+      });
+    } else if(!rows.length && !list.querySelector('.bp-skel-wrap') && !list.querySelector('.mvch-empty')){
+      var q = queryNow();
+      if(q) list.innerHTML = emptyCard('Ничего не нашлось', 'По запросу «' + q + '» чатов и сообщений нет. Попробуйте короче.');
+      else if(f === 'unread' && total) list.innerHTML = emptyCard('Всё прочитано', 'Новых сообщений нет — здесь появятся непрочитанные чаты.');
+    }
+  }catch(e){ E(e); }
+}
+var listMo = null, listObs = null;
+function watchList(){
+  var list = $('chatsList');
+  if(!list || listObs === list || typeof MutationObserver === 'undefined') return;
+  listObs = list;
+  if(listMo) listMo.disconnect();
+  listMo = new MutationObserver(function(){ paintList(); });
+  listMo.observe(list, { childList:true });
+  paintList();
+}
+
+/* ═══ 2 · диалог ═══ */
+var RU_M = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+function dayKey(ms){ var d = new Date(ms); return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate(); }
+function dayLabel(ms){
+  var d = new Date(ms), now = new Date();
+  var t0 = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  var x0 = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  var diff = Math.round((t0 - x0) / 86400000);
+  if(diff === 0) return 'Сегодня';
+  if(diff === 1) return 'Вчера';
+  return d.getDate() + ' ' + RU_M[d.getMonth()] + (d.getFullYear() !== now.getFullYear() ? ' ' + d.getFullYear() : '');
+}
+function msgAt(m){ var v = m && (Number(m.dmAt) || Number(m.ts) || Number(m.at) || 0); return v > 1e12 ? v : 0; }
+function quick(){
+  return isAdv()
+    ? ['Здравствуйте! 👋', 'Спасибо за видео!', 'Есть правки по ролику']
+    : ['Здравствуйте! 👋', 'Есть вопрос по заданию', 'Видео уже загрузил'];
+}
+var dlgMo = null, dlgObs = null, busy = false;
+function paintDialog(){
+  if(!mv() || busy) return;
+  var box = $('cdMessages'); if(!box) return;
+  busy = true;
+  try{
+    var c = null; try{ c = (typeof currentChatId !== 'undefined') ? byId(currentChatId) : null; }catch(e){ c = null; }
+    /* шапка: цвет аватара и статус */
+    var av = $('cdAva'), inner = av && av.querySelector('.cd-ava-inner');
+    if(inner && c) paintAva(inner, c.name);
+    var st = $('cdStatus');
+    if(st && c){
+      var on = !!c.online, cls = on ? 'mvch-st-on' : 'mvch-st-off';
+      if(!st.classList.contains(cls)){ st.classList.remove('mvch-st-on', 'mvch-st-off'); st.classList.add(cls); }
+      /* «был(а) недавно» стояло у всех подряд — присутствия мы не знаем;
+         вместо выдумки — кто собеседник */
+      var want = on ? 'в сети' : (isAdv() ? 'Блогер' : 'Рекламодатель');
+      if(String(st.textContent || '').trim() !== want) st.textContent = want;
+    }
+    var ta = $('cdTextInput');
+    if(ta && ta.getAttribute('placeholder') !== 'Сообщение') ta.setAttribute('placeholder', 'Сообщение');
+    /* пустой чат: подсказка и быстрые фразы */
+    var em = box.querySelector('.cd-empty');
+    if(em){
+      var kids = em.children;
+      if(kids[1] && String(kids[1].textContent || '').trim() === 'Чат создан') kids[1].textContent = 'Начните переписку';
+      if(kids[2] && /Напишите первое сообщение/.test(kids[2].textContent || '')) kids[2].textContent = isAdv()
+        ? 'Напишите блогеру — договоритесь о деталях ролика и сроках'
+        : 'Напишите рекламодателю — уточните детали задания до съёмки';
+      if(!em.querySelector('.mvch-qr')){
+        var q = document.createElement('div'); q.className = 'mvch-qr';
+        q.innerHTML = quick().map(function(t){ return '<button type="button" data-mvch-qr="' + esc(t) + '">' + esc(t) + '</button>'; }).join('');
+        q.addEventListener('click', function(e){
+          var b = e.target && e.target.closest ? e.target.closest('[data-mvch-qr]') : null; if(!b) return;
+          var t = $('cdTextInput'); if(!t) return;
+          t.value = b.getAttribute('data-mvch-qr');
+          try{ t.dispatchEvent(new Event('input', { bubbles:true })); }catch(err){}
+          try{ t.focus(); t.setSelectionRange(t.value.length, t.value.length); }catch(err){}
+        });
+        em.appendChild(q);
+      }
+    }
+    /* даты по настоящему времени: «Сегодня» стояло над любой перепиской */
+    var ms = (c && Array.isArray(c.messages)) ? c.messages : [];
+    var rows = box.querySelectorAll('.cd-msg[data-idx]');
+    if(rows.length && ms.some(msgAt)){
+      var first = box.querySelector('.cd-date-sep'), last = '';
+      [].forEach.call(box.querySelectorAll('.mvch-ds'), function(x){ x.parentNode.removeChild(x); });
+      [].forEach.call(rows, function(r, n){
+        var m = ms[+r.getAttribute('data-idx')], at = msgAt(m);
+        if(!at) return;
+        var k = dayKey(at);
+        if(k === last) return;
+        if(!last){
+          if(first){ var l0 = dayLabel(at); if(first.textContent !== l0) first.textContent = l0; }
+        } else {
+          var s = document.createElement('div');
+          s.className = 'cd-date-sep mvch-ds'; s.textContent = dayLabel(at);
+          r.parentNode.insertBefore(s, r);
+        }
+        last = k;
+      });
+    }
+  }catch(e){ E(e); }
+  if(dlgMo) dlgMo.takeRecords();
+  busy = false;
+}
+function watchDialog(){
+  var box = $('cdMessages');
+  if(!box || dlgObs === box || typeof MutationObserver === 'undefined') return;
+  dlgObs = box;
+  if(dlgMo) dlgMo.disconnect();
+  dlgMo = new MutationObserver(function(){ paintDialog(); });
+  dlgMo.observe(box, { childList:true });
+  var av = $('cdAva');
+  if(av) new MutationObserver(function(){ paintDialog(); }).observe(av, { childList:true });
+  var d = $('pg-chat-dialog');
+  if(d) new MutationObserver(function(){ if(d.classList.contains('on')) paintDialog(); }).observe(d, { attributes:true, attributeFilter:['class'] });
+}
+
+function boot(){
+  watchList(); watchDialog();
+  var pg = $('pg-chats');
+  if(pg && typeof MutationObserver !== 'undefined')
+    new MutationObserver(function(){ if(pg.classList.contains('on')){ watchList(); paintList(); } }).observe(pg, { attributes:true, attributeFilter:['class'] });
+  [500, 1500, 3500].forEach(function(ms){ setTimeout(function(){ watchList(); watchDialog(); paintList(); }, ms); });
+  if(typeof MutationObserver !== 'undefined'){
+    var was = mv();
+    new MutationObserver(function(){ var on = mv(); if(on !== was){ was = on; paintList(); paintDialog(); } })
+      .observe(document.documentElement, { attributes:true, attributeFilter:['class'] });
+  }
+}
+window.bpMvChatPaint = function(){ watchList(); watchDialog(); paintList(); paintDialog(); };
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+})();
+</script>
 </body>
 </html>
