@@ -107740,5 +107740,705 @@ if(document.readyState === 'loading') document.addEventListener('DOMContentLoade
 else setTimeout(boot, 300);
 })();
 </script>
+<style id="bp-mv-auth-css">
+/* ══ ВХОД И РЕГИСТРАЦИЯ «КАК MORE VIEWS», ТОЛЬКО ЯРЧЕ (15.10.2026) ════════
+   Владелец: «сделай страницу регистрации очень красивой — прям пушка бомба».
+   Образец — app.moreviews.ru/login и /account-select: логотип слева сверху,
+   живая надпись из частиц, крупный заголовок, поля #1d1e20 без рамок,
+   белая кнопка-таблетка, регистрация шагами: сначала «Выберите тип
+   аккаунта» карточками, потом данные.
+   Только под html.bp-mv: в полном доступе — прежний экран (bp-auth3).
+   Разметку #pg-auth не переписываем: поля, id и обработчики (doLogin,
+   doRegister, switchTab, pickRegRole, toggleRemember, toggleTerms, согласие
+   bp-compliance) — прежние. Слой добавляет фон .mva-aur, надпись из частиц
+   .mva-hero (canvas), заголовок .mva-h, карточки ролей .mva-roles, силу
+   пароля .mva-pw и всплывающие подписи полей .mva-fl.
+   Ловушки экрана (заметка bp-auth-screen): новый прямой ребёнок #pg-auth —
+   position:relative; z-index:10; внутрь .auth-tabs ничего не вставлять
+   (здесь вкладки скрыты целиком); switchTab — только обёртка.
+   Откат: удалить style#bp-mv-auth-css и script#bp-mv-auth. */
+html.bp-mv #pg-auth{
+  --mva-bg:#101319; --mva-s1:#1b1c1f;   /* фон = фон приложения (body), иначе снизу видна полоска отступа */ --mva-s2:#26272b; --mva-ln:rgba(255,255,255,.07);
+  --mva-t2:rgba(255,255,255,.74); --mva-t3:rgba(255,255,255,.5);
+  --mva-acc:#5b8cff; --mva-acc2:#93b4ff; --mva-vio:#8b6bff;
+  --mva-grad:linear-gradient(135deg,#6a98ff 0%,#3d6df6 52%,#7b5cff 100%);
+  --mva-ease:cubic-bezier(.2,.8,.2,1);
+  background:var(--mva-bg)!important;
+  padding:max(14px, env(safe-area-inset-top, 0px)) 20px calc(22px + env(safe-area-inset-bottom, 0px))!important;
+  justify-content:flex-start!important; isolation:isolate;
+}
+/* прежние иллюстрация, три пятна, вкладки и подзаголовок — их роль берут свои блоки */
+html.bp-mv #pg-auth > .auth-bg-fx,
+html.bp-mv #pg-auth > .bpa-art,
+html.bp-mv #pg-auth > .auth-tabs,
+html.bp-mv #pg-auth .auth-sub{ display:none!important }
+html.bp-mv #pg-auth > *:not(.mva-aur){ position:relative; z-index:10; width:100%; max-width:440px }
+html.bp-mv #pg-auth > .auth-logo-wrap{ order:0 }
+html.bp-mv #pg-auth > .mva-hero{ order:1 }
+html.bp-mv #pg-auth > .mva-h{ order:2 }
+html.bp-mv #pg-auth > #formLogin,
+html.bp-mv #pg-auth > #formRegister{ order:3 }
+html.bp-mv #pg-auth > .auth-foot{ order:4; margin-top:auto!important; padding-top:22px }
+
+/* ── фон: три медленных сияния (только transform — на композиторе) ── */
+html.bp-mv #pg-auth > .mva-aur{ position:absolute; inset:0; z-index:0; overflow:hidden; pointer-events:none }
+html.bp-mv #pg-auth > .mva-aur i{ position:absolute; display:block; border-radius:50%; will-change:transform }
+html.bp-mv #pg-auth > .mva-aur i:nth-child(1){
+  left:50%; top:-230px; width:620px; height:620px; margin-left:-310px;
+  background:radial-gradient(closest-side, rgba(64,104,255,.34), rgba(64,104,255,.12) 55%, rgba(64,104,255,0) 100%);
+  animation:mvaDriftA 19s ease-in-out infinite alternate;
+}
+html.bp-mv #pg-auth > .mva-aur i:nth-child(2){
+  right:-200px; top:120px; width:440px; height:440px;
+  background:radial-gradient(closest-side, rgba(128,92,255,.22), rgba(128,92,255,0) 100%);
+  animation:mvaDriftB 23s ease-in-out infinite alternate;
+}
+html.bp-mv #pg-auth > .mva-aur i:nth-child(3){
+  left:-220px; bottom:-160px; width:520px; height:520px;
+  background:radial-gradient(closest-side, rgba(16,160,255,.14), rgba(16,160,255,0) 100%);
+  animation:mvaDriftC 29s ease-in-out infinite alternate;
+}
+@keyframes mvaDriftA{ from{ transform:translate3d(-24px,0,0) scale(1) } to{ transform:translate3d(28px,18px,0) scale(1.12) } }
+@keyframes mvaDriftB{ from{ transform:translate3d(0,0,0) scale(1) } to{ transform:translate3d(-60px,40px,0) scale(1.18) } }
+@keyframes mvaDriftC{ from{ transform:translate3d(0,0,0) scale(1.05) } to{ transform:translate3d(50px,-40px,0) scale(.95) } }
+
+/* ── логотип слева сверху, как у них ── */
+html.bp-mv #pg-auth .auth-logo-wrap{ flex-direction:row!important; align-items:center!important; justify-content:flex-start!important; gap:10px; margin:2px 0 0!important }
+html.bp-mv #pg-auth .auth-logo{ width:36px!important; height:36px!important; min-width:36px; border-radius:11px!important; margin:0!important; box-shadow:0 6px 18px rgba(0,0,0,.4)!important }
+html.bp-mv #pg-auth .auth-title{ margin:0!important; font:800 21px/1 'Manrope', system-ui, sans-serif!important; letter-spacing:-.01em!important; color:#fff!important; -webkit-text-fill-color:#fff!important; background:none!important; text-shadow:none!important }
+
+/* ── надпись из частиц ── */
+html.bp-mv #pg-auth > .mva-hero{ height:clamp(116px, 20vh, 168px); margin:12px 0 0; pointer-events:none }
+html.bp-mv #pg-auth > .mva-hero::before{
+  content:''; position:absolute; left:50%; top:50%; width:240px; height:120px; margin:-60px 0 0 -120px; border-radius:50%;
+  background:radial-gradient(closest-side, rgba(91,140,255,.22), rgba(91,140,255,0)); pointer-events:none;
+}
+html.bp-mv #pg-auth > .mva-hero canvas{ position:relative; display:block; width:100%; height:100%;
+  pointer-events:auto; touch-action:pan-y; -webkit-tap-highlight-color:transparent }   /* частицы разлетаются от пальца */
+html.bp-mv #pg-auth.mva-s2 > .mva-hero{ display:none }
+
+/* ── заголовок ── */
+html.bp-mv #pg-auth > .mva-h{ text-align:center; margin:8px 0 22px }
+html.bp-mv #pg-auth .mva-h h1{ margin:0; font:800 29px/1.12 'Manrope', system-ui, sans-serif; letter-spacing:-.025em; color:#fff }
+html.bp-mv #pg-auth .mva-h p{ margin:8px auto 0; max-width:320px; font:500 14.5px/1.45 'Manrope', system-ui, sans-serif; color:var(--mva-t3) }
+html.bp-mv #pg-auth .mva-h p b{ color:#fff; font-weight:700 }
+/* пока открыт экран входа, нижний отступ body (20 px, вне сияния фона) — полоской не нужен */
+html.bp-mv body.mva-authpg{ padding-bottom:0!important }
+html.bp-mv #pg-auth .mva-h em{
+  white-space:nowrap; font-style:normal; font-weight:700; background:var(--mva-grad); -webkit-background-clip:text; background-clip:text;
+  color:transparent; -webkit-text-fill-color:transparent;
+}
+html.bp-mv #pg-auth .mva-chg{ background:none; border:0; padding:4px 2px; margin:-4px 0; font:700 14.5px 'Manrope', system-ui, sans-serif; color:var(--mva-acc2); cursor:pointer }
+html.bp-mv #pg-auth .mva-steps{ display:none; align-items:center; justify-content:space-between; margin:0 0 16px }
+html.bp-mv #pg-auth.mva-s2 .mva-steps{ display:flex }
+html.bp-mv #pg-auth .mva-back{
+  flex:none; width:42px; height:42px; border-radius:14px; border:1px solid var(--mva-ln); background:var(--mva-s1);
+  color:#fff; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; padding:0;
+}
+html.bp-mv #pg-auth .mva-back svg{ width:20px; height:20px }
+html.bp-mv #pg-auth .mva-dots{ display:flex; align-items:center; gap:8px; font:600 13px 'Manrope', system-ui, sans-serif; color:var(--mva-t3) }
+html.bp-mv #pg-auth .mva-dots span{ display:inline-flex; align-items:center; gap:7px; white-space:nowrap }
+html.bp-mv #pg-auth .mva-dots span::before{ content:''; width:8px; height:8px; border-radius:50%; background:rgba(255,255,255,.2) }
+html.bp-mv #pg-auth .mva-dots span.done::before{ background:var(--mva-acc2) }
+html.bp-mv #pg-auth .mva-dots span.on{ color:#fff }
+html.bp-mv #pg-auth .mva-dots span.on::before{ background:#fff; box-shadow:0 0 0 4px rgba(255,255,255,.12) }
+html.bp-mv #pg-auth .mva-dots i{ width:22px; height:1px; background:rgba(255,255,255,.18) }
+html.bp-mv #pg-auth .mva-sp{ width:42px; flex:none }
+
+/* ── поля: без рамок, подпись всплывает ── */
+html.bp-mv #pg-auth .auth-form{ width:100% }
+html.bp-mv #pg-auth .auth-field{ margin:0 0 12px!important }
+html.bp-mv #pg-auth .auth-field-lbl{ position:absolute!important; width:1px!important; height:1px!important; overflow:hidden!important; clip:rect(0 0 0 0)!important; white-space:nowrap!important; margin:0!important; padding:0!important }
+html.bp-mv #pg-auth .auth-inp-wrap{
+  position:relative!important; display:flex!important; align-items:center!important; height:60px!important;
+  padding:0 8px 0 16px!important; border-radius:18px!important; background:var(--mva-s1)!important;
+  border:1px solid var(--mva-ln)!important; box-shadow:none!important;
+  transition:border-color .2s ease, box-shadow .25s ease, background-color .2s ease!important;
+}
+html.bp-mv #pg-auth .auth-inp-wrap:focus-within{
+  border-color:rgba(122,160,255,.62)!important; background:#1e1f23!important;
+  box-shadow:0 0 0 4px rgba(91,140,255,.15), 0 12px 32px rgba(40,70,200,.2)!important;
+}
+html.bp-mv #pg-auth .auth-inp-ico{ flex:none; width:22px; height:22px; display:flex!important; align-items:center; justify-content:center; color:var(--mva-t3)!important; transition:color .2s }
+html.bp-mv #pg-auth .auth-inp-ico svg{ width:20px; height:20px }
+html.bp-mv #pg-auth .auth-inp-wrap:focus-within .auth-inp-ico{ color:var(--mva-acc2)!important }
+html.bp-mv #pg-auth .auth-inp{
+  align-self:stretch; min-width:0; height:auto!important; margin:0!important;
+  padding:22px 8px 6px 12px!important; border:0!important; background:transparent!important; box-shadow:none!important;
+  font:600 16px/1.2 'Manrope', system-ui, sans-serif!important; color:#fff!important; caret-color:var(--mva-acc2);
+}
+html.bp-mv #pg-auth .auth-inp::placeholder{ color:transparent!important }
+html.bp-mv #pg-auth .auth-inp:-webkit-autofill{ -webkit-box-shadow:0 0 0 1000px var(--mva-s1) inset!important; -webkit-text-fill-color:#fff!important }
+html.bp-mv #pg-auth .mva-fl{
+  position:absolute; left:50px; top:50%; transform:translateY(-50%); transform-origin:0 50%;
+  font:500 15.5px/1 'Manrope', system-ui, sans-serif; color:var(--mva-t3); white-space:nowrap; pointer-events:none;
+  transition:transform .22s var(--mva-ease), color .2s ease;
+}
+html.bp-mv #pg-auth .auth-inp:focus ~ .mva-fl,
+html.bp-mv #pg-auth .auth-inp:not(:placeholder-shown) ~ .mva-fl{ transform:translateY(-122%) scale(.76) }
+html.bp-mv #pg-auth .auth-inp:-webkit-autofill ~ .mva-fl{ transform:translateY(-122%) scale(.76) }
+html.bp-mv #pg-auth .auth-inp:focus ~ .mva-fl{ color:var(--mva-acc2) }
+html.bp-mv #pg-auth .auth-inp-eye{
+  flex:none; width:44px; height:44px; margin:0!important; border-radius:14px; display:flex!important; align-items:center; justify-content:center;
+  color:var(--mva-t3)!important; cursor:pointer; transition:background-color .15s, color .15s;
+}
+html.bp-mv #pg-auth .auth-inp-eye:active{ background:rgba(255,255,255,.07) }
+html.bp-mv #pg-auth .auth-inp-eye svg{ width:20px; height:20px }
+/* повтор пароля: совпало — галочка, не совпало — красная обводка */
+html.bp-mv #pg-auth .auth-inp-wrap.mva-ok::after{
+  content:''; flex:none; width:22px; height:22px; margin:0 8px 0 4px; border-radius:50%; background:var(--mva-grad);
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 1a11 11 0 1 0 0 22 11 11 0 0 0 0-22zm-1.6 15.4-4.3-4.3 1.6-1.6 2.7 2.7 6.1-6.1 1.6 1.6z'/%3E%3C/svg%3E") center/contain no-repeat;
+          mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 1a11 11 0 1 0 0 22 11 11 0 0 0 0-22zm-1.6 15.4-4.3-4.3 1.6-1.6 2.7 2.7 6.1-6.1 1.6 1.6z'/%3E%3C/svg%3E") center/contain no-repeat;
+  animation:mvaPop .32s var(--mva-ease) backwards;
+}
+html.bp-mv #pg-auth .auth-inp-wrap.mva-bad{ border-color:rgba(255,107,129,.6)!important; box-shadow:0 0 0 4px rgba(255,107,129,.12)!important }
+@keyframes mvaPop{ from{ transform:scale(.4); opacity:0 } to{ transform:none; opacity:1 } }
+
+/* ── сила пароля ── */
+html.bp-mv #pg-auth .mva-pw{ display:none; margin:-4px 4px 14px }
+html.bp-mv #pg-auth.mva-s2 .mva-pw.on{ display:block }
+html.bp-mv #pg-auth .mva-pw-bars{ display:grid; grid-template-columns:repeat(4, 1fr); gap:6px }
+html.bp-mv #pg-auth .mva-pw-bars i{ height:4px; border-radius:4px; background:rgba(255,255,255,.1); transition:background-color .25s ease }
+html.bp-mv #pg-auth .mva-pw[data-s="1"] .mva-pw-bars i:nth-child(-n+1){ background:#ff6b81 }
+html.bp-mv #pg-auth .mva-pw[data-s="2"] .mva-pw-bars i:nth-child(-n+2){ background:#ffa45e }
+html.bp-mv #pg-auth .mva-pw[data-s="3"] .mva-pw-bars i:nth-child(-n+3){ background:#7aa6ff }
+html.bp-mv #pg-auth .mva-pw[data-s="4"] .mva-pw-bars i{ background:linear-gradient(90deg,#6a98ff,#8b6bff) }
+html.bp-mv #pg-auth .mva-pw span{ display:block; margin-top:7px; font:600 12.5px/1.3 'Manrope', system-ui, sans-serif; color:var(--mva-t3) }
+html.bp-mv #pg-auth .mva-pw[data-s="4"] span{ color:var(--mva-acc2) }
+
+/* ── «Запомнить меня» — переключатель, «Забыли пароль?» справа ── */
+html.bp-mv #pg-auth #formLogin .auth-row{ display:flex!important; align-items:center!important; justify-content:space-between!important; gap:12px; margin:6px 2px 18px!important }
+html.bp-mv #pg-auth .auth-check{ display:flex!important; align-items:center; gap:10px; cursor:pointer; margin:0!important }
+html.bp-mv #pg-auth #formLogin .auth-check-lbl{ font:600 14.5px/1.3 'Manrope', system-ui, sans-serif!important; color:#fff!important; white-space:nowrap }
+html.bp-mv #pg-auth .auth-forgot{ background:none!important; border:0!important; padding:8px 0!important; margin:0!important; font:700 14.5px 'Manrope', system-ui, sans-serif!important; color:var(--mva-acc2)!important; cursor:pointer; white-space:nowrap }
+html.bp-mv #pg-auth #rememberBox{
+  position:relative; flex:none; width:46px!important; height:28px!important; min-width:46px; border-radius:999px!important;
+  border:0!important; opacity:1!important; background:#3a3b40!important; box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)!important;
+  transition:background-color .25s ease!important;
+}
+html.bp-mv #pg-auth #rememberBox svg{ display:none!important }
+html.bp-mv #pg-auth #rememberBox::after{
+  content:''; position:absolute; top:3px; left:3px; width:22px; height:22px; border-radius:50%; background:#fff;
+  box-shadow:0 2px 6px rgba(0,0,0,.35); transition:transform .3s cubic-bezier(.3,1.35,.5,1);
+}
+html.bp-mv #pg-auth #rememberBox.bp-on{ background:var(--mva-grad)!important }
+html.bp-mv #pg-auth #rememberBox.bp-on::after{ transform:translateX(18px) }
+
+/* ── галочки соглашения и согласия ── */
+html.bp-mv #pg-auth #formRegister .auth-row{ display:flex!important; align-items:flex-start!important; margin:2px 2px 12px!important }
+html.bp-mv #pg-auth #formRegister .auth-check{ align-items:flex-start }
+html.bp-mv #pg-auth #formRegister .auth-check-box{
+  flex:none; width:24px!important; height:24px!important; min-width:24px; margin:0!important; border-radius:8px!important;
+  border:1.5px solid rgba(255,255,255,.24)!important; background:transparent!important; opacity:1!important;
+  display:flex!important; align-items:center; justify-content:center; transition:background-color .2s, border-color .2s, box-shadow .2s!important;
+}
+html.bp-mv #pg-auth #formRegister .auth-check-box.bp-on{ background:var(--mva-grad)!important; border-color:transparent!important; box-shadow:0 4px 14px rgba(61,109,246,.35)!important }
+html.bp-mv #pg-auth #formRegister .auth-check-box.bp-err{ border-color:#ff6b81!important; box-shadow:0 0 0 4px rgba(255,107,129,.16)!important }
+html.bp-mv #pg-auth #formRegister .auth-check-lbl{ font:500 13.5px/1.45 'Manrope', system-ui, sans-serif!important; color:var(--mva-t2)!important }
+html.bp-mv #pg-auth #formRegister .bp-consent-txt{ font-size:12.5px!important; color:var(--mva-t3)!important }
+html.bp-mv #pg-auth #formRegister .auth-check-lbl a{ color:var(--mva-acc2)!important }
+
+/* ── кнопка: белая таблетка; заполнено верно — загорается ── */
+html.bp-mv #pg-auth .auth-btn{
+  position:relative!important; overflow:hidden!important; display:flex!important; align-items:center; justify-content:center;
+  width:100%!important; height:58px!important; margin:8px 0 0!important; padding:0 20px!important; border:0!important; border-radius:999px!important;
+  background:#fff!important; color:#0f1012!important; -webkit-text-fill-color:#0f1012!important;
+  font:800 16.5px/1 'Manrope', system-ui, sans-serif!important; letter-spacing:-.005em!important; text-shadow:none!important;
+  box-shadow:0 10px 30px rgba(0,0,0,.4)!important; cursor:pointer;
+  transition:transform .12s cubic-bezier(.2,0,0,1), box-shadow .35s ease!important;
+}
+html.bp-mv #pg-auth .auth-btn:active{ transform:scale(.98) }
+html.bp-mv #pg-auth .auth-btn::after{
+  content:''; position:absolute; inset:0; pointer-events:none; transform:translateX(-120%);
+  background:linear-gradient(105deg, transparent 30%, rgba(91,140,255,.38) 46%, rgba(139,107,255,.38) 54%, transparent 70%);
+}
+html.bp-mv #pg-auth .auth-btn.mva-ready{ box-shadow:0 0 0 4px rgba(91,140,255,.2), 0 16px 44px rgba(61,109,246,.38)!important }
+html.bp-mv #pg-auth .auth-btn.mva-shine::after{ animation:mvaShine .95s cubic-bezier(.3,.6,.2,1) }
+@keyframes mvaShine{ to{ transform:translateX(120%) } }
+
+/* ── «или» и вход через Google / Telegram ── */
+html.bp-mv #pg-auth .auth-or{ margin:20px 2px 14px!important; gap:12px!important }
+html.bp-mv #pg-auth .auth-or-line{ background:var(--mva-ln)!important }
+html.bp-mv #pg-auth .auth-or-txt{ font:600 12.5px 'Manrope', system-ui, sans-serif!important; color:var(--mva-t3)!important }
+html.bp-mv #pg-auth .auth-socials{ gap:10px!important }
+html.bp-mv #pg-auth .auth-socials:not(.bp-one){ grid-template-columns:1fr 1fr }
+html.bp-mv #pg-auth .auth-soc-btn:not(.bp-off){
+  display:flex!important; align-items:center; justify-content:center; gap:10px; height:54px!important; margin:0!important;
+  border-radius:18px!important; background:var(--mva-s1)!important; border:1px solid var(--mva-ln)!important; box-shadow:none!important;
+  color:#fff!important; font:700 15px 'Manrope', system-ui, sans-serif!important; cursor:pointer; transition:background-color .15s, transform .12s;
+}
+html.bp-mv #pg-auth .auth-soc-btn:not(.bp-off):active{ transform:scale(.98); background:var(--mva-s2)!important }
+html.bp-mv #pg-auth .auth-soc-btn svg{ width:20px; height:20px }
+
+/* ── ссылки внизу и подпись о защите ── */
+html.bp-mv #pg-auth .auth-bottom{ margin:20px 0 0!important; text-align:center; font:500 14.5px 'Manrope', system-ui, sans-serif!important; color:var(--mva-t3)!important }
+html.bp-mv #pg-auth .auth-bottom a{ color:var(--mva-acc2)!important; font-weight:700!important; cursor:pointer; text-decoration:none!important }
+html.bp-mv #pg-auth .auth-foot{
+  display:block!important; text-align:center!important; margin-bottom:0!important;
+  font:500 12px/1.5 'Manrope', system-ui, sans-serif!important; letter-spacing:0!important; color:var(--mva-t3)!important;
+}
+html.bp-mv #pg-auth .auth-foot *{ color:inherit!important }
+html.bp-mv #pg-auth .auth-foot::before{
+  content:''; display:inline-block; width:13px; height:13px; margin:0 6px 0 0; vertical-align:-2px; background:currentColor;
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 1.5a5.5 5.5 0 0 0-5.5 5.5v3H5.8A1.8 1.8 0 0 0 4 11.8v8.4A1.8 1.8 0 0 0 5.8 22h12.4a1.8 1.8 0 0 0 1.8-1.8v-8.4a1.8 1.8 0 0 0-1.8-1.8h-.7V7A5.5 5.5 0 0 0 12 1.5zm-3.3 5.5a3.3 3.3 0 0 1 6.6 0v3H8.7z'/%3E%3C/svg%3E") center/contain no-repeat;
+          mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 1.5a5.5 5.5 0 0 0-5.5 5.5v3H5.8A1.8 1.8 0 0 0 4 11.8v8.4A1.8 1.8 0 0 0 5.8 22h12.4a1.8 1.8 0 0 0 1.8-1.8v-8.4a1.8 1.8 0 0 0-1.8-1.8h-.7V7A5.5 5.5 0 0 0 12 1.5zm-3.3 5.5a3.3 3.3 0 0 1 6.6 0v3H8.7z'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+
+/* ── регистрация, шаг 1: «Выберите тип аккаунта» ── */
+html.bp-mv #pg-auth.mva-s1 #formRegister > *:not(.mva-roles):not(.auth-bottom){ display:none!important }
+html.bp-mv #pg-auth:not(.mva-s1) #formRegister > .mva-roles{ display:none!important }
+html.bp-mv #pg-auth #formRegister > .mva-rolefield{ display:none!important }
+html.bp-mv #pg-auth .mva-roles{ display:grid; gap:12px }
+html.bp-mv #pg-auth .mva-role{
+  position:relative; overflow:hidden; display:block; width:100%; margin:0; padding:18px; text-align:left; cursor:pointer;
+  border-radius:24px; border:1px solid var(--mva-ln); background:var(--mva-s1); color:#fff; font-family:'Manrope', system-ui, sans-serif;
+  transition:transform .14s cubic-bezier(.2,0,0,1), border-color .2s ease, box-shadow .25s ease;
+}
+html.bp-mv #pg-auth .mva-role:active{ transform:scale(.985) }
+html.bp-mv #pg-auth .mva-role.on{ border-color:rgba(122,160,255,.55); box-shadow:0 0 0 3px rgba(91,140,255,.14) }
+html.bp-mv #pg-auth .mva-role-glow{ position:absolute; right:-70px; top:-70px; width:200px; height:200px; border-radius:50%; pointer-events:none;
+  background:radial-gradient(closest-side, rgba(91,140,255,.2), rgba(91,140,255,0)) }
+html.bp-mv #pg-auth .mva-role.blg .mva-role-glow{ background:radial-gradient(closest-side, rgba(139,107,255,.2), rgba(139,107,255,0)) }
+html.bp-mv #pg-auth .mva-role-top{ position:relative; display:flex; align-items:center; gap:14px }
+html.bp-mv #pg-auth .mva-role-ic{ flex:none; width:50px; height:50px; border-radius:16px; display:flex; align-items:center; justify-content:center;
+  background:var(--mva-s2); box-shadow:inset 0 0 0 1px rgba(255,255,255,.06); color:#fff }
+html.bp-mv #pg-auth .mva-role-ic svg{ width:26px; height:26px }
+html.bp-mv #pg-auth .mva-role-t{ font:800 19px/1.2 'Manrope', system-ui, sans-serif; letter-spacing:-.01em }
+html.bp-mv #pg-auth .mva-role-s{ position:relative; display:block; margin:12px 0 16px; font:500 14.5px/1.45 'Manrope', system-ui, sans-serif; color:var(--mva-t2) }
+html.bp-mv #pg-auth .mva-pick{ position:relative; display:flex; align-items:center; justify-content:center; height:50px; border-radius:999px;
+  font:800 15.5px/1 'Manrope', system-ui, sans-serif; background:#fff; color:#0f1012 }
+html.bp-mv #pg-auth .mva-role.adv .mva-pick{ background:var(--mva-grad); color:#fff; box-shadow:0 10px 30px rgba(61,109,246,.38) }
+html.bp-mv #pg-auth .mva-role:focus-visible,
+html.bp-mv #pg-auth .mva-back:focus-visible,
+html.bp-mv #pg-auth .mva-chg:focus-visible{ outline:2px solid var(--mva-acc2); outline-offset:3px }
+
+/* ── появление: всё за полсекунды, лесенкой ── */
+@keyframes mvaRise{ from{ opacity:0; transform:translateY(14px) } to{ opacity:1; transform:none } }
+@keyframes mvaFade{ from{ opacity:0 } to{ opacity:1 } }
+html.bp-mv #pg-auth.on > .auth-logo-wrap{ animation:mvaRise .5s var(--mva-ease) .02s backwards!important }
+html.bp-mv #pg-auth.on > .mva-hero{ animation:mvaFade .9s ease .05s backwards }
+html.bp-mv #pg-auth.on > .mva-h{ animation:mvaRise .5s var(--mva-ease) .08s backwards }
+html.bp-mv #pg-auth.on #formLogin > *,
+html.bp-mv #pg-auth.on #formRegister > *{ animation:mvaRise .5s var(--mva-ease) .14s backwards!important }
+html.bp-mv #pg-auth.on #formLogin > *:nth-child(2), html.bp-mv #pg-auth.on #formRegister > *:nth-child(2){ animation-delay:.18s!important }
+html.bp-mv #pg-auth.on #formLogin > *:nth-child(3), html.bp-mv #pg-auth.on #formRegister > *:nth-child(3){ animation-delay:.22s!important }
+html.bp-mv #pg-auth.on #formLogin > *:nth-child(4), html.bp-mv #pg-auth.on #formRegister > *:nth-child(4){ animation-delay:.26s!important }
+html.bp-mv #pg-auth.on #formLogin > *:nth-child(5), html.bp-mv #pg-auth.on #formRegister > *:nth-child(5){ animation-delay:.29s!important }
+html.bp-mv #pg-auth.on #formLogin > *:nth-child(n+6), html.bp-mv #pg-auth.on #formRegister > *:nth-child(n+6){ animation-delay:.32s!important }
+html.bp-mv #pg-auth.on .mva-role{ animation:mvaRise .55s var(--mva-ease) .12s backwards }
+html.bp-mv #pg-auth.on .mva-role + .mva-role{ animation-delay:.2s }
+html.bp-mv #pg-auth.on > .auth-foot{ animation:mvaFade .5s ease .36s backwards!important }
+html.bp-mv #pg-auth .auth-form.auth-swap{ animation:none!important }
+
+@media (max-height:700px){
+  html.bp-mv #pg-auth > .mva-hero{ height:96px; margin-top:6px }
+  html.bp-mv #pg-auth .mva-h h1{ font-size:26px }
+  html.bp-mv #pg-auth > .mva-h{ margin-bottom:16px }
+}
+@media (max-width:360px){
+  html.bp-mv #pg-auth{ padding-left:16px!important; padding-right:16px!important }
+  html.bp-mv #pg-auth .mva-h h1{ font-size:25px }
+  html.bp-mv #pg-auth .mva-role{ padding:16px }
+  html.bp-mv #pg-auth .auth-socials:not(.bp-one){ grid-template-columns:1fr }
+  html.bp-mv #pg-auth #formLogin .auth-check-lbl,
+  html.bp-mv #pg-auth .auth-forgot{ font-size:13.5px!important }
+  html.bp-mv #pg-auth .mva-h p{ font-size:14px }
+}
+@media (prefers-reduced-motion:reduce){
+  html.bp-mv #pg-auth > .mva-aur i,
+  html.bp-mv #pg-auth.on > *,
+  html.bp-mv #pg-auth.on #formLogin > *,
+  html.bp-mv #pg-auth.on #formRegister > *,
+  html.bp-mv #pg-auth .mva-role,
+  html.bp-mv #pg-auth .auth-btn::after{ animation:none!important }
+}
+</style>
+<script id="bp-mv-auth">
+/* Вход и регистрация «как More Views, только ярче» (15.10.2026) — см.
+   комментарий в style#bp-mv-auth-css. Здесь: блоки экрана, шаги
+   регистрации (класс у #pg-auth: mva-login | mva-reg + mva-s1/mva-s2),
+   всплывающие подписи, сила пароля, «кнопка загорается», когда всё
+   заполнено верно, и надпись из частиц на canvas (БP → TikTok → YouTube →
+   ₽): штрихи летят по полю течения и собираются в слово; кадры только пока
+   экран входа виден, вкладка активна и это не шаг 2 регистрации; при
+   «уменьшить движение» — неподвижное слово. Всё только в MV. */
+(function(){
+'use strict';
+if(window.__bpMvAuth) return; window.__bpMvAuth = 1;
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'bp-mv-auth'); }catch(_){} }
+function $(id){ return document.getElementById(id); }
+function mv(){
+  try{ if(typeof window.bpMvOn === 'function') return !!window.bpMvOn(); }catch(e){}
+  return document.documentElement.classList.contains('bp-mv');
+}
+var IC = window.bpMvIco || {};
+var PG = null;
+var S = { step:1, built:false };
+
+function regRole(){ try{ return typeof _regRole !== 'undefined' ? _regRole : null; }catch(e){ return null; } }
+function terms(){ try{ return typeof termsAccepted !== 'undefined' && !!termsAccepted; }catch(e){ return false; } }
+function consent(){ var c = $('bpConsent152'); return !c || !!c.checked; }
+function val(id){ var i = $(id); return i ? String(i.value || '') : ''; }
+function isReg(){ var f = $('formRegister'); return !!(f && f.style.display !== 'none'); }
+
+/* ── подписи полей: всплывают над значением ── */
+var LBL = { loginEmail:'Почта или телефон', loginPass:'Пароль', regName:'Имя', regEmail:'Почта', regPhone:'Телефон', regPass:'Пароль', regPass2:'Повторите пароль' };
+function labels(on){
+  Object.keys(LBL).forEach(function(id){
+    var i = $(id); if(!i || !i.parentNode) return;
+    var fl = i.parentNode.querySelector('.mva-fl');
+    if(on){
+      if(i.getAttribute('data-mva-ph') == null) i.setAttribute('data-mva-ph', i.getAttribute('placeholder') || '');
+      i.setAttribute('placeholder', ' ');
+      if(!i.getAttribute('aria-label')) i.setAttribute('aria-label', LBL[id]);
+      if(!fl){
+        fl = document.createElement('span'); fl.className = 'mva-fl'; fl.setAttribute('aria-hidden', 'true'); fl.textContent = LBL[id];
+        i.insertAdjacentElement('afterend', fl);
+      }
+    } else {
+      var ph = i.getAttribute('data-mva-ph');
+      if(ph != null){ i.setAttribute('placeholder', ph); i.removeAttribute('data-mva-ph'); }
+      if(fl && fl.parentNode) fl.parentNode.removeChild(fl);
+    }
+  });
+}
+
+var BACK_I = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>';
+var ROLES = [
+  { k:'advertiser', cls:'adv', ic:IC.rocket || '', t:'Рекламодатель', s:'Заказывайте ролики у блогеров и платите только за реальные просмотры' },
+  { k:'blogger', cls:'blg', ic:IC.sparkle || '', t:'Блогер', s:'Снимайте ролики с рекламой брендов и получайте деньги за просмотры' }
+];
+
+function build(){
+  PG = $('pg-auth'); if(!PG) return false;
+  if(!PG.querySelector(':scope > .mva-aur')){
+    var a = document.createElement('div'); a.className = 'mva-aur'; a.setAttribute('aria-hidden', 'true'); a.innerHTML = '<i></i><i></i><i></i>';
+    PG.insertBefore(a, PG.firstChild);
+  }
+  if(!PG.querySelector(':scope > .mva-hero')){
+    var h = document.createElement('div'); h.className = 'mva-hero'; h.setAttribute('aria-hidden', 'true'); h.innerHTML = '<canvas></canvas>';
+    var lw = PG.querySelector(':scope > .auth-logo-wrap');
+    PG.insertBefore(h, lw ? lw.nextSibling : PG.firstChild);
+  }
+  if(!PG.querySelector(':scope > .mva-h')){
+    var t = document.createElement('div'); t.className = 'mva-h';
+    t.innerHTML = '<div class="mva-steps"><button type="button" class="mva-back" data-mva="s1" aria-label="Назад — выбрать тип аккаунта">' + BACK_I + '</button>'
+      + '<div class="mva-dots" aria-label="Шаг 2 из 2"><span class="done">Тип аккаунта</span><i></i><span class="on">Данные</span></div><span class="mva-sp"></span></div>'
+      + '<h1 id="mvaH1">Войти в аккаунт</h1><p id="mvaSub"></p>';
+    var hero = PG.querySelector(':scope > .mva-hero');
+    PG.insertBefore(t, hero ? hero.nextSibling : PG.firstChild);
+  }
+  var fr = $('formRegister');
+  if(fr && !fr.querySelector(':scope > .mva-roles')){
+    var r = document.createElement('div'); r.className = 'mva-roles'; r.setAttribute('role', 'group'); r.setAttribute('aria-label', 'Тип аккаунта');
+    r.innerHTML = ROLES.map(function(x){
+      return '<button type="button" class="mva-role ' + x.cls + '" data-mva="' + x.k + '">'
+        + '<span class="mva-role-glow" aria-hidden="true"></span>'
+        + '<span class="mva-role-top"><span class="mva-role-ic" aria-hidden="true">' + x.ic + '</span><span class="mva-role-t">' + x.t + '</span></span>'
+        + '<span class="mva-role-s">' + x.s + '</span>'
+        + '<span class="mva-pick" aria-hidden="true">Выбрать</span></button>';
+    }).join('');
+    fr.insertBefore(r, fr.firstChild);
+  }
+  if(fr){
+    var rp = fr.querySelector('.role-pick'), rf = rp && rp.closest('.auth-field');
+    if(rf && !rf.classList.contains('mva-rolefield')) rf.classList.add('mva-rolefield');
+  }
+  var p1 = $('regPass'), f1 = p1 && p1.closest('.auth-field');
+  if(f1 && !(f1.nextElementSibling && f1.nextElementSibling.classList.contains('mva-pw'))){
+    var pw = document.createElement('div'); pw.className = 'mva-pw'; pw.id = 'mvaPw'; pw.setAttribute('aria-live', 'polite');
+    pw.innerHTML = '<div class="mva-pw-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></div><span></span>';
+    f1.insertAdjacentElement('afterend', pw);
+  }
+  var lb = $('formLogin') && $('formLogin').querySelector('.auth-bottom a');
+  if(lb && lb.getAttribute('data-mva-t') == null){ lb.setAttribute('data-mva-t', lb.textContent); lb.textContent = 'Зарегистрироваться'; }
+  var rb = $('rememberBox');
+  if(rb && !rb.classList.contains('bp-on') && !rb.classList.contains('bp-off')){
+    var on = true; try{ on = !!rememberMe; }catch(e){}
+    rb.classList.add(on ? 'bp-on' : 'bp-off'); rb.setAttribute('role', 'checkbox'); rb.setAttribute('aria-checked', on ? 'true' : 'false');
+  }
+  labels(true);
+  S.built = true;
+  return true;
+}
+
+function unbuild(){
+  labels(false);
+  var lb = $('formLogin') && $('formLogin').querySelector('.auth-bottom a');
+  if(lb && lb.getAttribute('data-mva-t') != null){ lb.textContent = lb.getAttribute('data-mva-t'); lb.removeAttribute('data-mva-t'); }
+  /* только если класс есть: classList.remove без перемен всё равно пишет атрибут —
+     наблюдатель за классами #pg-auth звал бы paint → unbuild бесконечно (в полном
+     доступе страница вставала намертво ещё до DOMContentLoaded) */
+  ['mva-login', 'mva-reg', 'mva-s1', 'mva-s2'].forEach(function(c){ tog(c, false); });
+  bodyMark(false);
+  heroStop();
+}
+function bodyMark(on){ var b = document.body; if(b && b.classList.contains('mva-authpg') !== !!on) b.classList.toggle('mva-authpg', !!on); }
+
+/* ── состояние экрана ── */
+function tog(c, on){ if(PG && PG.classList.contains(c) !== !!on) PG.classList.toggle(c, !!on); }
+function setText(el, t){ if(el && el.textContent !== t) el.textContent = t; }
+function setHtml(el, h){ if(el && el.__h !== h){ el.__h = h; el.innerHTML = h; } }
+function paint(){
+  if(!PG) return;
+  if(!mv()){ unbuild(); return; }
+  if(!S.built) build();
+  bodyMark(PG.classList.contains('on'));
+  var reg = isReg(), rr = regRole(), s = reg ? (S.step === 2 && rr ? 2 : 1) : 0;
+  tog('mva-login', !reg); tog('mva-reg', reg); tog('mva-s1', s === 1); tog('mva-s2', s === 2);
+  var h1 = $('mvaH1'), sub = $('mvaSub');
+  if(!reg){
+    setText(h1, 'Войти в аккаунт');
+    setHtml(sub, 'Задания от брендов — <em>деньги за просмотры</em>');
+  } else if(s === 1){
+    setText(h1, 'Выберите тип аккаунта');
+    setHtml(sub, 'От этого зависит, каким откроется приложение');
+  } else {
+    setText(h1, 'Создайте аккаунт');
+    setHtml(sub, 'Вы — <b>' + (rr === 'advertiser' ? 'рекламодатель' : 'блогер') + '</b> · <button type="button" class="mva-chg" data-mva="s1">изменить</button>');
+  }
+  [].forEach.call(PG.querySelectorAll('.mva-role'), function(b){
+    var on = b.getAttribute('data-mva') === rr;
+    if(b.classList.contains('on') !== on) b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  fields();
+  heroSync();
+}
+
+/* ── сила пароля, повтор, «кнопка загорается» ── */
+function pwLevel(p){
+  if(!p) return 0;
+  if(p.length < 8) return 1;
+  var x = 0;
+  if(p.length >= 12) x++;
+  if(/\d/.test(p)) x++;
+  if(/[A-ZА-ЯЁ]/.test(p) && /[a-zа-яё]/.test(p)) x++;
+  if(/[^0-9A-Za-zА-Яа-яЁё]/.test(p)) x++;
+  return Math.min(4, 2 + Math.min(2, x));
+}
+var PW_T = ['', 'Минимум 8 символов', 'Средний — добавьте цифры, заглавные или символы', 'Хороший пароль', 'Надёжный пароль'];
+function setReady(b, on){
+  if(!b) return;
+  if(b.classList.contains('mva-ready') === !!on) return;
+  b.classList.toggle('mva-ready', !!on);
+  if(on){ b.classList.remove('mva-shine'); void b.offsetWidth; b.classList.add('mva-shine'); }
+}
+function fields(){
+  if(!PG) return;
+  var p1 = val('regPass'), p2 = val('regPass2'), lv = pwLevel(p1), pw = $('mvaPw');
+  if(pw){
+    if(pw.getAttribute('data-s') !== String(lv)) pw.setAttribute('data-s', String(lv));
+    pw.classList.toggle('on', !!p1);
+    var sp = pw.querySelector('span'); if(sp && sp.textContent !== PW_T[lv]) sp.textContent = PW_T[lv];
+  }
+  var w2 = $('regPass2') && $('regPass2').parentNode;
+  if(w2 && w2.classList){
+    var ok = !!p2 && p2 === p1 && p1.length >= 8, bad = !!p2 && p2 !== p1 && p2.length >= p1.length;
+    if(w2.classList.contains('mva-ok') !== ok) w2.classList.toggle('mva-ok', ok);
+    if(w2.classList.contains('mva-bad') !== bad) w2.classList.toggle('mva-bad', bad);
+  }
+  var fl = $('formLogin'), fr = $('formRegister');
+  setReady(fl && fl.querySelector('.auth-btn'), !!val('loginEmail').trim() && !!val('loginPass'));
+  setReady(fr && fr.querySelector('.auth-btn'), !!regRole() && !!val('regName').trim()
+    && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val('regEmail').trim()) && p1.length >= 8 && p1 === p2 && terms() && consent());
+}
+
+/* ── обёртки: вкладки и выбор роли ── */
+function wrap(name, make){
+  var o = window[name];
+  if(typeof o !== 'function') return;
+  for(var f = o, i = 0; f && i < 30; f = f.__orig, i++) if(f.__mva) return;
+  var w = make(o); w.__mva = 1; w.__orig = o; window[name] = w;
+}
+function install(){
+  wrap('switchTab', function(o){ return function(tab){
+    var r = o.apply(this, arguments);
+    try{ if(mv()){ if(tab === 'register') S.step = 1; paint(); } }catch(e){ E(e); }
+    return r;
+  }; });
+  wrap('pickRegRole', function(o){ return function(){
+    var r = o.apply(this, arguments);
+    try{ if(mv()) paint(); }catch(e){ E(e); }
+    return r;
+  }; });
+  wrap('toggleTerms', function(o){ return function(){
+    var r = o.apply(this, arguments);
+    try{ if(mv()) fields(); }catch(e){ E(e); }
+    return r;
+  }; });
+}
+function toTop(){ try{ window.scrollTo({ top:0, behavior:'smooth' }); }catch(e){ try{ window.scrollTo(0, 0); }catch(_){} } }
+function onClick(e){
+  if(!mv()) return;
+  var t = e.target && e.target.closest ? e.target.closest('[data-mva]') : null;
+  if(!t || !PG || !PG.contains(t)) { setTimeout(fields, 0); return; }
+  var k = t.getAttribute('data-mva');
+  if(k === 'blogger' || k === 'advertiser'){
+    try{ if(typeof window.pickRegRole === 'function') window.pickRegRole(k); }catch(err){ E(err); }
+    S.step = 2; paint(); toTop();
+  } else if(k === 's1'){
+    S.step = 1; paint(); toTop();
+  }
+}
+
+/* ══ надпись из частиц ══ */
+var WORDS = ['БP', 'TikTok', 'YouTube', '₽'];
+var HOLD = 2700, N = 460;
+var COL = ['rgba(255,255,255,.93)', 'rgba(150,186,255,.95)', 'rgba(176,148,255,.95)'];
+var H = { c:null, x:null, W:0, H:0, dpr:1, P:[], wi:0, raf:0, run:false, last:0, next:0, ok:false, font:false, reduce:false };
+function heroCanvas(){ return PG ? PG.querySelector('.mva-hero canvas') : null; }
+function heroSize(){
+  var r = H.c.getBoundingClientRect(), w = Math.round(r.width), h = Math.round(r.height);
+  if(!w || !h) return false;
+  var dpr = Math.min(2, window.devicePixelRatio || 1), ch = w !== H.W || h !== H.H || dpr !== H.dpr;
+  if(ch){ H.W = w; H.H = h; H.dpr = dpr; H.c.width = Math.round(w * dpr); H.c.height = Math.round(h * dpr); }
+  H.x.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return ch;
+}
+function sample(word){
+  var W = H.W, HH = H.H, off = document.createElement('canvas'); off.width = W; off.height = HH;
+  var o = off.getContext('2d'); if(!o) return [];
+  var fam = "'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif", size = HH * 0.8;
+  o.font = '800 ' + size + 'px ' + fam;
+  var m = o.measureText(word).width; if(m > W * 0.9) size = size * W * 0.9 / m;
+  o.font = '800 ' + size + 'px ' + fam; o.textAlign = 'center'; o.textBaseline = 'middle'; o.fillStyle = '#fff';
+  o.fillText(word, W / 2, HH / 2 + size * 0.05);
+  var d = o.getImageData(0, 0, W, HH).data, area = 0, pts = [];
+  for(var i = 3; i < d.length; i += 4) if(d[i] > 128) area++;
+  var step = Math.max(1.6, Math.sqrt(area / N) * 0.9);
+  for(var y = step / 2; y < HH; y += step) for(var x = step / 2; x < W; x += step){
+    if(d[(Math.floor(y) * W + Math.floor(x)) * 4 + 3] > 128) pts.push([x, y]);
+  }
+  for(var j = pts.length - 1; j > 0; j--){ var q = (Math.random() * (j + 1)) | 0, tt = pts[j]; pts[j] = pts[q]; pts[q] = tt; }
+  return pts;
+}
+function setWord(i, kick){
+  var pts = sample(WORDS[i]); if(!pts.length) return;
+  for(var j = 0; j < H.P.length; j++){
+    var p = H.P[j], q = pts[j % pts.length], ex = j >= pts.length;
+    p.tx = q[0] + (ex ? (Math.random() - .5) * 2.4 : 0); p.ty = q[1] + (ex ? (Math.random() - .5) * 2.4 : 0);
+    if(kick){ var a = Math.random() * 6.2832, s = 1.5 + Math.random() * 4.5; p.vx += Math.cos(a) * s; p.vy += Math.sin(a) * s; }
+  }
+}
+function heroInit(){
+  var cv = heroCanvas(); if(!cv) return false;
+  H.c = cv; H.x = cv.getContext('2d'); if(!H.x) return false;
+  H.reduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  heroSize();
+  H.P = [];
+  for(var i = 0; i < N; i++){
+    var c = i % 10 < 6 ? 0 : (i % 10 < 9 ? 1 : 2);
+    H.P.push({ x:Math.random() * H.W, y:Math.random() * H.H, vx:(Math.random() - .5) * 3, vy:(Math.random() - .5) * 3,
+      tx:H.W / 2, ty:H.H / 2, k:0.014 + Math.random() * 0.012, c:c, ph:Math.random() * 6.2832, ax:0, ay:0, bx:0, by:0 });
+  }
+  /* палец или курсор над надписью — штрихи разлетаются (прокрутку не держим: pan-y) */
+  var at = function(e){ var r = cv.getBoundingClientRect(); PT.x = e.clientX - r.left; PT.y = e.clientY - r.top; PT.at = performance.now(); };
+  cv.addEventListener('pointerdown', at, { passive:true });
+  cv.addEventListener('pointermove', at, { passive:true });
+  cv.addEventListener('pointerleave', function(){ PT.at = 0; }, { passive:true });
+  cv.addEventListener('pointercancel', function(){ PT.at = 0; }, { passive:true });
+  H.ok = true;
+  return true;
+}
+var PT = { x:0, y:0, at:0 }, PR = 48;
+function draw(t, dt){
+  var x = H.x, P = H.P, damp = Math.pow(0.86, dt), i, p;
+  var push = PT.at && performance.now() - PT.at < 650;
+  for(i = 0; i < P.length; i++){
+    p = P[i];
+    if(push){
+      var dx = p.x - PT.x, dy = p.y - PT.y, d2 = dx * dx + dy * dy;
+      if(d2 < PR * PR && d2 > 0.01){ var d = Math.sqrt(d2), f = (1 - d / PR) * 2.6 * dt; p.vx += dx / d * f; p.vy += dy / d * f; }
+    }
+    var ang = (Math.sin(p.x * 0.021 + t * 0.9) + Math.cos(p.y * 0.019 - t * 0.7)) * 1.6 + p.ph;
+    var ca = Math.cos(ang), sa = Math.sin(ang);
+    p.vx = (p.vx + ((p.tx - p.x) * p.k + ca * 0.05) * dt) * damp;
+    p.vy = (p.vy + ((p.ty - p.y) * p.k + sa * 0.05) * dt) * damp;
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    var sp = Math.sqrt(p.vx * p.vx + p.vy * p.vy), len = 2.4 + Math.min(10, sp * 2.4), ux, uy;
+    if(sp > 0.25){ ux = p.vx / sp; uy = p.vy / sp; } else { ux = ca; uy = sa; }
+    p.ax = p.x - ux * len * 0.5; p.ay = p.y - uy * len * 0.5; p.bx = p.x + ux * len * 0.5; p.by = p.y + uy * len * 0.5;
+  }
+  x.clearRect(0, 0, H.W, H.H);
+  x.lineCap = 'round'; x.lineWidth = 1.55;
+  for(var c = 0; c < 3; c++){
+    x.beginPath();
+    for(i = 0; i < P.length; i++){ p = P[i]; if(p.c === c){ x.moveTo(p.ax, p.ay); x.lineTo(p.bx, p.by); } }
+    x.strokeStyle = COL[c]; x.stroke();
+  }
+}
+function frame(ts){
+  if(!H.run) return;
+  H.raf = requestAnimationFrame(frame);
+  if(!H.last){ H.last = ts; if(!H.next) H.next = ts + HOLD; }
+  var dt = Math.min(2.4, Math.max(0.2, (ts - H.last) / 16.667)); H.last = ts;
+  if(ts >= H.next){ H.wi = (H.wi + 1) % WORDS.length; setWord(H.wi, true); H.next = ts + HOLD; }
+  draw(ts * 0.001, dt);
+}
+function staticWord(){
+  setWord(H.wi, false);
+  for(var i = 0; i < H.P.length; i++){ var p = H.P[i]; p.x = p.tx; p.y = p.ty; p.vx = p.vy = 0; }
+  draw(0, 1);
+}
+function heroVisible(){
+  if(!PG || !mv() || document.hidden || !PG.classList.contains('on')) return false;
+  var cv = heroCanvas(); if(!cv) return false;
+  var r = cv.getBoundingClientRect();
+  return r.width > 0 && r.height > 0;
+}
+function heroStart(){
+  if(H.run) return;
+  if(!H.ok && !heroInit()) return;
+  var resized = heroSize();
+  var go = function(){
+    if(!heroVisible()) return;
+    if(H.reduce){ staticWord(); return; }
+    if(resized || !H.started){ setWord(H.wi, !!H.started); H.started = true; }
+    H.run = true; H.last = 0; H.next = 0;
+    H.raf = requestAnimationFrame(frame);
+  };
+  if(H.font) return go();
+  var done = function(){ H.font = true; go(); };
+  try{
+    if(document.fonts && document.fonts.load) document.fonts.load("800 64px 'Manrope'", 'БPTikTokYouTube₽').then(done, done);
+    else done();
+  }catch(e){ done(); }
+}
+function heroStop(){ H.run = false; if(H.raf) cancelAnimationFrame(H.raf); H.raf = 0; H.last = 0; }
+function heroSync(){ if(heroVisible()) heroStart(); else heroStop(); }
+var _rz = 0;
+function onResize(){
+  clearTimeout(_rz);
+  _rz = setTimeout(function(){
+    if(!H.ok || !heroVisible()) return;
+    if(heroSize()){ if(H.reduce) staticWord(); else setWord(H.wi, false); }
+  }, 160);
+}
+
+/* ── запуск ── */
+function boot(){
+  PG = $('pg-auth'); if(!PG) return;
+  install();
+  if(mv()) build();
+  PG.addEventListener('click', onClick);
+  PG.addEventListener('input', function(){ if(mv()) fields(); });
+  PG.addEventListener('change', function(){ if(mv()) fields(); });
+  document.addEventListener('visibilitychange', heroSync);
+  window.addEventListener('resize', onResize);
+  if(typeof MutationObserver !== 'undefined'){
+    new MutationObserver(function(){ paint(); }).observe(PG, { attributes:true, attributeFilter:['class'] });
+    var was = mv();
+    new MutationObserver(function(){ var on = mv(); if(on !== was){ was = on; if(on) build(); paint(); } })
+      .observe(document.documentElement, { attributes:true, attributeFilter:['class'] });
+  }
+  paint();
+  /* слои согласия и кнопок соцвхода дописывают форму позже — догоняем */
+  [400, 1500, 3500].forEach(function(ms){ setTimeout(function(){ try{ install(); if(mv()){ build(); paint(); } }catch(e){ E(e); } }, ms); });
+}
+window.bpMvAuthPaint = function(){ try{ paint(); }catch(e){ E(e); } };
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+})();
+</script>
 </body>
 </html>
