@@ -94075,10 +94075,16 @@ var PN = { tiktok:'TikTok', youtube:'YouTube', telegram:'Telegram', instagram:'I
 var PA = { tt:'tiktok', yt:'youtube', tg:'telegram', ig:'instagram', inst:'instagram', tw:'twitch' };
 var VIDP = ['tiktok', 'youtube'];
 function pk(x){ x = String(x == null ? '' : x).trim().toLowerCase(); return PA[x] || x; }
+/* MV: официальные знаки площадок (bp-mv-vbup, window.bpBrandIco — Simple
+   Icons, 15.10.2026); набор берём в момент отрисовки — слой ниже по файлу */
+function brandD(p){
+  try{ var b = window.bpBrandIco; return document.documentElement.classList.contains('bp-mv') && b && b[p] ? b[p].d : ''; }
+  catch(e){ return ''; }
+}
 function pi(p, cls){
   p = pk(p);
   var k = p === 'youtube' ? 'yt' : p === 'tiktok' ? 'tt' : 'vid';
-  return '<span class="vb-pi ' + k + (cls ? ' ' + cls : '') + '" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="' + (GL[p] || 'M8 5.5v13l10-6.5z') + '"/></svg></span>';
+  return '<span class="vb-pi ' + k + (cls ? ' ' + cls : '') + '" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="' + (brandD(p) || GL[p] || 'M8 5.5v13l10-6.5z') + '"/></svg></span>';
 }
 function badge(p){ p = pk(p); return '<span class="vb-badge">' + pi(p) + esc(PN[p] || 'Видео') + '</span>'; }
 /* площадки оффера: строка мастера 'tt,yt,tg', массив platformsList,
@@ -106528,7 +106534,24 @@ function lens(b){
   return l;
 }
 function itemsOf(b){ return b.querySelectorAll('.bptab-i'); }
-function geo(it){ return { x:it.offsetLeft, y:it.offsetTop, w:it.offsetWidth, h:it.offsetHeight }; }
+/* размеры пунктов — запомненные (15.10.2026): чтение offset* посреди
+   перехода заставляло браузер раскладывать всю новую страницу (до 0,15 с
+   на слабом телефоне). Сброс — при пересборке полки и смене её размера. */
+var GC = { list:null, g:null, bw:-1 };
+function gcReset(){ GC.list = null; GC.g = null; }
+function geo0(it){ return { x:it.offsetLeft, y:it.offsetTop, w:it.offsetWidth, h:it.offsetHeight }; }
+function geo(it){
+  var b = it && it.parentNode;
+  if(!b) return geo0(it);
+  var list = itemsOf(b), n = list.length;
+  if(!GC.g || !GC.list || GC.list.length !== n || GC.list[0] !== list[0] || GC.list[n - 1] !== list[n - 1]){
+    GC.list = [].slice.call(list); GC.g = GC.list.map(geo0);
+  }
+  var i = GC.list.indexOf(it);
+  return i >= 0 ? GC.g[i] : geo0(it);
+}
+/* полка на экране: ширину сообщает ResizeObserver; без него — как раньше */
+function shown(b){ return GC.bw >= 0 ? GC.bw > 0 : !!b.offsetWidth; }
 function tr(x, sx, sy){ return 'translate3d(' + x.toFixed(2) + 'px,0,0)' + (sx == null ? '' : ' scale(' + sx.toFixed(4) + ',' + sy.toFixed(4) + ')'); }
 
 /* пружина: шаг 1/240 с, отсчёты по кадру 1/60 с */
@@ -106649,7 +106672,7 @@ function onDown(e){
   try{
     if(!mvOn() || e.isPrimary === false || (e.pointerType === 'mouse' && e.button !== 0)) return;
     var b = box(), it = e.target && e.target.closest ? e.target.closest('.bptab-i') : null;
-    if(!b || !it || !b.contains(it) || !b.offsetWidth) return;
+    if(!b || !it || !b.contains(it) || !shown(b)) return;
     var l = G.el; if(!l || l.parentNode !== b) return;
     var list = itemsOf(b), idx = [].indexOf.call(list, it);
     var k = it.getAttribute('data-k') + '|' + list.length;
@@ -106711,7 +106734,7 @@ function check(force){
       else clearPend();
     }
     /* полка скрыта (шторка, чат, не корневая страница) — мерить нечего */
-    if(!b.offsetWidth){ G.hid = true; G.k = k; G.idx = idx; stop(); return; }
+    if(!shown(b)){ G.hid = true; G.k = k; G.idx = idx; stop(); return; }
     if(!it){
       if(!l.classList.contains('off')) l.classList.add('off');
       G.k = ''; G.idx = -1; G.hid = false;
@@ -106750,19 +106773,24 @@ function watch(){
   }
   if(!b || watchedBox === b) return;
   watchedBox = b;
+  gcReset(); GC.bw = -1;
   if(typeof MutationObserver !== 'undefined'){
     if(moBox) moBox.disconnect();
     moBox = new MutationObserver(function(recs){
       /* пересборка пунктов (innerHTML) — ставим на место без полёта */
       var rebuilt = false;
       for(var i = 0; i < recs.length; i++){ if(recs[i].type === 'childList' && recs[i].target === b){ rebuilt = true; break; } }
+      if(rebuilt) gcReset();
       check(rebuilt);
     });
     moBox.observe(b, { childList:true, subtree:true, attributes:true, attributeFilter:['class'] });
   }
   if(typeof ResizeObserver !== 'undefined'){
     if(roBox) roBox.disconnect();
-    roBox = new ResizeObserver(function(){ check(true); });
+    roBox = new ResizeObserver(function(ents){
+      try{ var r = ents && ents.length ? ents[ents.length - 1].contentRect : null; GC.bw = r ? r.width : -1; }catch(e){ GC.bw = -1; }
+      gcReset(); check(true);
+    });
     roBox.observe(b);
   }
   check(true);
@@ -108582,6 +108610,314 @@ function boot(){
   [700, 2500].forEach(function(ms){ setTimeout(function(){ install(); paint(); }, ms); });
 }
 if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+})();
+</script>
+<style id="bp-mv-snap-css">
+/* ══ РАЗДЕЛЫ ПОЛКИ: СРАЗУ И БЕЗ ТЕМНОТЫ (15.10.2026) ══
+   Владелец: «при переключении Главная · Мои задания · Чаты · Профиль —
+   медленно, непонятно, и экран на секунду тёмный». Замер (процессор ×6,
+   как у слабого телефона, switch-probe.mjs): после нажатия 0,2–0,6 с экран
+   стоял на старом разделе — вся цепочка goTo (27 обёрток слоёв) шла одним
+   куском, «Главная» каждый раз пересобирала все карточки; потом раздел
+   появлялся притушенным (каскад bpMvRise с 0.5) и ещё ~0,4 с разгорался.
+   Теперь:
+   · нажатие на полку показывает раздел тем же кадром — атрибутом
+     html[data-mvs], классы страниц не трогаем; goTo со всеми обёртками
+     идёт следующим кадром и видит прежнее состояние, как раньше;
+   · корневые разделы MV появляются сразу в полную яркость, без каскада;
+   · «Главная» не пересобирается, если разметка списка не изменилась.
+   Только html.bp-mv. Откат: удалить style#bp-mv-snap-css и script#bp-mv-snap. */
+html.bp-mv[data-mvs] body .pg.on{ display:none!important }
+html.bp-mv[data-mvs="tasks"] body #pg-tasks,
+html.bp-mv[data-mvs="mytasks"] body #pg-mytasks,
+html.bp-mv[data-mvs="profile"] body #pg-profile,
+html.bp-mv[data-mvs="campaigns"] body #pg-campaigns{ display:block!important }
+html.bp-mv[data-mvs="chats"] body #pg-chats{ display:flex!important }
+/* корневые разделы — без каскада проявления (он начинался с 0.5: «экран
+   тёмный»); «Все задания ⇄ Мои задания» (vb-swpg) — со своим движением */
+html.bp-mv body .pg.on:is(#pg-tasks,#pg-mytasks,#pg-chats,#pg-profile,#pg-campaigns):not(.vb-swpg) > *,
+html.bp-mv body .pg.on:is(#pg-tasks,#pg-mytasks,#pg-chats,#pg-profile,#pg-campaigns):not(.vb-swpg) > .sp-body > *,
+html.bp-mv body .pg.on:is(#pg-tasks,#pg-mytasks,#pg-chats,#pg-profile,#pg-campaigns):not(.vb-swpg) > #chatsSectionWrap > *{ animation:none!important }
+/* «Мои задания» рекламодателя: карточки не проявляются из нуля при каждой перерисовке */
+html.bp-mv body #pg-campaigns .camp-card{ animation:none!important }
+/* переключатель «Все задания ⇄ Мои задания» вверху: список без притушивания (было с 0.45) */
+html.bp-mv body .pg.vb-swpg.vb-swin.on > :not(.cat-hd):not(.vb-sw){ animation-name:bpMvSnapIn!important }
+@keyframes bpMvSnapIn{ from{ transform:translateY(5px) } }
+</style>
+<script id="bp-mv-snap">
+/* Разделы полки сразу и без темноты (15.10.2026) — см. комментарий в
+   style#bp-mv-snap-css. */
+(function(){
+'use strict';
+if(window.__bpMvSnap) return; window.__bpMvSnap = 1;
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'bp-mv-snap'); }catch(_){} }
+function $(id){ return document.getElementById(id); }
+var root = document.documentElement;
+function mv(){ return root.classList.contains('bp-mv'); }
+var ROOTS = ['tasks', 'mytasks', 'chats', 'profile', 'campaigns'];
+function isRoot(k){ return ROOTS.indexOf(k) >= 0; }
+function pages(fn){ ROOTS.forEach(function(k){ var p = $('pg-' + k); if(p) fn(p, k); }); }
+
+/* 1 · раздел можно показать мгновенно, если он уже открывался у этого
+   человека в этой роли: в нём его последняя отрисовка, а goTo следующим
+   кадром её освежит. Впервые (после входа, смены роли) — обычным путём:
+   пустая страница на кадр была бы той же вспышкой. */
+function who(){
+  try{
+    var u = typeof currentUser !== 'undefined' ? currentUser : null;
+    var a = typeof _isAdvertiser !== 'undefined' && _isAdvertiser;
+    return (u && u.id != null ? String(u.id) : '-') + '|' + (a ? 'a' : 'b');
+  }catch(e){ return '-'; }
+}
+var W = { who:null };
+function fresh(){
+  var w = who();
+  if(w !== W.who){ W.who = w; pages(function(p){ p.__mvsWho = null; }); }
+  return w;
+}
+function ready(p){ return !!p && p.children.length > 0 && p.__mvsWho === fresh(); }
+
+/* «страница осела» (bp-calm и bp-mv-glass ставили bp-settled по концу
+   каскада, а каскада теперь нет): ставим сами чуть позже показа и снимаем,
+   когда страницу скрыли. Классы — только через проверку contains:
+   наблюдатель за классом страницы иначе крутился бы сам за собой. */
+function onPages(){
+  try{
+    var w = fresh();
+    pages(function(p){
+      if(p.classList.contains('on')){
+        p.__mvsWho = w;
+        if(mv() && !p.classList.contains('bp-settled') && !p.__mvsSet){
+          p.__mvsSet = setTimeout(function(){
+            p.__mvsSet = 0;
+            if(mv() && p.classList.contains('on') && !p.classList.contains('bp-settled')) p.classList.add('bp-settled');
+          }, 320);
+        }
+      } else if(mv()){
+        if(p.__mvsSet){ clearTimeout(p.__mvsSet); p.__mvsSet = 0; }
+        if(p.classList.contains('bp-settled')) p.classList.remove('bp-settled');
+      }
+    });
+  }catch(e){ E(e); }
+}
+var mo = null;
+function watchPages(){
+  if(typeof MutationObserver === 'undefined') return;
+  if(!mo) mo = new MutationObserver(onPages);
+  pages(function(p){ if(!p.__mvsMo){ p.__mvsMo = 1; mo.observe(p, { attributes:true, attributeFilter:['class'] }); } });
+  onPages();
+}
+
+/* 2 · нажатие на полку: раздел — этим кадром, goTo — следующим */
+var S = { k:null, t:false };
+function cancel(){
+  S.k = null;
+  if(root.hasAttribute('data-mvs')) root.removeAttribute('data-mvs');
+}
+function run(){
+  var k = S.k; S.k = null;
+  if(!k){ cancel(); return; }
+  try{ if(typeof window.goTo === 'function') window.goTo(k); }
+  catch(e){ E(e); }
+  finally{ if(!S.k && root.hasAttribute('data-mvs')) root.removeAttribute('data-mvs'); }
+}
+function snapTo(k){
+  S.k = k;
+  if(root.getAttribute('data-mvs') !== k) root.setAttribute('data-mvs', k);
+  /* новая страница начинается сверху (goTo сделает так же) — иначе кадр
+     показал бы её на прокрутке прежней */
+  try{ window.scrollTo(0, 0); }catch(e){}
+  if(S.t) return;
+  S.t = true;
+  var go = function(){ S.t = false; run(); };
+  try{ requestAnimationFrame(function(){ setTimeout(go, 0); }); }catch(e){ setTimeout(go, 16); }
+}
+document.addEventListener('click', function(e){
+  try{
+    if(!mv()) return;
+    var it = e.target && e.target.closest ? e.target.closest('.bptab-i') : null;
+    if(!it || !it.parentNode || it.parentNode.id !== 'bpTabbarIn') return;
+    var k = it.getAttribute('data-k');
+    if(!isRoot(k)) return;
+    watchPages();
+    var p = $('pg-' + k), on = !!(p && p.classList.contains('on'));
+    if(S.k){
+      /* переход уже ждёт кадра, а человек нажал ещё раз */
+      e.stopImmediatePropagation(); e.preventDefault();
+      if(k === S.k) return;
+      if(on){ cancel(); return; }                   /* вернулся на прежний раздел */
+      if(ready(p)){ snapTo(k); return; }
+      cancel();
+      if(typeof window.goTo === 'function') window.goTo(k);
+      return;
+    }
+    if(on || !ready(p)) return;                     /* повтор или первый показ — как раньше */
+    e.stopImmediatePropagation(); e.preventDefault();
+    snapTo(k);
+  }catch(err){ E(err); }
+}, true);
+
+/* 3 · «Главная» без пересборки: та же разметка списка — те же карточки.
+   Карточки на месте уже «украшены» слоями (bp-tkcard, bp-mv-card, bp-vbind),
+   поэтому сравнение bpMorphPage с сырой разметкой не совпадало никогда, и
+   при каждом возвращении все карточки собирались заново (~0,3 с на ×6). */
+function same(page){
+  var a = page.__mvsKids; if(!a || !a.length) return false;
+  for(var i = 0; i < a.length; i++) if(a[i].parentNode !== page) return false;
+  return true;
+}
+function memoMorph(){
+  var om = window.bpMorphPage;
+  if(typeof om !== 'function' || om.__mvsMemo) return;
+  var w = function(page, html){
+    if(mv() && page && page.__mvsHtml === html && same(page)) return;
+    var r = om.apply(this, arguments);
+    try{ if(page){ page.__mvsHtml = html; page.__mvsKids = [].slice.call(page.children); } }catch(e){ E(e); }
+    return r;
+  };
+  w.__mvsMemo = 1; w.__orig = om;
+  window.bpMorphPage = w;
+}
+memoMorph();
+
+function boot(){ memoMorph(); watchPages(); }
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+[700, 2500].forEach(function(ms){ setTimeout(boot, ms); });
+})();
+</script>
+<style id="bp-mv-vbup-css">
+/* ══ «ЗАГРУЗКА ВИДЕО» В СТИЛЕ САЙТА (15.10.2026) ══
+   Владелец: «загрузка видео сделай в стиле сайта». Окно bp-vbind
+   (#bpVbSheet; те же шторки — #bpVbList, #bpVbPlayer) было в старой
+   палитре: #151a23, плоская синяя кнопка, поля с радиусом 14. В MV — язык
+   карточек «Главной»: поверхность #1d1e20, поля и плитки #272829 с
+   радиусом 16, подписи 14/500 белым, голубая пунктирная инфо-плашка (как в
+   «Подключить аккаунт»), кнопки-таблетки с градиентом «Открыть». Разметка,
+   id и поведение прежние — их читают тесты (deal.mjs и др.). Решения
+   владельца: без галочки «в видео есть реклама», без «Закрыть» и жёлтого
+   блока, «Отправить» на всю ширину — не трогаем. Только html.bp-mv.
+   Откат: удалить style#bp-mv-vbup-css и script#bp-mv-vbup. */
+html.bp-mv .vb-sheet.on{ background:rgba(0,0,0,.72) }
+html.bp-mv .vb-sheet .vb-card{
+  background:#1d1e20; color:#fff; border:1px solid rgba(255,255,255,.06); border-bottom:0; border-radius:28px 28px 0 0;
+  padding:8px 16px calc(20px + env(safe-area-inset-bottom,0px)); box-shadow:0 -16px 48px rgba(0,0,0,.45);
+}
+html.bp-mv .vb-sheet .vb-grab{ width:40px; background:rgba(255,255,255,.16); margin:0 auto 14px }
+html.bp-mv .vb-sheet .vb-hd{ margin:0 0 18px }
+html.bp-mv .vb-sheet .vb-hd b{ font-size:22px; line-height:28px; font-weight:600; letter-spacing:-.3px }
+html.bp-mv .vb-sheet .vb-x{ width:36px; height:36px; margin:0; display:grid; place-items:center; border-radius:50%; background:#272829; color:rgba(255,255,255,.72); font-size:22px }
+html.bp-mv .vb-sheet .vb-x:active{ background:#303134 }
+html.bp-mv .vb-sheet .vb-sub{ color:rgba(255,255,255,.6) }
+/* инфо-плашка — голубая пунктирная, как в «Подключить аккаунт» */
+html.bp-mv .vb-sheet .vb-info{ gap:12px; padding:16px; border-radius:16px; border:1px dashed #0fb3fa; background:rgba(15,179,250,.1) }
+html.bp-mv .vb-sheet .vb-info > svg{ width:20px; height:20px; color:#0fb3fa }
+html.bp-mv .vb-sheet .vb-info p{ font-size:14px; line-height:20px; color:rgba(255,255,255,.9) }
+html.bp-mv .vb-sheet .vb-info b{ font-weight:600 }
+/* поля: «Аккаунт» и «Ссылка на видео» */
+html.bp-mv .vb-sheet .vb-fld{ margin-top:20px }
+html.bp-mv .vb-sheet .vb-fld-k{ font-size:14px; line-height:18px; font-weight:500; color:#fff; margin-bottom:10px }
+html.bp-mv .vb-sheet .vb-dd-btn{ min-height:64px; gap:12px; padding:10px 14px 10px 12px; border-radius:16px; background:#272829; border:1px solid rgba(255,255,255,.06) }
+html.bp-mv .vb-sheet .vb-dd-btn[aria-expanded="true"]{ border-color:rgba(146,161,255,.6) }
+html.bp-mv .vb-sheet .vb-dd-btn .vb-ava{ width:40px; height:40px; --vb-ring:#272829 }
+html.bp-mv .vb-sheet .vb-dd-tx b{ font-size:15px; font-weight:600; color:#fff }
+html.bp-mv .vb-sheet .vb-dd-tx b.ph{ color:rgba(255,255,255,.62); font-weight:500 }
+html.bp-mv .vb-sheet .vb-dd-tx > span{ font-size:13px; color:rgba(255,255,255,.55) }
+html.bp-mv .vb-sheet .vb-dd-tx .ok{ color:#5fe39b }
+html.bp-mv .vb-sheet .vb-dd-tx .warn{ color:#ffb067; font-weight:600 }
+html.bp-mv .vb-sheet .vb-chev{ color:rgba(255,255,255,.55) }
+html.bp-mv .vb-sheet .vb-dd-new{ background:#32333a; color:#b7c1ff; box-shadow:none }
+html.bp-mv .vb-sheet .vb-dd-menu{ padding:6px; border-radius:18px; background:#272829; border:1px solid rgba(255,255,255,.08); box-shadow:0 20px 50px rgba(0,0,0,.55) }
+html.bp-mv .vb-sheet .vb-opt{ border-radius:12px; color:#fff }
+html.bp-mv .vb-sheet .vb-opt .vb-ava{ --vb-ring:#272829 }
+html.bp-mv .vb-sheet .vb-opt.act,html.bp-mv .vb-sheet .vb-opt:hover{ background:rgba(255,255,255,.06) }
+html.bp-mv .vb-sheet .vb-opt[aria-selected="true"]{ background:rgba(97,118,255,.16) }
+html.bp-mv .vb-sheet .vb-opt-tx b{ font-weight:600 }
+html.bp-mv .vb-sheet .vb-opt-tx > span{ color:rgba(255,255,255,.55) }
+html.bp-mv .vb-sheet .vb-opt-ck,html.bp-mv .vb-sheet .vb-opt-add{ color:#b7c1ff }
+html.bp-mv .vb-sheet .vb-opt-add{ font-weight:600 }
+html.bp-mv .vb-sheet .vb-opt + .vb-opt-add{ border-top-color:rgba(255,255,255,.06) }
+html.bp-mv .vb-sheet .vb-add-pl button{ border-radius:9999px; border:0; background:#32333a; color:#fff; font-weight:500 }
+html.bp-mv .vb-sheet .vb-fld-row{ gap:8px }
+html.bp-mv .vb-sheet .vb-fld-row input{ height:54px; padding:0 16px; border-radius:16px; background:#272829; border:1px solid rgba(255,255,255,.06); color:#fff; font-size:16px; font-weight:500 }
+html.bp-mv .vb-sheet .vb-fld-row input::placeholder{ color:rgba(255,255,255,.4) }
+html.bp-mv .vb-sheet .vb-fld-row input:focus{ border-color:rgba(146,161,255,.6) }
+html.bp-mv .vb-sheet .vb-paste{ height:54px; padding:0 18px; border-radius:9999px; border:0; background:#32333a; color:#fff; font-size:15px; font-weight:500; box-shadow:inset 0 -4px 12px 1px rgba(255,255,255,.08) }
+html.bp-mv .vb-sheet .vb-paste:active{ opacity:.86 }
+/* подсказка под полем и «Видео не отправлено» */
+html.bp-mv .vb-sheet .vb-hint{ font-size:13.5px; color:#ff6467 }
+html.bp-mv .vb-sheet .vb-hint.warn{ color:#ffb067 }
+html.bp-mv .vb-sheet .vb-hint.info{ color:rgba(255,255,255,.55) }
+html.bp-mv .vb-sheet .vb-hint-go,html.bp-mv .vb-sheet .vb-linkbtn{ color:#b7c1ff; font-weight:600 }
+html.bp-mv .vb-sheet .vb-fail{ gap:12px; padding:16px; border-radius:16px; border:1px solid rgba(251,44,54,.3); background:rgba(251,44,54,.1) }
+html.bp-mv .vb-sheet .vb-fail > svg{ color:#ff6467 }
+html.bp-mv .vb-sheet .vb-fail b{ color:#fff; font-weight:600 }
+html.bp-mv .vb-sheet .vb-fail span{ color:rgba(255,255,255,.78) }
+html.bp-mv .vb-sheet .vb-mini{ border-radius:9999px; border:0; background:#32333a; color:#fff; font-weight:500 }
+html.bp-mv .vb-sheet .vb-mini.blue{ background:linear-gradient(#92a1ff,#3d55ed,#6176ff); box-shadow:0 4px 4px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,255,255,.18) }
+/* кнопки — таблетки, как «Открыть» на карточках «Главной» */
+html.bp-mv .vb-sheet .vb-btns{ margin-top:20px; gap:10px }
+html.bp-mv .vb-sheet .vb-go{
+  min-height:56px; border:0; border-radius:9999px; color:#fff; font-size:16px; font-weight:600;
+  background:linear-gradient(#92a1ff,#3d55ed,#6176ff); box-shadow:0 4px 4px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,255,255,.18);
+}
+html.bp-mv .vb-sheet .vb-go:disabled{ background:linear-gradient(#92a1ff,#3d55ed,#6176ff); color:#fff; opacity:.42; box-shadow:none }
+html.bp-mv .vb-sheet .vb-go.busy:disabled{ opacity:1; box-shadow:0 4px 4px rgba(0,0,0,.25) }
+html.bp-mv .vb-sheet .vb-go.ghost{ background:#272829; color:#fff; border:0; box-shadow:inset 0 -4px 12px 1px rgba(255,255,255,.08) }
+html.bp-mv .vb-sheet .vb-go:focus-visible{ outline:2px solid #b7c1ff; outline-offset:2px }
+html.bp-mv .vb-sheet .vb-alt{ color:rgba(255,255,255,.55) }
+/* «Видео отправлено на проверку» */
+html.bp-mv .vb-sheet .vb-okhero{ gap:14px }
+html.bp-mv .vb-sheet .vb-okhero > i{ width:48px; height:48px; background:rgba(97,118,255,.16); color:#b7c1ff; box-shadow:inset 0 0 0 1px rgba(146,161,255,.3) }
+html.bp-mv .vb-sheet .vb-okhero b{ font-size:18px; font-weight:600 }
+html.bp-mv .vb-sheet .vb-okhero span{ color:rgba(255,255,255,.55) }
+html.bp-mv .vb-sheet .vb-video{ margin-top:16px; padding:12px; border-radius:20px; background:#272829; border:1px solid rgba(255,255,255,.05) }
+html.bp-mv .vb-sheet .vb-video-tx b{ color:#fff; font-weight:600 }
+html.bp-mv .vb-sheet .vb-video-tx .vb-vc-h{ color:rgba(255,255,255,.55) }
+html.bp-mv .vb-sheet .vb-stats{ gap:8px }
+html.bp-mv .vb-sheet .vb-st{ padding:12px 6px 10px; border-radius:16px; background:#272829; border:1px solid rgba(255,255,255,.05) }
+html.bp-mv .vb-sheet .vb-st b{ font-size:17px; font-weight:600 }
+html.bp-mv .vb-sheet .vb-st span{ color:rgba(255,255,255,.55) }
+html.bp-mv .vb-sheet .vb-money{ padding:16px; border-radius:16px; background:rgba(97,118,255,.12); border:1px solid rgba(146,161,255,.22) }
+html.bp-mv .vb-sheet .vb-money span{ color:rgba(255,255,255,.7) }
+html.bp-mv .vb-sheet .vb-money b{ font-size:20px; font-weight:600 }
+html.bp-mv .vb-sheet .vb-next{ gap:12px; padding:16px; border-radius:16px; background:rgba(29,30,32,.6); border:1px solid rgba(255,255,255,.1) }
+html.bp-mv .vb-sheet .vb-next svg{ color:rgba(255,255,255,.55) }
+html.bp-mv .vb-sheet .vb-next span{ font-size:14px; line-height:20px; color:rgba(255,255,255,.9) }
+html.bp-mv .vb-sheet .vb-line{ color:rgba(255,255,255,.6) }
+html.bp-mv .vb-sheet .vb-line.warn{ padding:14px 16px; border-radius:16px; border:1px dashed #ff801f; background:rgba(255,128,31,.1); color:rgba(255,255,255,.9) }
+html.bp-mv .vb-sheet .vb-empty b{ font-size:18px; font-weight:600 }
+html.bp-mv .vb-sheet .vb-empty span{ color:rgba(255,255,255,.6) }
+@media (max-width:360px){ html.bp-mv .vb-sheet .vb-card{ padding-left:14px; padding-right:14px } }
+</style>
+<script id="bp-mv-vbup">
+/* Знаки площадок — официальные (15.10.2026). Владелец: «если что ещё
+   будет — интеграции с Instagram и YouTube Shorts — иконки бери из
+   интернета». Источник — Simple Icons 13.21.0 (simpleicons.org, лицензия
+   CC0-1.0): контуры 24×24 встроены сюда, сети приложению не нужно.
+   window.bpBrandIco — общий набор (TikTok, YouTube, YouTube Shorts,
+   Instagram; Shorts и Instagram — на будущее), bpBrandSvg(ключ) — готовый
+   <svg>. В режиме MV ими же рисуются кружки площадок на карточках
+   (CAMP_PLATFORMS) и в окне «Загрузка видео» (bp-vbind, pi). */
+(function(){
+'use strict';
+if(window.__bpMvVbup) return; window.__bpMvVbup = 1;
+var BR = {
+  tiktok:        { name:'TikTok',         color:'#000000', d:'M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z' },
+  youtube:       { name:'YouTube',        color:'#FF0000', d:'M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z' },
+  youtubeshorts: { name:'YouTube Shorts', color:'#FF0000', d:'m18.931 9.99-1.441-.601 1.717-.913a4.48 4.48 0 0 0 1.874-6.078 4.506 4.506 0 0 0-6.09-1.874L4.792 5.929a4.504 4.504 0 0 0-2.402 4.193 4.521 4.521 0 0 0 2.666 3.904c.036.012 1.442.6 1.442.6l-1.706.901a4.51 4.51 0 0 0-2.369 3.967A4.528 4.528 0 0 0 6.93 24c.725 0 1.437-.174 2.08-.508l10.21-5.406a4.494 4.494 0 0 0 2.39-4.192 4.525 4.525 0 0 0-2.678-3.904ZM9.597 15.19V8.824l6.007 3.184z' },
+  instagram:     { name:'Instagram',      color:'#FF0069', d:'M7.0301.084c-1.2768.0602-2.1487.264-2.911.5634-.7888.3075-1.4575.72-2.1228 1.3877-.6652.6677-1.075 1.3368-1.3802 2.127-.2954.7638-.4956 1.6365-.552 2.914-.0564 1.2775-.0689 1.6882-.0626 4.947.0062 3.2586.0206 3.6671.0825 4.9473.061 1.2765.264 2.1482.5635 2.9107.308.7889.72 1.4573 1.388 2.1228.6679.6655 1.3365 1.0743 2.1285 1.38.7632.295 1.6361.4961 2.9134.552 1.2773.056 1.6884.069 4.9462.0627 3.2578-.0062 3.668-.0207 4.9478-.0814 1.28-.0607 2.147-.2652 2.9098-.5633.7889-.3086 1.4578-.72 2.1228-1.3881.665-.6682 1.0745-1.3378 1.3795-2.1284.2957-.7632.4966-1.636.552-2.9124.056-1.2809.0692-1.6898.063-4.948-.0063-3.2583-.021-3.6668-.0817-4.9465-.0607-1.2797-.264-2.1487-.5633-2.9117-.3084-.7889-.72-1.4568-1.3876-2.1228C21.2982 1.33 20.628.9208 19.8378.6165 19.074.321 18.2017.1197 16.9244.0645 15.6471.0093 15.236-.005 11.977.0014 8.718.0076 8.31.0215 7.0301.0839m.1402 21.6932c-1.17-.0509-1.8053-.2453-2.2287-.408-.5606-.216-.96-.4771-1.3819-.895-.422-.4178-.6811-.8186-.9-1.378-.1644-.4234-.3624-1.058-.4171-2.228-.0595-1.2645-.072-1.6442-.079-4.848-.007-3.2037.0053-3.583.0607-4.848.05-1.169.2456-1.805.408-2.2282.216-.5613.4762-.96.895-1.3816.4188-.4217.8184-.6814 1.3783-.9003.423-.1651 1.0575-.3614 2.227-.4171 1.2655-.06 1.6447-.072 4.848-.079 3.2033-.007 3.5835.005 4.8495.0608 1.169.0508 1.8053.2445 2.228.408.5608.216.96.4754 1.3816.895.4217.4194.6816.8176.9005 1.3787.1653.4217.3617 1.056.4169 2.2263.0602 1.2655.0739 1.645.0796 4.848.0058 3.203-.0055 3.5834-.061 4.848-.051 1.17-.245 1.8055-.408 2.2294-.216.5604-.4763.96-.8954 1.3814-.419.4215-.8181.6811-1.3783.9-.4224.1649-1.0577.3617-2.2262.4174-1.2656.0595-1.6448.072-4.8493.079-3.2045.007-3.5825-.006-4.848-.0608M16.953 5.5864A1.44 1.44 0 1 0 18.39 4.144a1.44 1.44 0 0 0-1.437 1.4424M5.8385 12.012c.0067 3.4032 2.7706 6.1557 6.173 6.1493 3.4026-.0065 6.157-2.7701 6.1506-6.1733-.0065-3.4032-2.771-6.1565-6.174-6.1498-3.403.0067-6.156 2.771-6.1496 6.1738M8 12.0077a4 4 0 1 1 4.008 3.9921A3.9996 3.9996 0 0 1 8 12.0077' }
+};
+window.bpBrandIco = BR;
+window.bpBrandSvg = function(k, cls){
+  var b = BR[k]; if(!b) return '';
+  return '<svg' + (cls ? ' class="' + String(cls).replace(/[^\w -]/g, '') + '"' : '') + ' viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="' + b.d + '"/></svg>';
+};
+if(!document.documentElement.classList.contains('bp-mv')) return;
+try{
+  var map = { tt:BR.tiktok.d, yt:BR.youtube.d, inst:BR.instagram.d };
+  if(typeof CAMP_PLATFORMS !== 'undefined' && CAMP_PLATFORMS && CAMP_PLATFORMS.forEach)
+    CAMP_PLATFORMS.forEach(function(p){ if(p && map[p.id]) p.svg = map[p.id]; });
+}catch(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'bp-mv-vbup'); }catch(_){} }
 })();
 </script>
 </body>
