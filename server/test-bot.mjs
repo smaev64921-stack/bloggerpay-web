@@ -72,10 +72,11 @@ ok(/подключился: @test_bot/.test(out), 'бот представилс
 
 /* кнопка меню рядом с полем ввода */
 const menu = sent.find((s) => s._cfg === 'setChatMenuButton');
-ok(!!menu && menu.menu_button && menu.menu_button.type === 'commands',
-   'кнопка меню показывает команды, а не мини-апп', menu && menu.menu_button);
-ok(!!menu && !menu.menu_button.web_app,
-   'мини-аппа в кнопке меню нет — сайт открывается ссылкой в браузере');
+/* 15.10.2026: кнопка у поля ввода — «Открыть» мини-приложением (на весь
+   экран, без полосы встроенного браузера «✕ · адрес · ⋮») */
+ok(!!menu && menu.menu_button && menu.menu_button.type === 'web_app' && menu.menu_button.text === 'Открыть'
+   && menu.menu_button.web_app && menu.menu_button.web_app.url === APP + '?from=tg',
+   'кнопка меню у всех — «Открыть» мини-приложением', menu && menu.menu_button);
 const cmds = sent.find((s) => s._cfg === 'setMyCommands');
 ok(!!cmds && cmds.commands.some((c) => c.command === 'start'), 'команда /start зарегистрирована');
 

@@ -112060,5 +112060,101 @@ function later(fn, ms){ return setTimeout(function(){ try{ fn(); }catch(e){ E(e)
 if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
 </script>
+<style id="bp-tg-open-css">
+/* ══ ИЗ БРАУЗЕРА ТЕЛЕГРАМА — В ПРИЛОЖЕНИЕ · вид (bp-tg-open, 15.10.2026) ══
+   Окно #mvTgOpen — тот же язык, что окна .mx-* и приглашения .mvgu.
+   Только под html.bp-mv. Откат: удалить style#bp-tg-open-css и
+   script#bp-tg-open.                                                   */
+html.bp-mv #mvTgOpen .mvto{ display:flex; flex-direction:column; align-items:center; text-align:center; padding:4px 0 0 }
+html.bp-mv #mvTgOpen .mvto-ic{
+  display:grid; place-items:center; width:72px; height:72px; margin:0 0 16px; border-radius:50%; color:#fff;
+  background:linear-gradient(160deg,#5ab8ff,#2a9df4 55%,#1c7fd6); box-shadow:0 10px 30px rgba(42,157,244,.35),inset 0 1px 0 rgba(255,255,255,.3);
+}
+html.bp-mv #mvTgOpen .mvto-ic svg{ width:34px; height:34px }
+html.bp-mv #mvTgOpen .mvto > b{ font-size:19px; line-height:25px; font-weight:700; color:#fff; text-wrap:balance }
+html.bp-mv #mvTgOpen .mvto p{ max-width:320px; margin:8px 0 0; font-size:14.5px; line-height:21px; color:rgba(255,255,255,.64); text-wrap:pretty }
+html.bp-mv #mvTgOpen .mvto-steps{ list-style:none; width:100%; max-width:340px; margin:16px 0 0; padding:12px 14px; display:grid; gap:10px; border-radius:18px; background:#1d1e20; border:1px solid rgba(255,255,255,.06); text-align:left }
+html.bp-mv #mvTgOpen .mvto-steps li{ display:flex; align-items:flex-start; gap:10px; font-size:13.5px; line-height:19px; color:rgba(255,255,255,.78) }
+html.bp-mv #mvTgOpen .mvto-steps li > i{ flex:none; display:grid; place-items:center; width:22px; height:22px; border-radius:50%; font-style:normal; font-size:12px; font-weight:700; color:#8fcbff; background:rgba(42,157,244,.2) }
+html.bp-mv #mvTgOpen .mvto-steps b{ color:#fff; font-weight:600 }
+html.bp-mv #mvTgOpen .mvto-btns{ display:flex; flex-direction:column; gap:10px; width:100%; max-width:340px; margin:18px 0 0 }
+html.bp-mv #mvTgOpen .mvto-btns .mx-b{ width:100%; min-height:50px; text-decoration:none; box-sizing:border-box; display:flex; align-items:center; justify-content:center }
+html.bp-mv #mvTgOpen .mvgu-link{ margin-top:6px }
+</style>
+<script id="bp-tg-open">
+/* ══ ИЗ БРАУЗЕРА ТЕЛЕГРАМА — В ПРИЛОЖЕНИЕ (bp-tg-open, 15.10.2026) ═════════
+   Владелец прислал снимок: сайт открылся во встроенном браузере Телеграма —
+   с полосой «✕ · название · адрес · ⋮». Так бывает, если открыть старую
+   кнопку-ссылку из истории чата (до 15.10 бот слал ссылки, а не
+   мини-приложение) или ссылку на сайт из сообщения. Мини-приложение такой
+   полосы не рисует. Сайт узнаёт этот случай — метка ?from=tg в адресе или
+   «Telegram» в строке браузера, а данных мини-приложения нет (bp-tg-boot не
+   поставил html.bp-tgapp) — и один раз предлагает перейти: ссылка
+   t.me/<бот>?start=open открывает чат с ботом, там кнопка «Открыть» (у
+   поля ввода и в ответе бота) — приложение на весь экран.
+   «Остаться здесь» — не спрашиваем три дня. Только телефон, только MV, не
+   на возвратах со входа (Google, Телеграм, площадки).
+   Откат: удалить script#bp-tg-open и style#bp-tg-open-css.            */
+(function(){
+'use strict';
+if(window.__bpTgOpen) return; window.__bpTgOpen = 1;
+var de = document.documentElement;
+function mv(){ return de.classList.contains('bp-mv'); }
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'bp-tg-open'); }catch(_){} }
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+var NB = ' ';
+function nb(s){ return String(s).replace(/(^|[\s«(])(в|во|с|со|к|о|об|у|и|а|не|на|по|за|из|от|до|без|для)\s/gi, '$1$2' + NB); }
+var KEY = 'bpTgOpenNo', DAYS3 = 3 * 864e5;
+var ua = String(navigator.userAgent || '');
+var Q = String(location.search || '');
+function wanted(){
+  if(!mv() || de.classList.contains('bp-tgapp')) return false;              /* уже мини-приложение */
+  if(!/Android|iPhone|iPad|iPod|Mobile/i.test(ua)) return false;           /* компьютер — не предлагаем */
+  if(!(/[?&]from=tg(?:&|$)/.test(Q) || /Telegram/i.test(ua))) return false;
+  if(/[?&](vfy|claim|code|state|glogin|tglogin|tt_state|yt_state)=/i.test(Q)) return false;
+  try{ var t = +localStorage.getItem(KEY) || 0; if(t && Date.now() - t < DAYS3) return false; }catch(e){}
+  try{ if(sessionStorage.getItem(KEY)) return false; }catch(e){}
+  return true;
+}
+function plane(){
+  var I = window.bpMvIco || {};
+  return I.tg || '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 4 3.6 10.7c-.9.4-.9 1.6 0 1.9l4.3 1.5 1.6 5c.3.9 1.4 1.1 2 .4l2.4-2.6 4.4 3.2c.7.5 1.7.1 1.9-.8L22.6 5.3C22.8 4.4 21.9 3.7 21 4z"/><path d="m8 14 9.4-6.7"/></svg>';
+}
+var M = null;
+function open(bot){
+  if(typeof window.bpMvModal !== 'function' || M) return;
+  try{ sessionStorage.setItem(KEY, '1'); }catch(e){}
+  var href = 'https://t.me/' + encodeURIComponent(bot) + '?start=open';
+  M = window.bpMvModal('mvTgOpen', { mid:true, title:'BloggerPay в Телеграме', onClose:function(){ M = null; },
+    body:'<div class="mvto"><span class="mvto-ic">' + plane() + '</span><b>' + esc(nb('Откройте как приложение')) + '</b>'
+      + '<p>' + esc(nb('Сейчас сайт открыт во встроенном браузере — отсюда полоса с адресом и кнопками сверху. Как приложение BloggerPay открывается на весь экран, без неё.')) + '</p>'
+      + '<ol class="mvto-steps"><li><i>1</i><span>' + nb('Нажмите <b>«Открыть в Телеграме»</b> — откроется чат с ботом.') + '</span></li>'
+      + '<li><i>2</i><span>' + nb('Там нажмите <b>«Открыть»</b> у поля ввода или в ответе бота.') + '</span></li></ol>'
+      + '<div class="mvto-btns"><a class="mx-b mx-bp" id="mvToGo" href="' + esc(href) + '">Открыть в Телеграме</a></div>'
+      + '<button type="button" class="mvgu-link" data-mto="stay">Остаться здесь</button></div>' });
+  if(!M) return;
+  M.el.addEventListener('click', function(e){
+    var b = e.target.closest ? e.target.closest('[data-mto=stay]') : null;
+    if(b){ try{ localStorage.setItem(KEY, String(Date.now())); }catch(err){} if(M) M.close(); }
+  });
+}
+function boot(){
+  if(!wanted()) return;
+  var S = window.bpSrv, done = false;
+  function go(name){ if(done) return; done = true; open(/^[A-Za-z0-9_]{5,64}$/.test(name || '') ? name : 'BloggerPay_bot'); }
+  try{
+    if(S && S.configured && S.configured() && typeof S.raw === 'function'){
+      S.raw('GET', '/api/tg/bot').then(function(j){ go(j && j.bot); }, function(){ go(''); });
+      setTimeout(function(){ go(''); }, 2500);
+      return;
+    }
+  }catch(e){ E(e); }
+  go('');
+}
+/* после того как приложение встало (задания уже на экране) */
+function later(){ setTimeout(function(){ try{ boot(); }catch(e){ E(e); } }, 1200); }
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', later); else later();
+})();
+</script>
 </body>
 </html>

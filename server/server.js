@@ -4246,6 +4246,14 @@ const routes = {
     return { status: 200, body: { ok: true, code, bot, url: 'https://t.me/' + bot + '?start=sup_' + code } };
   },
 
+  /* Имя бота для сайта (15.10.2026): открытый во встроенном браузере
+     Телеграма сайт предлагает перейти в мини-приложение — ссылкой на бота. */
+  'GET /api/tg/bot': async (req) => {
+    if (!rateLimit(req, 'tgbot', 30, 60000)) return tooOften;
+    const bot = (BOT && typeof BOT.botName === 'function' && BOT.botName()) || String(ENV.BOT_USERNAME || '').replace(/^@/, '') || '';
+    return { status: 200, body: { bot: /^[A-Za-z0-9_]{5,64}$/.test(bot) ? bot : '' } };
+  },
+
   'GET /api/topup/invoices': async (req) => {
     const u = auth(req);
     if (!u) return { status: 401, body: { error: 'Нужен вход' } };
