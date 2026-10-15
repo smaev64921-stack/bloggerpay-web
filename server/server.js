@@ -30,6 +30,16 @@
 
 'use strict';
 
+/* Второй сервер — ретранслятор (16.10.2026, переезд в Москву). Сайт,
+   касса и база живут на московском сервере, а этот же код на прежнем,
+   нидерландском, запущен с BP_MODE=relay: без базы и без бота, только
+   пересылает запросы к площадкам, закрытым из России, и переадресует
+   старый адрес на новый. Устройство — в relay.js. */
+if (String(process.env.BP_MODE || '').trim().toLowerCase() === 'relay') {
+  require('./relay.js').runRelay();
+  return;
+}
+
 const http = require('node:http');
 const crypto = require('node:crypto');
 const path = require('node:path');
@@ -73,6 +83,9 @@ function loadEnv(file) {
 }
 
 const ENV = Object.assign(loadEnv(path.join(__dirname, '.env')), process.env);
+/* Площадки, закрытые из России (Телеграм, TikTok, Instagram, YouTube,
+   почта), — через ретранслятор в Нидерландах, если задан RELAY_URL. */
+require('./relay.js').installFetchRelay(ENV);
 const PORT = Number(ENV.PORT) || 8090;
 const DB_PATH = ENV.DB_PATH || path.join(__dirname, 'data', 'bloggerpay.db');
 const ADMIN_KEY = ENV.ADMIN_KEY || '';
@@ -135,6 +148,16 @@ const PAY_RETURN_URL = ENV.PAY_RETURN_URL || 'https://t.me';
    адреса нет — работаем как локальный сервер. */
 const PUBLIC_URL = externalBase(ENV)
   || (ENV.PUBLIC_URL || ('http://127.0.0.1:' + (Number(ENV.PORT) || 8090))).replace(/\/+$/, '');
+/* Куда площадки возвращают человека после входа: redirect_uri у TikTok,
+   YouTube, Instagram и Google, origin входа через Телеграм. Обычно это
+   сам сервер. После переезда в Москву (16.10.2026) здесь СТАРЫЙ адрес:
+   он прописан в кабинетах TikTok и Google, проверка приложения TikTok
+   идёт по нему же, а ретранслятор на нём переадресует человека сюда.
+   Менять — только вместе с адресами возврата в кабинетах площадок. */
+const OAUTH_BASE = (() => {
+  const v = String(ENV.OAUTH_BASE || '').trim().replace(/\/+$/, '');
+  return /^https:\/\/[^\s/]+\.[^\s/]+$/i.test(v) ? v : PUBLIC_URL;
+})();
 /* Письмо-ссылка имеет смысл ТОЛЬКО если сервер виден снаружи. Проверять
    одну схему мало: значение по умолчанию — http://127.0.0.1:<порт> —
    схему имеет, и режим включался бы сам собой. Тогда человек получал бы
@@ -2879,7 +2902,7 @@ async function platformProbe(p) {
     const out = {
       platform: p, label: cfg.label,
       keys: !!(cfg.id && cfg.secret),
-      redirect: PUBLIC_URL + '/api/verify/callback/' + p,
+      redirect: OAUTH_BASE + '/api/verify/callback/' + p,
       scope: cfg.scope,
       authHost: (() => { try { return new URL(cfg.auth).host; } catch (e) { return ''; } })(),
       apiHost: (() => { try { return new URL(cfg.token).host; } catch (e) { return ''; } })(),
@@ -3630,7 +3653,7 @@ const routes = {
     const q1 = new URLSearchParams({
       response_type: 'code',
       client_id: cfg.id,
-      redirect_uri: PUBLIC_URL + '/api/auth/google/callback',
+      redirect_uri: OAUTH_BASE + '/api/auth/google/callback',
       /* просим только то, что нужно для входа: кто это и как зовут */
       scope: 'openid email profile',
       state: nonce,
@@ -3715,10 +3738,10 @@ const routes = {
        иначе Телеграм откажет. return_to — куда вернуть человека. */
     const q1 = new URLSearchParams({
       bot_id: TG_BOT_ID,
-      origin: PUBLIC_URL,
+      origin: OAUTH_BASE,
       embed: '0',
       request_access: 'write',
-      return_to: PUBLIC_URL + '/api/auth/telegram/callback?n=' + nonce,
+      return_to: OAUTH_BASE + '/api/auth/telegram/callback?n=' + nonce,
     });
     return { status: 200, body: { url: TG_WIDGET_AUTH + '?' + q1.toString(), nonce } };
   },
@@ -4633,7 +4656,7 @@ const routes = {
     vfySweep();
     const state = crypto.randomBytes(24).toString('hex');
     vfy.set(state, { userId: u.id, platform: p, at: Date.now(), channel: null, code: '', tries: 0 });
-    const redirect = PUBLIC_URL + '/api/verify/callback/' + p;
+    const redirect = OAUTH_BASE + '/api/verify/callback/' + p;
 
     const q1 = new URLSearchParams({
       response_type: 'code', state, redirect_uri: redirect, scope: cfg.scope,
@@ -4759,7 +4782,7 @@ const routes = {
       platforms[p] = {
         label: OAUTH[p].label,
         configured: !!(OAUTH[p].id && OAUTH[p].secret),
-        redirect: PUBLIC_URL + '/api/verify/callback/' + p,
+        redirect: OAUTH_BASE + '/api/verify/callback/' + p,
       };
     }
     return { status: 200, body: { platforms } };
@@ -8132,7 +8155,7 @@ async function handleGoogleCallback(req, res, url) {
       method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         code, client_id: cfg.id, client_secret: cfg.secret,
-        redirect_uri: PUBLIC_URL + '/api/auth/google/callback',
+        redirect_uri: OAUTH_BASE + '/api/auth/google/callback',
         grant_type: 'authorization_code',
       }),
     });
@@ -8222,7 +8245,7 @@ async function handleVerifyCallback(req, res, url) {
       'Введите его в приложении. Если код потерян — начните проверку заново.', false);
   }
 
-  const redirect = PUBLIC_URL + '/api/verify/callback/' + p;
+  const redirect = OAUTH_BASE + '/api/verify/callback/' + p;
 
   /* Запрос к площадке с ограничением по времени и одной повторной
      попыткой: разовый обрыв бывает, вечное ожидание — нет. */
