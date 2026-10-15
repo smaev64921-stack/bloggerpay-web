@@ -172,6 +172,27 @@ function keyboard(payload) {
     ],
   };
 }
+/* ── Админ-панель для владельца (15.10.2026) ──────────────────────
+   Только в чате владельца (ADMIN_CHAT_ID): кнопка «Админ панель» открывает
+   /admin МИНИ-ПРИЛОЖЕНИЕМ Телеграма — так страница получает подписанные
+   данные Телеграма и входит сама, без ключа (сервер: /api/admin/tg-session).
+   Мини-приложение Телеграм открывает только по https; на локальной машине
+   (http) — обычная ссылка, там вход ключом. */
+function adminChat() { return String(ENV.ADMIN_CHAT_ID || '').trim(); }
+function isAdminChat(chatId) { const a = adminChat(); return !!a && String(chatId) === a; }
+function adminUrl() {
+  /* админка живёт в корне сайта (/admin), даже если у приложения есть путь */
+  try { return new URL('/admin', APP_URL).href; } catch (e) { return String(APP_URL).replace(/\/+$/, '') + '/admin'; }
+}
+function adminButton() {
+  const url = adminUrl();
+  return /^https:\/\//i.test(url) ? { text: '🛠 Админ панель', web_app: { url } } : { text: '🛠 Админ панель', url };
+}
+function keyboardFor(chatId, payload) {
+  const kb = keyboard(payload);
+  if (isAdminChat(chatId)) kb.inline_keyboard.push([adminButton()]);
+  return kb;
+}
 
 /* ── Крючки для сервера (14.10.2026) ───────────────────────────────
    Пополнение по счёту ведётся здесь, в чате: сервер ставит крючки
@@ -218,7 +239,17 @@ async function onMessage(msg) {
   if (start) {
     await tg('sendMessage', {
       chat_id: chatId, text: HELLO, parse_mode: 'HTML',
-      reply_markup: keyboard(start[1] || ''),
+      reply_markup: keyboardFor(chatId, start[1] || ''),
+    });
+    return;
+  }
+
+  /* /admin — владельцу кнопка админ-панели; остальным команда не нужна */
+  if (/^\/admin(?:@\w+)?\b/.test(text) && isAdminChat(chatId)) {
+    await tg('sendMessage', {
+      chat_id: chatId,
+      text: 'Админ-панель BloggerPay: выплаты, проверка личности, видео заданий, пользователи.',
+      reply_markup: { inline_keyboard: [[adminButton()]] },
     });
     return;
   }
@@ -269,6 +300,24 @@ async function setup() {
       { command: 'help', description: 'Как это работает' },
     ],
   });
+  /* Владельцу — постоянная кнопка «Админка» у поля ввода и команда /admin
+     (только в его чате; у остальных кнопка меню — команды, как выше) */
+  const admin0 = adminChat();
+  if (admin0) {
+    const url = adminUrl();
+    if (/^https:\/\//i.test(url)) {
+      await tg('setChatMenuButton', { chat_id: admin0, menu_button: { type: 'web_app', text: 'Админка', web_app: { url } } })
+        .catch((e) => console.error('[бот] кнопка админки не поставилась: ' + ((e && e.message) || e)));
+    }
+    await tg('setMyCommands', {
+      commands: [
+        { command: 'start', description: 'Открыть BloggerPay' },
+        { command: 'admin', description: 'Админ-панель' },
+        { command: 'help', description: 'Как это работает' },
+      ],
+      scope: { type: 'chat', chat_id: Number(admin0) || admin0 },
+    }).catch(() => {});
+  }
   await tg('setMyDescription', {
     description: 'Рекламные задания для блогеров: публикуйте ролики и получайте деньги за просмотры.',
   }).catch(() => {});          /* не критично, если Телеграм откажет */
@@ -366,7 +415,7 @@ async function boot() {
   return true;
 }
 
-module.exports = { boot, appUrl, keyboard, setHooks, say, copy, botName };
+module.exports = { boot, appUrl, keyboard, keyboardFor, adminUrl, setHooks, say, copy, botName };
 
 /* Запущен напрямую (node server/bot.js) — работаем как отдельный процесс. */
 if (require.main === module) {

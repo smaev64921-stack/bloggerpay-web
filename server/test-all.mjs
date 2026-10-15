@@ -18,7 +18,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const SUITES = [
   'test-scenario.mjs', 'test-kyc.mjs', 'test-verify.mjs', 'test-pay.mjs',
   'test-partial.mjs', 'test-disputes.mjs', 'test-alerts.mjs', 'test-bot.mjs',
-  'test-telegram.mjs', 'test-mail.mjs', 'test-return.mjs', 'test-forge.mjs', 'test-leaderboard.mjs', 'test-cards.mjs', 'test-cards-unpublish.mjs', 'test-privacy-1010.mjs','test-admin-session.mjs', 'test-admin-console.mjs', 'test-google-login.mjs', 'test-sync.mjs', 'test-chan-migrate.mjs', 'test-tg-login.mjs', 'test-quality.mjs',
+  'test-telegram.mjs', 'test-mail.mjs', 'test-return.mjs', 'test-forge.mjs', 'test-leaderboard.mjs', 'test-cards.mjs', 'test-cards-unpublish.mjs', 'test-privacy-1010.mjs','test-admin-session.mjs', 'test-admin-tg.mjs', 'test-admin-console.mjs', 'test-google-login.mjs', 'test-sync.mjs', 'test-chan-migrate.mjs', 'test-tg-login.mjs', 'test-quality.mjs',
   'test-audit.mjs',                       /* заплаты после разбора 06.09.2026 */
   'test-push.mjs',                        /* шифрование и подпись уведомлений */
   'test-push-api.mjs',                    /* подписки и доставка по событиям */

@@ -19,6 +19,9 @@ const calls = [];         /* какие методы вызвал */
 let queue = [];           /* что заглушка отдаст на getUpdates */
 let updId = 100;
 
+function pushFrom(chat, text) {
+  queue.push({ update_id: ++updId, message: { message_id: updId, chat: { id: chat, type: 'private' }, from: { id: chat }, text } });
+}
 function pushUpdate(text) {
   queue.push({
     update_id: ++updId,
@@ -112,6 +115,29 @@ await wait(1500);
 const any = sent.filter((s) => s.text).pop();
 ok(!!any && /Чаты/.test(any.text), 'на обычное сообщение бот отвечает и даёт кнопку');
 ok(!!any.reply_markup, 'кнопка есть и там');
+/* владельцу (ADMIN_CHAT_ID) — «Админ панель» мини-приложением; у остальных её нет (15.10.2026) */
+const ADMIN_URL = new URL('/admin', APP).href;
+const adminMenu = sent.filter((s) => s._cfg === 'setChatMenuButton' && String(s.chat_id) === '424242')[0];
+ok(!!adminMenu && adminMenu.menu_button.type === 'web_app' && adminMenu.menu_button.web_app.url === ADMIN_URL,
+   'владельцу — кнопка «Админка» у поля ввода (мини-приложение /admin)', adminMenu);
+const adminCmds = sent.filter((s) => s._cfg === 'setMyCommands' && s.scope && String(s.scope.chat_id) === '424242')[0];
+ok(!!adminCmds && adminCmds.commands.some((c) => c.command === 'admin'), 'у владельца есть команда /admin', adminCmds);
+ok(!!kb && !kb.some((row) => row.some((b) => b.web_app)), 'у обычного человека кнопки админки нет', kb);
+pushFrom(424242, '/start');
+await wait(1500);
+const aStart = sent.filter((s) => s.text && s.reply_markup && String(s.chat_id) === '424242').pop();
+const aRows = aStart && aStart.reply_markup.inline_keyboard;
+ok(!!aRows && aRows.length === 3 && !!aRows[2][0].web_app && aRows[2][0].web_app.url === ADMIN_URL && /Админ панель/.test(aRows[2][0].text),
+   'владелец на /start видит «🛠 Админ панель» (мини-приложение)', aRows);
+pushFrom(424242, '/admin');
+await wait(1500);
+const aCmd = sent.filter((s) => s.text && String(s.chat_id) === '424242').pop();
+ok(!!aCmd && /Админ-панель/.test(aCmd.text) && !!aCmd.reply_markup.inline_keyboard[0][0].web_app, '/admin у владельца — сообщение с кнопкой', aCmd);
+pushUpdate('/admin');
+await wait(1500);
+const nCmd = sent.filter((s) => s.text && String(s.chat_id) === '555').pop();
+ok(!!nCmd && !/Админ-панель/.test(nCmd.text) && !JSON.stringify(nCmd.reply_markup || {}).includes('web_app'), 'у остальных /admin админку не открывает', nCmd && nCmd.text);
+
 
 /* «уже опрашивают» и плохой токен — понятные сообщения */
 bot.kill();

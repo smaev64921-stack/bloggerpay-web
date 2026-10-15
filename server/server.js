@@ -2071,6 +2071,13 @@ function adminCookieParse(req) {
   return { exp, who };
 }
 function adminCookieOk(req) { return !!adminCookieParse(req); }
+/* Телеграм-id владельца для входа в админку из бота: ADMIN_CHAT_ID (личный
+   чат = номер человека) и необязательный список ADMIN_TG_IDS. Только
+   положительные номера: у групп id отрицательный — группа не человек. */
+function adminTgIds() {
+  return [String(ENV.ADMIN_CHAT_ID || '')].concat(String(ENV.ADMIN_TG_IDS || '').split(/[\s,;]+/))
+    .map((x) => x.trim()).filter((x) => /^\d{3,20}$/.test(x));
+}
 function adminCookieWho(req) { const c = adminCookieParse(req); return c ? c.who : ''; }
 /* Кто нажал кнопку в пульте — для журнала действий. */
 function adminWho(req) {
@@ -5315,6 +5322,35 @@ const routes = {
       },
       headers: { 'Set-Cookie': adminCookie(req, until, who) },
     };
+  },
+
+  /* ── Вход владельца из Телеграма (15.10.2026) ──────────────────────
+     Кнопка «Админ панель» в боте (только в чате владельца) открывает /admin
+     мини-приложением Телеграма. Страница присылает initData — строку,
+     подписанную ключом бота; сервер проверяет подпись (checkInitData),
+     свежесть (10 минут) и что это САМ владелец: его Телеграм-id совпадает с
+     ADMIN_CHAT_ID (личный чат владельца с ботом — тот же номер) или есть в
+     списке ADMIN_TG_IDS. Тогда — та же сессия-кука, что после ключа.
+     Неудачи считаются промахами (adminMissed): перебор упрётся в замок. */
+  'POST /api/admin/tg-session': async (req, body) => {
+    if (!rateLimit(req, 'admtg', 20, 60000)) return tooOften;
+    if (adminBlocked(req)) {
+      return { status: 429, body: { error: 'Слишком много попыток — подождите десять минут' } };
+    }
+    const ids = adminTgIds();
+    if (!ids.length) return { status: 503, body: { error: 'Вход через Телеграм не настроен: нет ADMIN_CHAT_ID' } };
+    const check = checkInitData(String((body && body.initData) || ''), 600);
+    if (!check.ok) { adminMissed(req); return { status: 403, body: { error: check.why } }; }
+    const id = String(check.tg.id);
+    if (!ids.includes(id)) {
+      adminMissed(req);
+      return { status: 403, body: { error: 'Этот Телеграм-аккаунт не владелец площадки' } };
+    }
+    const until = Date.now() + ADMIN_SESSION_MS;
+    const who = 'Телеграм ' + (check.tg.username ? '@' + String(check.tg.username).slice(0, 40)
+      : String(check.tg.first_name || '').slice(0, 40)) + ' (' + id + ')';
+    return { status: 200, body: { ok: true, until, who, by: 'телеграм' },
+      headers: { 'Set-Cookie': adminCookie(req, until, who) } };
   },
 
   /* Проверка: пустит ли сервер без ключа. Страница пульта спрашивает это

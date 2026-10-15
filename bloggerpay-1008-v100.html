@@ -95827,6 +95827,8 @@ function ownHtml(c){
     + '</div>'
     + '<button type="button" class="ow-go" data-vb="own" data-camp="' + esc(id) + '">Открыть моё задание<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg></button>';
 }
+/* та же карточка — в «Моих заданиях» рекламодателя (слой bp-mv-own, 15.10.2026) */
+window.bpVbOwnHtml = function(c){ try{ return c ? ownHtml(c) : ''; }catch(e){ E(e); return ''; } };
 function ownMark(card){
   var m = RX.exec(card.getAttribute('onclick') || ''), c = m && camp(m[1]); if(!c) return;
   if(!card.classList.contains('vb-own2')){ card.classList.add('vb-own2'); card.classList.remove('tk-card-joined', 'vb-mine-card'); }
@@ -95841,6 +95843,14 @@ function paintCards(){
       var c = camp(m[1]);
       if(c && ownTask(c.id)){ var op = card.querySelector('.vb-panel'); if(op){ op.remove(); var ob0 = card.querySelector('.hx-bank'); if(ob0) ob0.style.display = ''; } ownMark(card); return; }
       if(card.classList.contains('vb-own2')){ card.classList.remove('vb-own2'); card.removeAttribute('data-vb'); }
+      /* 15.10.2026, владелец: «на главной вступленное задание — обычной карточкой,
+         как у More Views; ролики и „Загрузить“ — только в „Моих заданиях“».
+         В MV панель участия на «Главной» не рисуем (полный доступ — как раньше). */
+      if(document.documentElement.classList.contains('bp-mv')){
+        var op3 = card.querySelector('.vb-panel');
+        if(op3){ op3.remove(); var ob3 = card.querySelector('.hx-bank'); if(ob3) ob3.style.display = ''; }
+        return;
+      }
       if(!c || !isVidTask(c) || !joined(c.id) || !canUpload(c.id)) return;
       var bank = card.querySelector('.hx-bank');
       var p = card.querySelector('.vb-panel');
@@ -96230,6 +96240,8 @@ function campListFix(){
       var fill = card.querySelector('.cco2-bar .cdo-bar-fill'); if(fill) fill.style.width = m.pct + '%';
     });
   }catch(e){ E(e); }
+  /* MV: карточки списка — разметкой своей карточки «Главной»; цифры свежие */
+  try{ if(typeof window.bpMvOwnPaint === 'function') window.bpMvOwnPaint(); }catch(e){ E(e); }
 }
 (function(){
   var o = window.renderCampaignsPage;
@@ -108437,6 +108449,138 @@ function boot(){
   [400, 1500, 3500].forEach(function(ms){ setTimeout(function(){ try{ install(); if(mv()){ build(); paint(); } }catch(e){ E(e); } }, ms); });
 }
 window.bpMvAuthPaint = function(){ try{ paint(); }catch(e){ E(e); } };
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+})();
+</script>
+<style id="bp-mv-own-css">
+/* ══ СВОЁ ЗАДАНИЕ ОДНОЙ КАРТОЧКОЙ: «ГЛАВНАЯ» И «МОИ ЗАДАНИЯ» (15.10.2026) ══
+   Владелец: «моё задание в разделе „Мои задания“ выглядит не так, как в
+   главном меню». В MV карточки списка рекламодателя (#pg-campaigns
+   .camp-card — их рисует renderCampaignsPage) пересобираются разметкой
+   своей карточки «Главной» (bp-vbind ownHtml → window.bpVbOwnHtml): вместо
+   «Ваше задание» — статус, дальше срок, формат и площадки, «Бюджет ·
+   Выплачено · Видео» и «Открыть моё задание». Правила ниже — копия стилей
+   своей карточки из bp-mv-card-css, только #pg-campaigns (собраны скриптом).
+   Только под html.bp-mv; в полном доступе — прежняя карточка.
+   Откат: удалить style#bp-mv-own-css и script#bp-mv-own. */
+html.bp-mv body #pg-campaigns .camp-card.mvo{
+  display:block; margin:0 0 12px; padding:20px!important; border-radius:32px!important; background:#1d1e20!important;
+  border:.8px solid rgba(255,255,255,.05)!important; box-shadow:none!important; overflow:hidden; cursor:pointer;
+}
+html.bp-mv body #pg-campaigns .camp-card.mvo::before,
+html.bp-mv body #pg-campaigns .camp-card.mvo::after{ content:none!important; display:none!important }
+html.bp-mv body #pg-campaigns .camp-card.mvo:active{ transform:scale(.99) }
+/* ряд «Условия задания / Участники» старого слоя: на «Главной» его нет — условия и участники вкладками на странице задания */
+html.bp-mv body #pg-campaigns .camp-card.mvo .tk-campacts{ display:none!important }
+html.bp-mv #pg-campaigns .camp-card.mvo .ow-hd{flex-wrap:wrap;row-gap:8px}
+html.bp-mv #pg-campaigns .camp-card.mvo .ow-tag{height:28px;padding:0 12px;gap:7px;background:rgba(97,118,255,.15);color:#b3bdff;font-size:13px;font-weight:600;white-space:nowrap}
+html.bp-mv #pg-campaigns .camp-card.mvo .mt-due{height:28px;padding:0 11px;background:#272829;color:rgba(255,255,255,.72);font-size:13px;font-weight:500}
+html.bp-mv #pg-campaigns .camp-card.mvo .mt-due.hot{background:rgba(255,138,31,.14);color:#ffb067}
+html.bp-mv #pg-campaigns .camp-card.mvo .ow-meta{gap:10px;margin-top:14px}
+html.bp-mv #pg-campaigns .camp-card.mvo .ow-fmt{height:32px;padding:0 12px;background:#272829;color:#fff;font-size:14px;font-weight:500}
+html.bp-mv #pg-campaigns .camp-card.mvo .ow-meta .hx-pl{height:32px;padding:0;gap:0;border:0;background:none;font-size:0}
+html.bp-mv #pg-campaigns .camp-card.mvo .ow-meta .hx-pl + .hx-pl{margin-left:-17px}
+html.bp-mv #pg-campaigns .camp-card.mvo .ow-meta .hx-pi{width:30px;height:30px;box-shadow:0 0 0 2px #1d1e20}
+html.bp-mv #pg-campaigns .camp-card.mvo .ow-meta .hx-pi.brd{background:#000!important}
+html.bp-mv #pg-campaigns .camp-card.mvo .ow-meta .hx-pi.brd svg{filter:drop-shadow(.8px 0 0 #fe2c55) drop-shadow(-.8px 0 0 #25f4ee)}
+html.bp-mv #pg-campaigns .camp-card.mvo .ow-meta .hx-pi svg{width:15px;height:15px}
+html.bp-mv #pg-campaigns .camp-card.mvo .ow-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;padding:0;border:0}
+html.bp-mv #pg-campaigns .camp-card.mvo .ow-c{flex:1 1 0;min-width:max-content}
+html.bp-mv #pg-campaigns .camp-card.mvo .ow-c,
+html.bp-mv #pg-campaigns .camp-card.mvo .ow-c:first-child{padding:11px 12px;border-radius:18px;background:#252628}
+html.bp-mv #pg-campaigns .camp-card.mvo .ow-c + .ow-c{border-left:0}
+html.bp-mv #pg-campaigns .camp-card.mvo .ow-c span{font-size:12.5px;font-weight:500;color:rgba(255,255,255,.5)}
+html.bp-mv #pg-campaigns .camp-card.mvo .ow-c b{margin-top:4px;font-size:17px;font-weight:700;color:#fff;overflow:visible}
+html.bp-mv #pg-campaigns .camp-card.mvo .ow-c i{color:#ffb067}
+html.bp-mv #pg-campaigns .camp-card.mvo .ow-go:focus-visible{outline:2px solid #b7c1ff;outline-offset:2px}
+html.bp-mv #pg-campaigns .camp-card.mvo .ow-name{
+  margin-top:14px;font-size:20px;font-weight:600;line-height:1.3;letter-spacing:-.25px;color:#fff;
+  white-space:normal;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+html.bp-mv #pg-campaigns .camp-card.mvo .ow-go{
+  min-height:46px;margin-top:16px;border:0;border-radius:9999px;
+  background:linear-gradient(#92a1ff,#3d55ed,#6176ff);color:#fff;
+  box-shadow:0 4px 4px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,255,255,.18);
+  font-size:16px;font-weight:600;
+}
+/* статус вместо «Ваше задание»: точка того же цвета */
+html.bp-mv #pg-campaigns .camp-card.mvo .ow-tag .ow-dot{ width:8px; height:8px; border-radius:50%; background:currentColor; flex:none }
+html.bp-mv #pg-campaigns .camp-card.mvo .ow-tag.st-paused{ background:rgba(255,138,31,.14); color:#ffb067 }
+html.bp-mv #pg-campaigns .camp-card.mvo .ow-tag.st-draft,
+html.bp-mv #pg-campaigns .camp-card.mvo .ow-tag.st-done{ background:#272829; color:rgba(255,255,255,.72) }
+@media (max-width:360px){
+  html.bp-mv body #pg-campaigns .camp-card.mvo{ padding:18px 16px!important; border-radius:28px!important }
+  html.bp-mv #pg-campaigns .camp-card.mvo .ow-name{ font-size:19px }
+  html.bp-mv #pg-tasks .tk-card.mvc .mvc-t,html.bp-mv #pg-campaigns .camp-card.mvo .ow-name{font-size:19px}
+  html.bp-mv #pg-campaigns .camp-card.mvo .ow-c,html.bp-mv #pg-campaigns .camp-card.mvo .ow-c:first-child{padding:10px 9px}
+  html.bp-mv #pg-campaigns .camp-card.mvo .ow-tag{padding:0 10px;gap:6px;font-size:12.5px}
+  html.bp-mv #pg-campaigns .camp-card.mvo .mt-due{padding:0 9px;gap:5px;font-size:12.5px}
+  html.bp-mv #pg-campaigns .camp-card.mvo .ow-c b{font-size:15.5px}
+}
+</style>
+<script id="bp-mv-own">
+/* Своё задание одной карточкой на «Главной» и в «Моих заданиях» (15.10.2026)
+   — см. комментарий в style#bp-mv-own-css. Перерисовка: после
+   renderCampaignsPage, при показе страницы, при новой карточке в списке
+   (childList #campListContainer) и после загрузки роликов (campListFix в
+   bp-vbind зовёт window.bpMvOwnPaint). Классы меняем только по проверке
+   contains: наблюдатель за атрибутами иначе крутился бы сам за собой. */
+(function(){
+'use strict';
+if(window.__bpMvOwn) return; window.__bpMvOwn = 1;
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'bp-mv-own'); }catch(_){} }
+function $(id){ return document.getElementById(id); }
+function mv(){ return document.documentElement.classList.contains('bp-mv'); }
+function campOf(id){
+  try{ var a = typeof _loadCamps === 'function' ? (_loadCamps() || []) : []; for(var i = 0; i < a.length; i++) if(a[i] && String(a[i].id) === String(id)) return a[i]; }catch(e){}
+  return null;
+}
+function stateOf(c){
+  var s = String((c && c.status) || '');
+  return s === 'draft' ? 'draft' : s === 'paused' ? 'paused' : (s === 'done' || s === 'completed' || s === 'finished') ? 'done' : 'active';
+}
+var LBL = { active:'Активно', paused:'На паузе', draft:'Черновик', done:'Завершено' };
+function cardHtml(c){
+  var h = typeof window.bpVbOwnHtml === 'function' ? window.bpVbOwnHtml(c) : '';
+  if(!h) return '';
+  var st = stateOf(c);
+  h = h.replace(/<span class="ow-tag">\s*<svg[\s\S]*?<\/svg>\s*Ваше задание<\/span>/,
+    '<span class="ow-tag st-' + st + '"><i class="ow-dot" aria-hidden="true"></i>' + LBL[st] + '</span>');
+  if(st === 'draft') h = h.replace('>Открыть моё задание<', '>Открыть черновик<');
+  return h;
+}
+function paint(){
+  if(!mv()) return;
+  var box = $('campListContainer'); if(!box) return;
+  [].forEach.call(box.querySelectorAll('.camp-card[id^="campCard_"]'), function(card){
+    try{
+      var c = campOf(card.id.slice(9)); if(!c) return;
+      var h = cardHtml(c); if(!h) return;
+      if(card.__mvo !== h){ card.__mvo = h; card.innerHTML = h; }
+      ['mvo', 'vb-own2'].forEach(function(k){ if(!card.classList.contains(k)) card.classList.add(k); });
+      [].slice.call(card.classList).forEach(function(k){ if(k === 'cco' || k === 'cco2' || /^cco2-st-/.test(k)) card.classList.remove(k); });
+      if(card.getAttribute('data-camp') !== String(c.id)) card.setAttribute('data-camp', String(c.id));
+    }catch(e){ E(e); }
+  });
+}
+window.bpMvOwnPaint = function(){ try{ paint(); }catch(e){ E(e); } };
+function install(){
+  var o = window.renderCampaignsPage;
+  if(typeof o !== 'function') return;
+  for(var f = o, i = 0; f && i < 30; f = f.__orig, i++) if(f.__mvOwn) return;
+  var w = function(){ var r = o.apply(this, arguments); try{ paint(); }catch(e){ E(e); } return r; };
+  w.__mvOwn = 1; w.__orig = o; window.renderCampaignsPage = w;
+}
+function boot(){
+  install();
+  var box = $('campListContainer'), pg = $('pg-campaigns');
+  if(typeof MutationObserver !== 'undefined'){
+    if(box) new MutationObserver(function(){ paint(); }).observe(box, { childList:true });
+    if(pg) new MutationObserver(function(){ if(pg.classList.contains('on')) paint(); }).observe(pg, { attributes:true, attributeFilter:['class'] });
+  }
+  paint();
+  [700, 2500].forEach(function(ms){ setTimeout(function(){ install(); paint(); }, ms); });
+}
 if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
 </script>
