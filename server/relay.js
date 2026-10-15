@@ -394,7 +394,15 @@ function runRelay(opt) {
       res.writeHead(302, { Location: moved + (raw.startsWith('/') ? raw : '/' + raw), 'Cache-Control': 'no-store' });
       return res.end();
     }
-    if (pass.some((p) => pathname.startsWith(p))) return passIn(req, res, raw);
+    /* Сверяем с RELAY_PASS уже РАЗОБРАННЫЙ путь и его же отправляем
+       дальше: иначе /api/verify/x/../../login прошёл бы проверку по
+       префиксу, а fetch, сократив «..», унёс бы его в /login. Точки,
+       их %2e и обратные слэши в таком пути не нужны никому — отказ. */
+    if (pass.length && raw.startsWith('/') && !raw.startsWith('//') && !/\.\.|%2e|\\/i.test(raw)) {
+      let norm = '';
+      try { const u = new URL(raw, 'http://relay.invalid'); norm = u.pathname + u.search; } catch (e) { norm = ''; }
+      if (norm && pass.some((p) => norm.startsWith(p))) return passIn(req, res, norm);
+    }
     return fail(res, 410, 'moved', 'BloggerPay переехал: ' + moved);
   }
 

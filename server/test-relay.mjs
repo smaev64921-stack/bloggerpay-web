@@ -258,6 +258,20 @@ try {
   r = await realFetch(RELAY + '/api/verify/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
   ok(r.status === 410 && ruLog.length === k0 + 1 && relayLib.DEFAULT_PASS.length === 0,
     'без RELAY_PASS ни один POST в Москву не идёт: общий адрес ретранслятора не исчерпает лимиты за всех', r.status);
+  /* Сырой путь: fetch сам сократил бы «..» ещё до отправки, поэтому —
+     http.request, который шлёт путь как есть. */
+  const rawPost = (p) => new Promise((resolve) => {
+    const q = http.request({ host: '127.0.0.1', port: P_RELAY, method: 'POST', path: p,
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }, (s) => { s.resume(); s.on('end', () => resolve(s.statusCode)); });
+    q.on('error', () => resolve(0));
+    q.end('x=1');
+  });
+  const tricks = ['/api/verify/instagram/../../login', '/api/verify/instagram/%2e%2e/%2E%2E/login',
+    '/api/verify/instagram/..%2f..%2flogin', '/api/verify/instagram\\..\\..\\login', '//api/verify/instagram/x'];
+  const codes = [];
+  for (const p of tricks) codes.push(await rawPost(p));
+  ok(codes.every((c) => c === 410) && ruLog.length === k0 + 1,
+    'обход RELAY_PASS через «..», %2e и обратные слэши не проходит — в Москву ничего не ушло', codes);
 
   console.log('\nНастоящий сервер за ретранслятором');
   const srvDir = mkdtempSync(path.join(tmpdir(), 'bp-relay-srv-'));
