@@ -97,6 +97,13 @@ try {
   const adm = await until(() => toChat(ADMIN, s1).find((m) => /Обращение в поддержку/.test(m.text)));
   ok(!!adm && /@anya_b/.test(adm.text) && /Аня Блогер/.test(adm.text) && /sup1@t\.ru/.test(adm.text) && /баланс 0 ₽/.test(adm.text) && /Ответить/.test(adm.text),
     'владельцу: кто пишет — @ник, имя, почта, баланс; как ответить', adm && adm.text);
+  ok(!!adm && /Телеграм к аккаунту не привязан/.test(adm.text), 'владельцу — сверка: Телеграм к аккаунту не привязан, сверить личность', adm && adm.text);
+
+  /* метка одноразовая: та же ссылка у другого человека аккаунт уже не подставляет */
+  const s1b = sent.length;
+  push({ message_id: 150, chat: { id: 559, type: 'private' }, from: { id: 559, username: 'thief' }, text: '/start sup_' + st.body.code });
+  const reuse = await until(() => toChat(ADMIN, s1b).find((m) => /Обращение в поддержку — @thief/.test(m.text)));
+  ok(!!reuse && /Аккаунт не указан/.test(reuse.text) && !/sup1@t\.ru/.test(reuse.text), 'повтор той же метки (переслали ссылку) — без аккаунта: метка одноразовая', reuse && reuse.text);
 
   /* ── переписка ── */
   const s2 = sent.length, c2 = copies.length;

@@ -30,8 +30,8 @@
 
 'use strict';
 
-/* Второй сервер — ретранслятор (16.10.2026, переезд в Москву). Сайт,
-   касса и база живут на московском сервере, а этот же код на прежнем,
+/* Второй сервер — ретранслятор (15.10.2026, переезд в Россию). Сайт,
+   касса и база живут на российском сервере, а этот же код на прежнем,
    нидерландском, запущен с BP_MODE=relay: без базы и без бота, только
    пересылает запросы к площадкам, закрытым из России, и переадресует
    старый адрес на новый. Устройство — в relay.js. */
@@ -150,7 +150,7 @@ const PUBLIC_URL = externalBase(ENV)
   || (ENV.PUBLIC_URL || ('http://127.0.0.1:' + (Number(ENV.PORT) || 8090))).replace(/\/+$/, '');
 /* Куда площадки возвращают человека после входа: redirect_uri у TikTok,
    YouTube, Instagram и Google, origin входа через Телеграм. Обычно это
-   сам сервер. После переезда в Москву (16.10.2026) здесь СТАРЫЙ адрес:
+   сам сервер. После переезда в Россию (15.10.2026) здесь СТАРЫЙ адрес:
    он прописан в кабинетах TikTok и Google, проверка приложения TikTok
    идёт по нему же, а ретранслятор на нём переадресует человека сюда.
    Менять — только вместе с адресами возврата в кабинетах площадок. */
@@ -900,6 +900,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS task_video_stats (
    можно сменить или занять чужой обычной регистрацией, и человек
    получил бы чужой аккаунт вместе с балансом (та же причина, по которой
    телеграм-вход связывается по tg_id). */
+try { db.exec('ALTER TABLE users ADD COLUMN presence_off INTEGER NOT NULL DEFAULT 0'); } catch (e) { /* уже есть */ }
 try { db.exec('ALTER TABLE users ADD COLUMN google_sub TEXT'); }
 catch (e) { /* уже есть */ }
 try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_gsub ON users(google_sub) WHERE google_sub IS NOT NULL'); }
@@ -1042,6 +1043,7 @@ const qsup = {
   codePut: db.prepare('INSERT INTO support_codes (code, user_id, at) VALUES (?,?,?)'),
   codeGet: db.prepare('SELECT * FROM support_codes WHERE code = ?'),
   codeGc: db.prepare('DELETE FROM support_codes WHERE at < ?'),
+  codeDel: db.prepare('DELETE FROM support_codes WHERE code = ?'),
   chatPut: db.prepare(`INSERT INTO support_chats (chat, user_id, tg_user, tg_name, acked, last_at) VALUES (?,?,?,?,0,?)
     ON CONFLICT(chat) DO UPDATE SET user_id = COALESCE(excluded.user_id, support_chats.user_id),
       tg_user = excluded.tg_user, tg_name = excluded.tg_name, acked = 0, last_at = excluded.last_at`),
@@ -1049,7 +1051,9 @@ const qsup = {
   chatTouch: db.prepare('UPDATE support_chats SET last_at = ? WHERE chat = ?'),
   chatAck: db.prepare('UPDATE support_chats SET acked = 1, last_at = ? WHERE chat = ?'),
 };
-const SUP_CODE_MS = 24 * 3600000, SUP_OPEN_MS = 14 * 24 * 3600000;
+/* Метка одноразовая и живёт полчаса: пересланная ссылка не даст чужому
+   выдать себя владельцу за хозяина аккаунта. */
+const SUP_CODE_MS = 30 * 60000, SUP_OPEN_MS = 14 * 24 * 3600000;
 /* Кто пишет — владельцу одной строкой: имя, почта (служебную почту
    входа через Телеграм не показываем), номер и баланс. */
 function supWho(uid) {
@@ -1060,6 +1064,17 @@ function supWho(uid) {
   try { const b = q.balance.get(u.id) || {}; bal = 'баланс ' + rubTxt(Number(b.available) || 0) + (Number(b.hold) ? ', в заморозке ' + rubTxt(Number(b.hold)) : ''); } catch (e) { /* без баланса */ }
   return [String(u.name || '').trim(), mail, '#' + u.id, bal].filter(Boolean).join(' · ');
 }
+/* Сверка Телеграма: пишет ли тот, кто привязан к аккаунту. Метка из
+   приложения доказывает только то, что ссылку открыли, — не кто открыл. */
+function supTgCheck(uid, fromId) {
+  const u = uid ? q.userById.get(Number(uid)) : null;
+  if (!u) return '';
+  const tg = String(u.tg_id || '').trim();
+  if (!tg) return '\nℹ️ Телеграм к аккаунту не привязан — перед изменениями в аккаунте сверьте, что это владелец';
+  return tg === String(fromId || '')
+    ? '\n✓ Пишет Телеграм, привязанный к аккаунту'
+    : '\n⚠️ Пишет НЕ привязанный к аккаунту Телеграм — сверьте, что это владелец';
+}
 async function supStart(bot, admin, msg, code) {
   const chat = String(msg.chat && msg.chat.id);
   if (admin && chat === admin) {
@@ -1069,6 +1084,7 @@ async function supStart(bot, admin, msg, code) {
   let uid = null;
   if (code) {
     const c = qsup.codeGet.get(code);
+    try { qsup.codeDel.run(code); } catch (e) { /* уже погашена */ }
     if (c && Date.now() - Number(c.at) < SUP_CODE_MS) uid = Number(c.user_id);
   }
   const f = msg.from || {};
@@ -1080,7 +1096,7 @@ async function supStart(bot, admin, msg, code) {
     + 'Напишите вопрос сюда — можно несколькими сообщениями, со скриншотом или видео. Оператор ответит в этом чате.');
   if (admin) {
     const a = await bot.say(admin, '🛟 Обращение в поддержку' + (tgUser || tgName ? ' — ' + (tgUser || tgName) : '') + '\n'
-      + supWho(row && row.user_id) + '\n\n'
+      + supWho(row && row.user_id) + supTgCheck(row && row.user_id, f.id) + '\n\n'
       + 'Сообщения человека придут сюда. Ответьте на любое из них (Ответить) — бот передаст ответ.');
     if (a && a.message_id) qi.relayPut.run(Number(a.message_id), chat, null);
   }
@@ -1232,9 +1248,10 @@ const q = {
   updPass: db.prepare('UPDATE users SET pass_salt = ?, pass_hash = ? WHERE id = ?'),
   /* все сессии человека, кроме этой (смена пароля, «выйти на всех устройствах») */
   delOtherSessions: db.prepare('DELETE FROM sessions WHERE user_id = ? AND token <> ?'),
-  /* есть ли у двоих личная переписка (конверты dm в любую сторону) */
-  dmPair: db.prepare(`SELECT 1 AS x FROM sync WHERE kind = 'dm'
-    AND ((a_id = ? AND b_id = ?) OR (a_id = ? AND b_id = ?)) LIMIT 1`),
+  /* писал ли человек (автор конверта dm — a_id) этому собеседнику: конверт с
+     чужим автором завести нельзя, так что «написал сам незнакомцу» не в счёт */
+  dmFrom: db.prepare(`SELECT 1 AS x FROM sync WHERE kind = 'dm' AND a_id = ? AND b_id = ? LIMIT 1`),
+  presenceSet: db.prepare('UPDATE users SET presence_off = ? WHERE id = ?'),
   /* Смена почты нужна ровно в одном случае: у аккаунта, заведённого
      входом через Телеграм, почта служебная (tg<id>@telegram.local), и
      войти с компьютера человек не может. Он задаёт настоящую почту и
@@ -3770,6 +3787,7 @@ const routes = {
         telegram: !!u.tg_id,
         google: !!u.google_sub,
         canTelegram: !!(BOT_TOKEN && TG_BOT_ID),
+        presence: !u.presence_off,
       },
     };
   },
@@ -4100,8 +4118,9 @@ const routes = {
     return { status: 200, body: { ok: true } };
   },
 
-  /* «В сети» для чатов: только про тех, с кем у человека уже есть личная
-     переписка, и только да/нет — без времени последнего входа. */
+  /* «В сети» для чатов: только да/нет, без времени входа, и только про тех,
+     кто САМ писал спрашивающему (написать незнакомцу и следить за ним нельзя)
+     и не выключил показ в «Настройках» (users.presence_off). */
   'GET /api/presence': async (req, body, url) => {
     const u = auth(req);
     if (!u) return { status: 401, body: { error: 'Нужен вход' } };
@@ -4110,10 +4129,22 @@ const routes = {
       .map((x) => Number(x)).filter((n) => Number.isInteger(n) && n > 0 && n !== u.id))].slice(0, 60);
     const now = Date.now(), rows = {};
     for (const id of ids) {
-      if (!q.dmPair.get(u.id, id, id, u.id)) continue;
+      if (!q.dmFrom.get(id, u.id)) continue;
+      const t = q.userById.get(id);
+      if (!t || t.presence_off || t.is_blocked) continue;
       rows[id] = { on: now - (seenAt.get(id) || 0) < PRESENCE_MS };
     }
     return { status: 200, body: { ok: true, rows } };
+  },
+
+  /* «Показывать, что я в сети» — переключатель в «Настройках» */
+  'POST /api/presence/me': async (req, body) => {
+    const u = auth(req);
+    if (!u) return { status: 401, body: { error: 'Нужен вход' } };
+    if (!rateLimit(req, 'presence:me:' + u.id, 30, 60000)) return tooOften;
+    const show = !(body && body.show === false);
+    q.presenceSet.run(show ? 0 : 1, u.id);
+    return { status: 200, body: { ok: true, show } };
   },
 
   'POST /api/logout': async (req) => {
@@ -5809,11 +5840,14 @@ const routes = {
          ссылка сама /shorts/. Короткое обычное видео без связи с youtube.com
          раньше подписывалось как Shorts. */
       if (sh === true || (sh == null && link.shorts)) vkind = 'shorts';
-      if (vidCampShortsOnly(ci.camp) && vkind !== 'shorts') {
-        /* задание «только Shorts», а страница не открылась — по длительности
-           (Shorts — до 3 минут), чтобы не отказать настоящему Shorts */
-        if (sh == null && v.duration != null && v.duration <= 180) vkind = 'shorts';
-        else return vidFail('not_shorts', { p });
+      if (vidCampShortsOnly(ci.camp)) {
+        /* Приём в задание «только Shorts» решают только данные сервера:
+           страница YouTube или (если она не открылась) длительность из API —
+           Shorts до 3 минут. Форму ссылки задаёт сам блогер: обычное видео
+           под адресом /shorts/<id> проходило бы проверку. */
+        const ok = sh === true || (sh == null && v.duration != null && v.duration <= 180);
+        if (!ok) return vidFail('not_shorts', { p });
+        vkind = 'shorts';
       }
     }
     /* Пока ждали площадку, канал могли отвязать (сам блогер или владелец),

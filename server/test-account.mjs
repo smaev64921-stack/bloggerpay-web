@@ -79,6 +79,28 @@ try {
   for (let i = 0; i < 4; i++) { const r = await api('POST', '/api/account/delete-request', {}, T5); if (r.status === 429) lim++; }
   ok(lim >= 1, 'запросы на удаление не чаще трёх в час');
   ok((await api('POST', '/api/account/delete-request', {})).status === 401, 'без входа запрос не принимается');
+
+  /* «в сети»: только если человек сам писал спрашивающему; можно выключить */
+  const rA = await api('POST', '/api/register', { email: 'pa' + tag + '@t.ru', name: 'Аня', role: 'blogger', password: P1 });
+  const rB = await api('POST', '/api/register', { email: 'pb' + tag + '@t.ru', name: 'Борис', role: 'advertiser', password: P1 });
+  const TA = rA.body.token, TB = rB.body.token;
+  const idOf = async (t) => { const b = (await api('GET', '/api/me', null, t)).body; return Number((b.user && b.user.id) || b.id); };
+  const idA = await idOf(TA), idB = await idOf(TB);
+  const dm = (t, from, to, id) => api('POST', '/api/sync/put', { kind: 'dm', rid: 'dm.' + from + '.' + to + '.' + id, data: { v: 1, t: 'привет', at: Date.now() }, to }, t);
+  ok((await dm(TA, idA, idB, 'm1aaaa')).status === 200, 'Аня написала Борису');
+  const p1 = await api('GET', '/api/presence?ids=' + idB, null, TA);
+  ok(p1.status === 200 && p1.body.rows && p1.body.rows[idB] === undefined, 'Аня не видит «в сети» Бориса: он ей не писал (написать незнакомцу и следить нельзя)', p1.body);
+  const p2 = await api('GET', '/api/presence?ids=' + idA, null, TB);
+  ok(p2.body.rows && p2.body.rows[idA] && p2.body.rows[idA].on === true && Object.keys(p2.body.rows[idA]).join() === 'on', 'Борис видит, что Аня в сети, — только да/нет, без времени', p2.body);
+  ok((await api('POST', '/api/presence/me', { show: false }, TA)).body.show === false, 'Аня выключила «Показывать, что я в сети»');
+  const p3 = await api('GET', '/api/presence?ids=' + idA, null, TB);
+  ok(p3.body.rows && p3.body.rows[idA] === undefined, 'после выключения Борис её «в сети» не видит', p3.body);
+  ok((await api('GET', '/api/account/methods', null, TA)).body.presence === false, 'в «Настройках» переключатель — выключен (methods.presence)');
+  await api('POST', '/api/presence/me', { show: true }, TA);
+  ok(((await api('GET', '/api/presence?ids=' + idA, null, TB)).body.rows[idA] || {}).on === true, 'включила снова — видно');
+  await dm(TB, idB, idA, 'm2bbbb');
+  ok(((await api('GET', '/api/presence?ids=' + idB, null, TA)).body.rows[idB] || {}).on === true, 'Борис ответил — теперь и Аня видит его «в сети»');
+  ok((await api('GET', '/api/presence?ids=' + idA)).status === 401 && (await api('POST', '/api/presence/me', { show: false })).status === 401, 'без входа — 401');
 } catch (e) {
   failed++; console.log('  FAIL исключение: ' + (e && e.stack || e));
 } finally {

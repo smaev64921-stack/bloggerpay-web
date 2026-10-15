@@ -804,7 +804,9 @@ Google при обмене доступа → `youtube`, оплаченный р
 - `vidCampAllows(camp, p)`: без площадок — TikTok и YouTube (как раньше);
   YouTube принимается, если в задании есть `youtube` **или** `shorts`.
 - `vidCampShortsOnly(camp)` — есть `shorts` и нет `youtube`: ролик YouTube
-  принимается, только если он Shorts (`not_shorts`, 400).
+  принимается, только если он Shorts (`not_shorts`, 400). Решают только данные
+  сервера — страница `/shorts/<id>` или, если она не открылась, длительность
+  из YouTube API (≤ 180 с); форму ссылки задаёт блогер, она не в счёт.
 - Мастер «Создать задание» (bp-mv-wiz): `ys` — «YouTube Shorts», `inst` —
   «Instagram Reels»; кружок `ys` на карточках (bp-mv-vbup, CAMP_PLATFORMS).
 

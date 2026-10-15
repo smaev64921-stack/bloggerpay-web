@@ -109257,7 +109257,7 @@ var SUP = { url:'', at:0, p:null, uid:'' };
 function pullSupport(){
   fresh(SUP);
   if(!online() || !token()) return Promise.resolve('');
-  if(SUP.url && Date.now() - SUP.at < 12 * 3600000) return Promise.resolve(SUP.url);
+  if(SUP.url && Date.now() - SUP.at < 25 * 60000) return Promise.resolve(SUP.url);
   if(SUP.p) return SUP.p;
   var uid = SUP.uid;
   SUP.p = srv().raw('POST', '/api/support/start', {}).then(function(j){
@@ -109279,8 +109279,11 @@ function openTg(url){
     document.body.appendChild(a); a.click(); a.remove();
   }catch(e){ E(e); }
 }
+/* метка одноразовая (сервер гасит её при входе в бота) — после нажатия берём новую */
 function support(){
-  openTg(SUP.url && SUP.uid === uidOf() ? SUP.url : 'https://t.me/' + botName() + '?start=support');
+  var fresh0 = SUP.url && SUP.uid === uidOf() && Date.now() - SUP.at < 25 * 60000;
+  openTg(fresh0 ? SUP.url : 'https://t.me/' + botName() + '?start=support');
+  if(fresh0){ SUP.url = ''; SUP.at = 0; later(pullSupport, 1500); }
 }
 window.bpMvSupport = support;
 
@@ -109396,6 +109399,11 @@ function pageHtml(){
     sess ? row('outall', 'amber', X.devices, 'Выйти на всех устройствах', { sub:'Этот телефон останется в аккаунте' }) : ''
   ]);
 
+  var pres = m ? m.presence !== false : true;
+  h += sec('priv', 'Приватность', [
+    sess ? row('presence', 'cyan', X.eye, 'Показывать, что я в сети', { sw:pres, sub:'Видят только те, кому вы сами писали в личном чате' }) : ''
+  ]);
+
   var st = pushState(), on = pushOn(), tg = !!tgApp(), pr = prefs();
   var unread = 0; try{ unread = typeof window.bpNotifCount === 'function' ? num(window.bpNotifCount()) : 0; }catch(e){}
   var push;
@@ -109490,6 +109498,7 @@ function onClick(e){
   else if(k === 'pushden') openDenied();
   else if(k === 'center'){ try{ if(typeof window.bpOpenNotifications === 'function') window.bpOpenNotifications(); }catch(err){ E(err); } }
   else if(k === 'vibro') flipVibro();
+  else if(k === 'presence') flipPresence();
   else if(k === 'bal') goPage('balance');
   else if(k === 'payout'){ try{ if(typeof window.bpKycPayout === 'function') window.bpKycPayout(); else goPage('withdraw'); }catch(err){ E(err); } }
   else if(k === 'fees') openFees();
@@ -109503,6 +109512,24 @@ function onClick(e){
 }
 
 /* ══════════ переключатели ══════════ */
+/* «Показывать, что я в сети» — на сервере (users.presence_off): видно сразу */
+var _presBusy = false;
+function flipPresence(){
+  if(_presBusy || !online() || !token()) return;
+  fresh(M);
+  var cur = !(M.v && M.v.presence === false), next = !cur;
+  if(!M.v) M.v = {};
+  M.v.presence = next; render();
+  _presBusy = true;
+  srv().raw('POST', '/api/presence/me', { show:next }).then(function(){
+    _presBusy = false;
+    toast(next ? 'Собеседники снова видят, что вы в сети' : 'Больше никто не видит, что вы в сети', 'info');
+  }, function(e){
+    _presBusy = false;
+    if(M.v) M.v.presence = cur; render();
+    toast(errOf(e, 'Не получилось сохранить — попробуйте ещё раз'), 'err');
+  });
+}
 function flipVibro(){
   try{ if(typeof window.bpPrefToggle === 'function') window.bpPrefToggle('vibro', null); else prefSet('vibro', !prefs().vibro); }catch(e){ E(e); }
   render();
