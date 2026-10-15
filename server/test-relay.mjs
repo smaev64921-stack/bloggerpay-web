@@ -1,7 +1,7 @@
-/* Ретранслятор (16.10.2026): сайт, касса и база — в Москве, площадки,
+/* Ретранслятор (15.10.2026): сайт, касса и база — в России, площадки,
    закрытые из России, — через второй сервер в Нидерландах (relay.js).
    Обе половины проверяются без интернета: «площадки» — одна заглушка на
-   localhost (RELAY_TEST_UPSTREAM, хост едет в x-bp-test-host), «Москва» —
+   localhost (RELAY_TEST_UPSTREAM, хост едет в x-bp-test-host), «Россия» —
    заглушка за старым адресом. Под конец — настоящий server.js: его бот и
    адреса возврата идут через ретранслятор и старый адрес (OAUTH_BASE).
    Свои порты 8510–8513. Запуск: node test-relay.mjs */
@@ -86,7 +86,7 @@ const upSrv = http.createServer((req, res) => {
   });
 });
 
-/* ── «Москва»: новый адрес за старым ─────────────────────────────────── */
+/* ── «Россия»: новый адрес за старым ─────────────────────────────────── */
 const ruLog = [];
 const ruSrv = http.createServer((req, res) => {
   const chunks = [];
@@ -94,7 +94,7 @@ const ruSrv = http.createServer((req, res) => {
   req.on('end', () => {
     const body = Buffer.concat(chunks).toString('utf8');
     ruLog.push({ method: req.method, url: req.url, headers: req.headers, body });
-    if (req.url === '/terms.html') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); return res.end('Условия из Москвы'); }
+    if (req.url === '/terms.html') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); return res.end('Условия с нового адреса'); }
     if (req.url.startsWith('/api/verify/instagram/')) {
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       return res.end(JSON.stringify({ method: req.method, body, ct: req.headers['content-type'] || '' }));
@@ -138,7 +138,7 @@ try {
   ok(h && h.mode === 'relay' && h.key === true && h.movedTo === RU, 'режим BP_MODE=relay: /api/health, ключ из BOT_TOKEN, новый адрес', h);
   ok(!existsSync(path.join(relayDir, 'db.sqlite')) && readdirSync(relayDir).length === 0, 'базы у ретранслятора нет — server.js ушёл в relay.js до неё');
 
-  console.log('\nМосква → площадки через ретранслятор');
+  console.log('\nРоссия → площадки через ретранслятор');
   const f = relayLib.makeRelayFetch({ RELAY_URL: RELAY, BOT_TOKEN: TOKEN }, fakeDirect);
   const st = f.__bpRelay.stats;
   let r = await f('https://api.telegram.org/bot' + TOKEN + '/getMe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
@@ -231,14 +231,14 @@ try {
   ok(r.status === 302 && r.headers.get('location') === RU + '/some/page?x=1', 'GET — 302 на новый адрес с тем же путём', r.headers.get('location'));
   r = await realFetch(RELAY + '/api/verify/callback/tiktok?code=a&state=b', { redirect: 'manual' });
   ok(r.status === 302 && r.headers.get('location') === RU + '/api/verify/callback/tiktok?code=a&state=b',
-    'возврат площадки после входа уходит в Москву с кодом и меткой', r.headers.get('location'));
+    'возврат площадки после входа уходит на новый адрес с кодом и меткой', r.headers.get('location'));
   r = await realFetch(RELAY + '/', { method: 'HEAD', redirect: 'manual' });
   ok(r.status === 302 && r.headers.get('location') === RU + '/', 'HEAD / — тоже 302', r.status);
   r = await realFetch(RELAY + '/terms.html', { redirect: 'manual' });
-  ok(r.status === 200 && (await r.text()) === 'Условия из Москвы', 'terms.html — 200 со свежим текстом из Москвы');
+  ok(r.status === 200 && (await r.text()) === 'Условия с нового адреса', 'terms.html — 200 со свежим текстом с нового адреса');
   r = await realFetch(RELAY + '/privacy.html', { redirect: 'manual' });
   ok(r.status === 200 && (await r.text()) === readFileSync(path.join(ROOT, 'privacy.html'), 'utf8'),
-    'privacy.html — Москва не ответила, отдан свой файл', r.status);
+    'privacy.html — новый адрес не ответил, отдан свой файл', r.status);
   const sign = readdirSync(ROOT).find((n) => /^tiktok[A-Za-z0-9]{8,64}\.txt$/.test(n));
   if (sign) {
     r = await realFetch(RELAY + '/' + sign, { redirect: 'manual' });
@@ -250,14 +250,14 @@ try {
   j = await r.json();
   const got = ruLog[ruLog.length - 1] || {};
   ok(r.status === 200 && j.method === 'POST' && j.body === 'signed_request=abc.def%3D' && j.ct === 'application/x-www-form-urlencoded'
-    && ruLog.length === k0 + 1, 'путь из RELAY_PASS (обратный вызов Meta): POST уходит в Москву телом один в один', j);
+    && ruLog.length === k0 + 1, 'путь из RELAY_PASS (обратный вызов Meta): POST уходит на новый адрес телом один в один', j);
   ok(!got.headers['x-bp-relay'] && !got.headers['x-forwarded-for'], 'чужой X-Forwarded-For дальше не идёт (перебор паролей в обход не пройдёт)', got.headers);
   r = await realFetch(RELAY + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
   j = await r.json().catch(() => ({}));
-  ok(r.status === 410 && (j.error || '').includes(RU) && ruLog.length === k0 + 1, 'вход, деньги и прочее API по старому адресу — 410, в Москву не пускаем', { s: r.status, j });
+  ok(r.status === 410 && (j.error || '').includes(RU) && ruLog.length === k0 + 1, 'вход, деньги и прочее API по старому адресу — 410, на новый адрес не пускаем', { s: r.status, j });
   r = await realFetch(RELAY + '/api/verify/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
   ok(r.status === 410 && ruLog.length === k0 + 1 && relayLib.DEFAULT_PASS.length === 0,
-    'без RELAY_PASS ни один POST в Москву не идёт: общий адрес ретранслятора не исчерпает лимиты за всех', r.status);
+    'без RELAY_PASS ни один POST на новый адрес не идёт: общий адрес ретранслятора не исчерпает лимиты за всех', r.status);
   /* Сырой путь: fetch сам сократил бы «..» ещё до отправки, поэтому —
      http.request, который шлёт путь как есть. */
   const rawPost = (p) => new Promise((resolve) => {
@@ -271,7 +271,7 @@ try {
   const codes = [];
   for (const p of tricks) codes.push(await rawPost(p));
   ok(codes.every((c) => c === 410) && ruLog.length === k0 + 1,
-    'обход RELAY_PASS через «..», %2e и обратные слэши не проходит — в Москву ничего не ушло', codes);
+    'обход RELAY_PASS через «..», %2e и обратные слэши не проходит — на новый адрес ничего не ушло', codes);
 
   console.log('\nНастоящий сервер за ретранслятором');
   const srvDir = mkdtempSync(path.join(tmpdir(), 'bp-relay-srv-'));
