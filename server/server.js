@@ -214,6 +214,25 @@ const YT_API_BASE = (cleanKey(ENV.YT_API_BASE) || 'https://www.googleapis.com').
 const YT_OAUTH_BASE = (cleanKey(ENV.YT_OAUTH_BASE) || 'https://oauth2.googleapis.com').replace(/\/+$/, '');
 const YT_TOKEN_URL = YT_OAUTH_BASE + '/token';
 const YT_API_KEY = cleanKey(ENV.YT_API_KEY);
+/* Instagram (15.10.2026, владелец: «добавь полностью соцсеть инсту и
+   шортс»): «Instagram API with Instagram Login» от Meta — вход
+   ПРОФЕССИОНАЛЬНЫМ аккаунтом (Автор или Бизнес; личный Instagram площадка
+   не пускает). Права: instagram_business_basic — профиль и список
+   публикаций, instagram_business_manage_insights — просмотры ролика.
+   Ключи — IG_CLIENT_ID / IG_CLIENT_SECRET (кабинет Meta → Instagram → API
+   setup with Instagram login). IG_AUTH_BASE — куда отправляем человека,
+   IG_API_BASE — обмен кода на доступ, IG_GRAPH_BASE — данные; в проверках
+   все три подменяет поддельная площадка. IG_GRAPH_VER — версия Graph API
+   (пусто — та, что выбрана в приложении Meta). */
+const IG_AUTH_BASE = (cleanKey(ENV.IG_AUTH_BASE) || 'https://www.instagram.com').replace(/\/+$/, '');
+const IG_API_BASE = (cleanKey(ENV.IG_API_BASE) || 'https://api.instagram.com').replace(/\/+$/, '');
+const IG_GRAPH_BASE = (cleanKey(ENV.IG_GRAPH_BASE) || 'https://graph.instagram.com').replace(/\/+$/, '');
+const IG_GRAPH_VER = cleanKey(ENV.IG_GRAPH_VER).replace(/^\/+|\/+$/g, '');
+/* YouTube Shorts (15.10.2026): задание может принимать ТОЛЬКО Shorts. Shorts
+   ли ролик, спрашиваем у самого сайта: youtube.com/shorts/<id> у обычного
+   видео уводит на /watch, у Shorts отвечает страницей. YT_WEB_BASE — чтобы
+   проверки подставили свою площадку. */
+const YT_WEB_BASE = (cleanKey(ENV.YT_WEB_BASE) || 'https://www.youtube.com').replace(/\/+$/, '');
 /* Механика v3 (07.10.2026, VIDEO-SPEC.md, раздел 11): засчитанный ролик
    считается VID_TRACK_DAYS суток ОТ ЗАЧЁТА — раз в сутки сервер сам
    снимает просмотры и доначисляет прибавку на баланс блогера, пока не
@@ -346,6 +365,14 @@ const OAUTH = {
     scope: cleanKey(ENV.TT_SCOPE) || 'user.info.basic,user.info.profile,user.info.stats,video.list',
     videos: TT_API_BASE + '/v2/video/list/',
     label: 'TikTok',
+  },
+  instagram: {
+    id: cleanKey(ENV.IG_CLIENT_ID), secret: cleanKey(ENV.IG_CLIENT_SECRET),
+    auth: IG_AUTH_BASE + '/oauth/authorize',
+    token: IG_API_BASE + '/oauth/access_token',
+    /* права — через запятую: так их ждёт Instagram */
+    scope: cleanKey(ENV.IG_SCOPE) || 'instagram_business_basic,instagram_business_manage_insights',
+    label: 'Instagram',
   },
 };
 /* Виды конвертов, которые приложение применяет к данным ТОГО, КТО ИХ
@@ -819,6 +846,9 @@ for (const col of ['submit_views INTEGER', 'reserved INTEGER DEFAULT 0', 'paid_v
    В v3 значения колонок прежние: paid — выплачено всего, earned —
    начислено по наибольшим просмотрам, paid_views — просмотры, за которые
    уже заплачено; hold_kind 'measure' больше не ставится. */
+/* vkind (15.10.2026): 'shorts' — YouTube Shorts, 'reels' — Instagram Reels. */
+try { db.exec('ALTER TABLE task_videos ADD COLUMN vkind TEXT'); } catch (e) { /* уже есть */ }
+const vidKindSet = db.prepare('UPDATE task_videos SET vkind = ? WHERE id = ?');
 for (const col of ['track_ends_at INTEGER', 'top_views INTEGER', 'notif_at INTEGER', 'notif_paid INTEGER DEFAULT 0']) {
   try { db.exec('ALTER TABLE task_videos ADD COLUMN ' + col); } catch (e) { /* уже есть */ }
 }
@@ -988,6 +1018,91 @@ const qi = {
   relayPut: db.prepare('INSERT OR REPLACE INTO tg_relay (admin_msg, user_chat, inv_id) VALUES (?,?,?)'),
   relayGet: db.prepare('SELECT * FROM tg_relay WHERE admin_msg = ?'),
 };
+/* Поддержка в боте (15.10.2026): «Настройки → Написать в поддержку».
+   Приложение берёт метку (POST /api/support/start, живёт сутки) и
+   открывает t.me/<бот>?start=sup_<метка>: бот связывает чат с аккаунтом
+   и передаёт переписку владельцу так же, как по счетам (tg_relay с
+   inv_id NULL — ответ владельца через «Ответить»). Командой /support в
+   боте — тот же разговор, только без аккаунта. Разговор открыт 14 дней
+   после последнего сообщения, дальше бот снова отвечает как обычно. */
+db.exec(`CREATE TABLE IF NOT EXISTS support_codes (
+  code    TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  at      INTEGER NOT NULL
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS support_chats (
+  chat    TEXT PRIMARY KEY,
+  user_id INTEGER,
+  tg_user TEXT,
+  tg_name TEXT,
+  acked   INTEGER NOT NULL DEFAULT 0,
+  last_at INTEGER NOT NULL
+)`);
+const qsup = {
+  codePut: db.prepare('INSERT INTO support_codes (code, user_id, at) VALUES (?,?,?)'),
+  codeGet: db.prepare('SELECT * FROM support_codes WHERE code = ?'),
+  codeGc: db.prepare('DELETE FROM support_codes WHERE at < ?'),
+  chatPut: db.prepare(`INSERT INTO support_chats (chat, user_id, tg_user, tg_name, acked, last_at) VALUES (?,?,?,?,0,?)
+    ON CONFLICT(chat) DO UPDATE SET user_id = COALESCE(excluded.user_id, support_chats.user_id),
+      tg_user = excluded.tg_user, tg_name = excluded.tg_name, acked = 0, last_at = excluded.last_at`),
+  chatGet: db.prepare('SELECT * FROM support_chats WHERE chat = ?'),
+  chatTouch: db.prepare('UPDATE support_chats SET last_at = ? WHERE chat = ?'),
+  chatAck: db.prepare('UPDATE support_chats SET acked = 1, last_at = ? WHERE chat = ?'),
+};
+const SUP_CODE_MS = 24 * 3600000, SUP_OPEN_MS = 14 * 24 * 3600000;
+/* Кто пишет — владельцу одной строкой: имя, почта (служебную почту
+   входа через Телеграм не показываем), номер и баланс. */
+function supWho(uid) {
+  const u = uid ? q.userById.get(Number(uid)) : null;
+  if (!u) return 'Аккаунт не указан — открыли бота без приложения';
+  const mail = /@telegram\.local$/i.test(String(u.email || '')) ? 'вход через Телеграм' : String(u.email || '');
+  let bal = '';
+  try { const b = q.balance.get(u.id) || {}; bal = 'баланс ' + rubTxt(Number(b.available) || 0) + (Number(b.hold) ? ', в заморозке ' + rubTxt(Number(b.hold)) : ''); } catch (e) { /* без баланса */ }
+  return [String(u.name || '').trim(), mail, '#' + u.id, bal].filter(Boolean).join(' · ');
+}
+async function supStart(bot, admin, msg, code) {
+  const chat = String(msg.chat && msg.chat.id);
+  if (admin && chat === admin) {
+    await bot.say(chat, 'Это чат владельца: обращения в поддержку приходят сюда, отвечайте на них кнопкой «Ответить».');
+    return true;
+  }
+  let uid = null;
+  if (code) {
+    const c = qsup.codeGet.get(code);
+    if (c && Date.now() - Number(c.at) < SUP_CODE_MS) uid = Number(c.user_id);
+  }
+  const f = msg.from || {};
+  const tgUser = f.username ? '@' + String(f.username).slice(0, 40) : null;
+  const tgName = [f.first_name, f.last_name].filter(Boolean).join(' ').slice(0, 80) || null;
+  qsup.chatPut.run(chat, uid, tgUser, tgName, Date.now());
+  const row = qsup.chatGet.get(chat);
+  await bot.say(chat, '🛟 Поддержка BloggerPay\n\n'
+    + 'Напишите вопрос сюда — можно несколькими сообщениями, со скриншотом или видео. Оператор ответит в этом чате.');
+  if (admin) {
+    const a = await bot.say(admin, '🛟 Обращение в поддержку' + (tgUser || tgName ? ' — ' + (tgUser || tgName) : '') + '\n'
+      + supWho(row && row.user_id) + '\n\n'
+      + 'Сообщения человека придут сюда. Ответьте на любое из них (Ответить) — бот передаст ответ.');
+    if (a && a.message_id) qi.relayPut.run(Number(a.message_id), chat, null);
+  }
+  return true;
+}
+async function supMessage(bot, admin, msg) {
+  const chat = String(msg.chat && msg.chat.id);
+  const s = qsup.chatGet.get(chat);
+  if (!s || Date.now() - Number(s.last_at) > SUP_OPEN_MS) return false;
+  const f = msg.from || {};
+  const who = f.username ? '@' + f.username : (s.tg_name || s.tg_user || 'человек');
+  const h = await bot.say(admin, '🛟 Поддержка · ' + who + (s.user_id ? ' · #' + s.user_id : '') + ' пишет:');
+  const c = await bot.copy(admin, chat, msg.message_id);
+  if (h && h.message_id) qi.relayPut.run(Number(h.message_id), chat, null);
+  if (c && c.message_id) qi.relayPut.run(Number(c.message_id), chat, null);
+  if (!c) { await bot.say(chat, 'Не получилось передать сообщение оператору — попробуйте ещё раз.'); return true; }
+  if (!s.acked) {
+    qsup.chatAck.run(Date.now(), chat);
+    await bot.say(chat, 'Передали оператору — ответ придёт сюда, в этот чат.');
+  } else qsup.chatTouch.run(Date.now(), chat);
+  return true;
+}
 const INV_MIN = Math.max(1000, Number(process.env.INVOICE_MIN || 10000) || 10000);
 let BOT = null;                     /* модуль бота: заявкам на счёт нужен его ответ (message_id) */
 /* ИНН: 10 цифр у организации, 12 у ИП, с контрольными цифрами */
@@ -1008,6 +1123,8 @@ function invoiceHooks(bot) {
   const admin = String(ENV.ADMIN_CHAT_ID || '').trim();
   return {
     start: async (payload, msg) => {
+      const sup = /^(?:support|sup_([0-9a-f]{12}))$/.exec(String(payload || ''));
+      if (sup) return supStart(bot, admin, msg, sup[1] || '');
       const m = /^inv_([0-9a-f]{12})$/.exec(String(payload || ''));
       if (!m) return false;
       const chat = String(msg.chat && msg.chat.id);
@@ -1044,7 +1161,7 @@ function invoiceHooks(bot) {
       const chat = String(msg.chat && msg.chat.id);
       if (!admin || chat === admin) return false;
       const r = qi.openByChat.get(chat);
-      if (!r) return false;
+      if (!r) return supMessage(bot, admin, msg);
       const f = msg.from || {};
       const who = f.username ? '@' + f.username : (r.tg_name || 'клиент');
       const h = await bot.say(admin, '💬 Счёт №' + r.id + ' · ' + who + ' пишет:');
@@ -1059,6 +1176,12 @@ function invoiceHooks(bot) {
       const row = ref ? qi.relayGet.get(Number(ref)) : null;
       if (!row) return false;
       const c = await bot.copy(row.user_chat, String(msg.chat.id), msg.message_id);
+      if (!row.inv_id) {
+        /* поддержка: ответ владельца держит разговор открытым */
+        if (c) { try { qsup.chatTouch.run(Date.now(), String(row.user_chat)); } catch (e) { /* не главное */ } }
+        await bot.say(String(msg.chat.id), c ? '✓ Ответ передан в чат поддержки' : '✗ Не дошло: человек мог остановить бота.');
+        return true;
+      }
       await bot.say(String(msg.chat.id), c
         ? '✓ Передано клиенту по счёту №' + row.inv_id
         : '✗ Не дошло: клиент мог остановить бота. Свяжитесь с ним по почте из заявки.');
@@ -1107,6 +1230,11 @@ const q = {
   delSession: db.prepare('DELETE FROM sessions WHERE token = ?'),
   delUserSessions: db.prepare('DELETE FROM sessions WHERE user_id = ?'),
   updPass: db.prepare('UPDATE users SET pass_salt = ?, pass_hash = ? WHERE id = ?'),
+  /* все сессии человека, кроме этой (смена пароля, «выйти на всех устройствах») */
+  delOtherSessions: db.prepare('DELETE FROM sessions WHERE user_id = ? AND token <> ?'),
+  /* есть ли у двоих личная переписка (конверты dm в любую сторону) */
+  dmPair: db.prepare(`SELECT 1 AS x FROM sync WHERE kind = 'dm'
+    AND ((a_id = ? AND b_id = ?) OR (a_id = ? AND b_id = ?)) LIMIT 1`),
   /* Смена почты нужна ровно в одном случае: у аккаунта, заведённого
      входом через Телеграм, почта служебная (tg<id>@telegram.local), и
      войти с компьютера человек не может. Он задаёт настоящую почту и
@@ -1590,7 +1718,7 @@ const q = {
       t.expires_at
     FROM channels c LEFT JOIN channel_tokens t
       ON t.user_id = c.user_id AND t.platform = c.platform AND t.external_id = c.external_id
-    WHERE c.user_id = ? AND c.platform IN ('tiktok','youtube') ORDER BY c.id ASC`),
+    WHERE c.user_id = ? AND c.platform IN ('tiktok','youtube','instagram') ORDER BY c.id ASC`),
   /* ── Участники задания и лидерборд ── */
   tmJoin: db.prepare(`INSERT INTO task_members (camp_id, user_id, joined_at) VALUES (?,?,?)
     ON CONFLICT(camp_id, user_id) DO UPDATE SET
@@ -1632,7 +1760,7 @@ const q = {
     ORDER BY views DESC, id ASC LIMIT 1`),
   /* Основной подтверждённый канал — для участника без роликов. */
   mainChan: db.prepare(`SELECT platform, external_id, username, title, avatar FROM channels
-    WHERE user_id = ? AND platform IN ('tiktok','youtube') ORDER BY id ASC LIMIT 1`),
+    WHERE user_id = ? AND platform IN ('tiktok','youtube','instagram') ORDER BY id ASC LIMIT 1`),
   lastStats: db.prepare(`SELECT med_views, followers, er_likes FROM channel_stats
     WHERE user_id = ? AND platform = ? AND external_id = ? ORDER BY at DESC, id DESC LIMIT 1`),
   /* Публичная сводка заданий для карточек «Главной» (режим как у More
@@ -1936,6 +2064,61 @@ function send(res, status, body, extra) {
   res.end(txt);
 }
 
+/* Тело как есть (для запросов площадок формой). */
+function readRaw(req, limit) {
+  const max = limit || 16 * 1024;
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > max) { reject(httpError(413, 'Слишком большой запрос')); req.destroy(); return; }
+      chunks.push(c);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', reject);
+  });
+}
+/* Подписанный запрос Meta: «подпись.данные» в base64url, подпись —
+   HMAC-SHA256 данных секретом приложения Instagram. */
+function igSigned(sr) {
+  const secret = OAUTH.instagram && OAUTH.instagram.secret;
+  if (!secret) return null;
+  const parts = String(sr || '').split('.');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
+  const b64 = (x) => Buffer.from(x.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+  let data;
+  try { data = JSON.parse(b64(parts[1]).toString('utf8')); } catch (e) { return null; }
+  if (!data || String(data.algorithm || '').toUpperCase() !== 'HMAC-SHA256') return null;
+  const want = crypto.createHmac('sha256', secret).update(parts[1]).digest();
+  const got = b64(parts[0]);
+  if (got.length !== want.length || !crypto.timingSafeEqual(got, want)) return null;
+  return data;
+}
+/* Отключили приложение / просят удалить данные: этот Instagram отвязываем
+   у всех, кто его подключал, — доступ, снимки статистики, ролики на проверке
+   (как при отвязке владельцем). На удаление Meta ждёт адрес и код. */
+async function handleIgSigned(req, res, url) {
+  if (!rateLimit(req, 'igsigned', 60, 60000)) return send(res, tooOften.status, tooOften.body);
+  let raw = '';
+  try { raw = await readRaw(req, 16 * 1024); } catch (e) { return send(res, 413, { error: 'Слишком большой запрос' }); }
+  const data = igSigned(new URLSearchParams(raw).get('signed_request'));
+  if (!data || data.user_id == null || !/^\d{1,30}$/.test(String(data.user_id))) return send(res, 400, { error: 'Подпись не сошлась' });
+  const ext = String(data.user_id);
+  const rows = q.channelsByExt.all('instagram', ext);
+  try { q.delChannelEverywhere.run('instagram', ext); } catch (e) { /* уже нет */ }
+  for (const r of rows) {
+    try { q.delToken.run(r.user_id, 'instagram', ext); } catch (e) { /* мог не сохраниться */ }
+    try { q.delStats.run(r.user_id, 'instagram', ext); } catch (e) { /* снимков могло не быть */ }
+    try { vidRevoke(r.user_id, 'instagram', ext, 'gone'); } catch (e) { /* не главное */ }
+  }
+  if (url.pathname.endsWith('/delete')) {
+    const code = crypto.randomBytes(8).toString('hex');
+    return send(res, 200, { url: PUBLIC_URL + '/privacy.html#delete', confirmation_code: code });
+  }
+  return send(res, 200, { ok: true });
+}
+
 function readBody(req, limit) {
   const max = limit || 64 * 1024;
   return new Promise((resolve, reject) => {
@@ -1960,6 +2143,20 @@ function readBody(req, limit) {
   });
 }
 
+/* Токен сессии из заголовка (для «кроме этой сессии»). */
+function bearerOf(req) {
+  const m = /^Bearer\s+([a-f0-9]{64})$/i.exec(String(req.headers.authorization || ''));
+  return m ? m[1] : '';
+}
+/* Промахи старого пароля при смене: id → { n, at } */
+const pwChgMiss = new Map();
+/* «В сети» в чатах (15.10.2026): когда человек последний раз ходил на
+   сервер со своим входом. Открытое приложение опрашивает ленту раз в
+   15 с (в открытом чате — чаще), так что «в сети» = приложение открыто
+   последние PRESENCE_MS. Только в памяти: после перезапуска — «не в сети». */
+const seenAt = new Map();
+const PRESENCE_MS = 75 * 1000;
+
 function auth(req) {
   const h = String(req.headers.authorization || '');
   const m = /^Bearer\s+([a-f0-9]{64})$/i.exec(h);
@@ -1968,6 +2165,7 @@ function auth(req) {
   if (!row) return null;
   if (row.expires_at < new Date().toISOString()) { q.delSession.run(row.token); return null; }
   if (row.is_blocked) return null;
+  seenAt.set(row.id, Date.now());   /* строка сессии — это u.* (id человека), без user_id */
   return row;
 }
 
@@ -3829,6 +4027,95 @@ const routes = {
     };
   },
 
+  /* ── «Настройки» (15.10.2026) ──────────────────────────────────────
+     Смена пароля вошедшим. Раньше «Сменить пароль» в настройках правило
+     только копию в браузере, а вход идёт через сервер — новый пароль не
+     работал. Старый пароль сверяем так же, как при входе; пять промахов за
+     четверть часа — пауза. После смены гаснут все ДРУГИЕ сессии (этот
+     телефон остаётся в аккаунте). */
+  'POST /api/password/change': async (req, body) => {
+    const u = auth(req);
+    if (!u) return { status: 401, body: { error: 'Нужен вход' } };
+    if (!rateLimit(req, 'pwchg:' + u.id, 10, 60000)) return tooOften;
+    if (/@telegram\.local$/i.test(String(u.email || ''))) {
+      return { status: 400, body: { error: 'У аккаунта ещё нет пароля — сначала задайте почту и пароль', code: 'no_password' } };
+    }
+    const now = Date.now();
+    const miss = pwChgMiss.get(u.id);
+    if (miss && miss.n >= 5 && now - miss.at < 15 * 60000) {
+      return { status: 429, body: { error: 'Слишком много попыток — подождите 15 минут' } };
+    }
+    const old = String(body.old || ''), pass = String(body.password || '');
+    if (pass.length < 8) return { status: 400, body: { error: 'Новый пароль — минимум 8 символов' } };
+    if (pass.length > 200) return { status: 400, body: { error: 'Слишком длинный пароль' } };
+    const hash = scrypt(old, u.pass_salt);
+    if (!crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(u.pass_hash))) {
+      const m = miss && now - miss.at < 15 * 60000 ? miss : { n: 0, at: now };
+      m.n += 1; m.at = now;
+      pwChgMiss.set(u.id, m);
+      if (pwChgMiss.size > 5000) pwChgMiss.delete(pwChgMiss.keys().next().value);
+      const left = Math.max(0, 5 - m.n);
+      return { status: 403, body: { error: left ? 'Текущий пароль не подходит · осталось попыток: ' + left : 'Текущий пароль не подходит — подождите 15 минут', left } };
+    }
+    if (old === pass) return { status: 400, body: { error: 'Новый пароль совпадает с текущим' } };
+    pwChgMiss.delete(u.id);
+    const salt = crypto.randomBytes(16).toString('hex');
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      q.updPass.run(salt, scrypt(pass, salt), u.id);
+      q.delOtherSessions.run(u.id, bearerOf(req));
+      db.exec('COMMIT');
+    } catch (e) {
+      try { db.exec('ROLLBACK'); } catch (_) { /* нечего откатывать */ }
+      throw e;
+    }
+    return { status: 200, body: { ok: true } };
+  },
+
+  /* «Выйти на всех устройствах»: гасим все сессии, кроме этой. */
+  'POST /api/logout-all': async (req) => {
+    const u = auth(req);
+    if (!u) return { status: 401, body: { error: 'Нужен вход' } };
+    if (!rateLimit(req, 'logoutall:' + u.id, 10, 60000)) return tooOften;
+    const info = q.delOtherSessions.run(u.id, bearerOf(req));
+    return { status: 200, body: { ok: true, closed: Number(info.changes || 0) } };
+  },
+
+  /* Запрос на удаление аккаунта. Само удаление — у владельца в /admin
+     («Удалить данные»: обезличивает, деньги и документы остаются по закону),
+     поэтому здесь — честная заявка: тревога владельцу с балансом и строка в
+     журнале. Раньше было «с сервера — по письму нам». */
+  'POST /api/account/delete-request': async (req, body) => {
+    const u = auth(req);
+    if (!u) return { status: 401, body: { error: 'Нужен вход' } };
+    if (!rateLimit(req, 'delreq:' + u.id, 3, 3600000)) return tooOften;
+    const why = String((body && body.why) || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+    const b = q.balance.get(u.id) || {};
+    try { q.insAdminLog.run('сам человек', 'erase-request', String(u.id), why || null); } catch (e) { /* журнал — не главное */ }
+    tgAlert('erase:req:' + u.id,
+      '🗑 Запрос на удаление аккаунта\n\n' + vidWho(u.id)
+      + '\nБаланс: ' + (Number(b.available) || 0) + ' ₽, в заморозке: ' + (Number(b.hold) || 0) + ' ₽'
+      + (why ? '\nПричина: ' + why : '')
+      + '\n\nУдалить данные: ' + PUBLIC_URL + '/admin → Пользователи → человек → «Удалить данные»', 'server', true);
+    return { status: 200, body: { ok: true } };
+  },
+
+  /* «В сети» для чатов: только про тех, с кем у человека уже есть личная
+     переписка, и только да/нет — без времени последнего входа. */
+  'GET /api/presence': async (req, body, url) => {
+    const u = auth(req);
+    if (!u) return { status: 401, body: { error: 'Нужен вход' } };
+    if (!rateLimit(req, 'presence:' + u.id, 120, 60000)) return tooOften;
+    const ids = [...new Set(String(url.searchParams.get('ids') || '').split(',')
+      .map((x) => Number(x)).filter((n) => Number.isInteger(n) && n > 0 && n !== u.id))].slice(0, 60);
+    const now = Date.now(), rows = {};
+    for (const id of ids) {
+      if (!q.dmPair.get(u.id, id, id, u.id)) continue;
+      rows[id] = { on: now - (seenAt.get(id) || 0) < PRESENCE_MS };
+    }
+    return { status: 200, body: { ok: true, rows } };
+  },
+
   'POST /api/logout': async (req) => {
     const m = /^Bearer\s+([a-f0-9]{64})$/i.exec(String(req.headers.authorization || ''));
     if (m) q.delSession.run(m[1]);
@@ -3911,6 +4198,21 @@ const routes = {
     const bot = (BOT && typeof BOT.botName === 'function' && BOT.botName()) || String(ENV.BOT_USERNAME || '').replace(/^@/, '') || 'BloggerPay_bot';
     const fee = pctOf(amount, TOPUP_FEE_PCT);
     return { status: 200, body: { ok: true, id, code, amount, fee, total: amount + fee, feePct: TOPUP_FEE_PCT, bot, min: INV_MIN } };
+  },
+
+  /* «Написать в поддержку» (15.10.2026): метка на сутки — по ней бот
+     узнаёт, чей это вопрос, и владелец видит имя, почту и баланс. */
+  'POST /api/support/start': async (req) => {
+    const u = auth(req);
+    if (!u) return { status: 401, body: { error: 'Нужен вход' } };
+    if (!rateLimit(req, 'support:' + u.id, 10, 3600000)) return tooOften;
+    if (!BOT_TOKEN) return { status: 503, body: { error: 'Поддержка в Телеграме сейчас недоступна', code: 'no_bot' } };
+    const now = Date.now();
+    try { qsup.codeGc.run(now - SUP_CODE_MS); } catch (e) { /* старые метки — не главное */ }
+    const code = crypto.randomBytes(6).toString('hex');
+    qsup.codePut.run(code, u.id, now);
+    const bot = (BOT && typeof BOT.botName === 'function' && BOT.botName()) || String(ENV.BOT_USERNAME || '').replace(/^@/, '') || 'BloggerPay_bot';
+    return { status: 200, body: { ok: true, code, bot, url: 'https://t.me/' + bot + '?start=sup_' + code } };
   },
 
   'GET /api/topup/invoices': async (req) => {
@@ -4671,6 +4973,12 @@ const routes = {
          входит. Без этого Google молча берёт тот, в котором браузер уже
          сидит: сменить аккаунт и подтвердить второй канал было нельзя. */
       q1.set('prompt', 'select_account consent');
+    } else if (p === 'instagram') {
+      q1.set('client_id', cfg.id);
+      /* только вход Instagram (без Facebook) и каждый раз заново: человек
+         выбирает, какой из своих аккаунтов подключает */
+      q1.set('enable_fb_login', '0');
+      q1.set('force_authentication', '1');
     } else {
       q1.set('client_key', cfg.id);
     }
@@ -5280,7 +5588,7 @@ const routes = {
       run('cards', 'DELETE FROM cards WHERE user_id = ?', id);
       run('tombs', 'DELETE FROM card_tombs WHERE user_id = ?', id);
       run('self', `DELETE FROM sync WHERE a_id = ? AND kind IN ('prof','mine','slot')`, id);
-      run('dm', `DELETE FROM sync WHERE kind = 'dm' AND (a_id = ? OR b_id = ?)`, id, id);
+      run('dm', `DELETE FROM sync WHERE kind IN ('dm','dmr') AND (a_id = ? OR b_id = ?)`, id, id);
       run('members', 'DELETE FROM task_members WHERE user_id = ?', id);
       run('videos', 'UPDATE task_videos SET url = NULL, title = NULL, handle = NULL WHERE blogger_id = ?', id);
       run('errors', 'UPDATE errors SET user_id = NULL WHERE user_id = ?', id);
@@ -5454,7 +5762,7 @@ const routes = {
     /* Площадку определяет ссылка. Выбранный аккаунт другой площадки —
        это не «не ваш ролик», а промах в окне: говорим прямо, что не так. */
     const want = body.platform == null || body.platform === '' ? '' : vidPlatNorm(body.platform);
-    if ((want === 'tiktok' || want === 'youtube') && want !== p) return vidFail('wrong_link', { p, other: want });
+    if (VID_PLAT[want] && want !== p) return vidFail('wrong_link', { p, other: want });
     /* Галочку «в видео есть реклама» владелец убрал (07.10): блок с
        предупреждением в окне остался, интеграцию проверяет рекламодатель. */
     const campId = String(body.campId == null ? '' : body.campId).slice(0, 80);
@@ -5491,6 +5799,23 @@ const routes = {
     const found = await vidLocate(u.id, link, chans, !!account);
     if (found.fail) return vidFail(found.fail, Object.assign({ p }, found.x || {}));
     const owner = found.owner, v = found.v, id = found.id;
+    /* YouTube Shorts (15.10.2026): Shorts ли ролик — отмечаем у каждого
+       YouTube-ролика (по ней приложение пишет «YouTube Shorts»); задание
+       «только Shorts» обычное видео не принимает. Instagram — всегда Reels. */
+    let vkind = p === 'instagram' ? 'reels' : null;
+    if (p === 'youtube') {
+      const sh = await ytIsShort(id);
+      /* «YouTube Shorts» на ролике — только наверняка: страница ответила или
+         ссылка сама /shorts/. Короткое обычное видео без связи с youtube.com
+         раньше подписывалось как Shorts. */
+      if (sh === true || (sh == null && link.shorts)) vkind = 'shorts';
+      if (vidCampShortsOnly(ci.camp) && vkind !== 'shorts') {
+        /* задание «только Shorts», а страница не открылась — по длительности
+           (Shorts — до 3 минут), чтобы не отказать настоящему Shorts */
+        if (sh == null && v.duration != null && v.duration <= 180) vkind = 'shorts';
+        else return vidFail('not_shorts', { p });
+      }
+    }
     /* Пока ждали площадку, канал могли отвязать (сам блогер или владелец),
        а задание — закрыть. Дальше до записи await нет. */
     if (!q.channelOf.get(u.id, p, String(owner.external_id))) return vidFail(account ? 'no_account' : 'no_channel', { p });
@@ -5520,10 +5845,14 @@ const routes = {
     const now = Date.now();
     const handle = p === 'youtube'
       ? (vidNick(owner.username) || v.channelTitle || '')
-      : (vidHandleOf(v.share) || vidHandleOf((found.page || link.url).pathname) || vidNick(owner.username));
+      : p === 'instagram'
+        ? vidNick(owner.username)
+        : (vidHandleOf(v.share) || vidHandleOf((found.page || link.url).pathname) || vidNick(owner.username));
     const url = p === 'youtube'
-      ? (link.shorts ? 'https://www.youtube.com/shorts/' : 'https://www.youtube.com/watch?v=') + id
-      : vidCanon(v.share, handle, id, found.page);
+      ? (link.shorts || vkind === 'shorts' ? 'https://www.youtube.com/shorts/' : 'https://www.youtube.com/watch?v=') + id
+      : p === 'instagram'
+        ? (v.share || 'https://www.instagram.com/reel/' + (v.code || link.code) + '/')
+        : vidCanon(v.share, handle, id, found.page);
     let rowId;
     try {
       const info = q.vidIns.run(campId, ci.env.a_id, u.id, p, String(owner.external_id), id,
@@ -5540,6 +5869,7 @@ const routes = {
        старое и о вступлении сервер не знал. */
     try { q.tmJoin.run(campId, u.id, now); } catch (e) { /* участник — не главное */ }
     q.vidSnap.run(rowId, dayOf(now), v.views, v.likes, v.comments, v.shares, now);
+    if (vkind) vidKindSet.run(vkind, rowId);
     if (v.cover) vidCoverSet(rowId, v.cover);
     vidJudge(q.vidById.get(rowId));
     vidBoardDrop(campId);
@@ -6300,7 +6630,7 @@ setInterval(() => { ttSyncRound().catch(() => {}); }, 30 * 60 * 1000).unref();
    отдаёт ТОЛЬКО ролики владельца токена; YouTube в videos.list называет
    channelId ролика, и он обязан совпасть с подтверждённым каналом. */
 
-const VID_PLAT = { tiktok: 'TikTok', youtube: 'YouTube' };
+const VID_PLAT = { tiktok: 'TikTok', youtube: 'YouTube', instagram: 'Instagram' };
 function vidPlatName(p) { return VID_PLAT[p] || 'TikTok'; }
 /* 12345 → «12 345»: так числа читаются в тексте ошибки и уведомлении. */
 function vidNum(n) { return String(Math.max(0, Math.round(Number(n) || 0))).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
@@ -6320,9 +6650,10 @@ const VID_ERR = {
     ? 'Слишком много проверок YouTube за час — попробуйте позже'
     : 'Слишком часто — подождите минуту и попробуйте снова')],
   yt_quota: [503, 'Проверки YouTube-видео на сегодня закончились — попробуйте завтра'],
-  bad_url: [400, 'Это не ссылка на видео TikTok или YouTube'],
+  bad_url: [400, 'Это не ссылка на видео TikTok, YouTube или Instagram'],
   wrong_link: [400, (x) => 'Ссылка с ' + vidPlatName(x.p) + ', а выбран аккаунт ' + vidPlatName(x.other)
-    + ' — выберите ' + (x.p === 'youtube' ? 'YouTube-канал' : 'TikTok-аккаунт') + ' или вставьте другую ссылку'],
+    + ' — выберите ' + (x.p === 'youtube' ? 'YouTube-канал' : x.p === 'instagram' ? 'Instagram-аккаунт' : 'TikTok-аккаунт')
+    + ' или вставьте другую ссылку'],
   agree: [400, 'Подтвердите, что в видео есть реклама из задания'],
   no_camp: [404, 'Задание не найдено'],
   camp_closed: [409, 'Задание уже не принимает видео'],
@@ -6336,14 +6667,20 @@ const VID_ERR = {
   no_account: [409, 'Этот аккаунт не подключён — подключите его заново'],
   token: [409, (x) => (x.p === 'youtube'
     ? 'Доступ к YouTube истёк — переподключите канал'
-    : 'Доступ к TikTok истёк — переподключите аккаунт')],
+    : 'Доступ к ' + vidPlatName(x.p) + ' истёк — переподключите аккаунт')],
   scope: [409, (x) => (x.p === 'youtube'
     ? 'Переподключите YouTube и разрешите доступ к каналу'
-    : 'Переподключите TikTok и разрешите доступ к роликам')],
+    : x.p === 'instagram'
+      ? 'Переподключите Instagram и разрешите доступ к публикациям и их статистике'
+      : 'Переподключите TikTok и разрешите доступ к роликам')],
   not_found: [404, 'Видео не найдено — проверьте ссылку'],
   /* фото-карусель TikTok (/photo/…): у площадки это не ролик, Display API
      её не отдаёт, и в задания, как у More Views, она не принимается */
-  not_video: [409, 'Это фото-пост, а не видео — в задания принимаются только видеоролики'],
+  not_video: [409, (x) => (x.p === 'instagram'
+    ? 'Это фото или карусель, а не видео — в задания принимаются только Reels'
+    : 'Это фото-пост, а не видео — в задания принимаются только видеоролики')],
+  /* задание «YouTube Shorts» (15.10.2026) — обычное видео не принимаем */
+  not_shorts: [409, 'Это обычное видео YouTube, а в задании принимаются только Shorts — вертикальные ролики до 3 минут'],
   not_public: [409, 'Видео закрыто — откройте его для всех и попробуйте снова'],
   not_yours: [409, (x) => (x.chosen
     ? 'Этого видео нет на ' + (x.handle ? 'аккаунте ' + x.handle : 'выбранном аккаунте')
@@ -6361,15 +6698,16 @@ const VID_ERR = {
   no_video: [404, 'Видео не найдено'],
   tiktok: [502, 'TikTok сейчас не отвечает — попробуйте через минуту'],
   youtube: [502, 'YouTube сейчас не отвечает — попробуйте через минуту'],
+  instagram: [502, 'Instagram сейчас не отвечает — попробуйте через минуту'],
 };
 function vidFail(code, x) {
   const o = x || {};
-  let c = VID_ERR[code] ? code : (o.p === 'youtube' ? 'youtube' : 'tiktok');
+  let c = VID_ERR[code] ? code : vidPlatErr(o.p);
   /* Сбой площадки называем по той площадке, о которой речь. */
-  if ((c === 'tiktok' || c === 'youtube') && (o.p === 'tiktok' || o.p === 'youtube')) c = o.p;
+  if (VID_PLAT[c] && VID_PLAT[o.p]) c = o.p;
   const e = VID_ERR[c];
   const body = { error: typeof e[1] === 'function' ? e[1](o) : e[1], code: c };
-  if (o.p === 'tiktok' || o.p === 'youtube') body.platform = o.p;
+  if (VID_PLAT[o.p]) body.platform = o.p;
   if (c === 'few_views') { body.views = Number(o.views) || 0; body.minViews = Number(o.minViews) || 0; }
   return { status: e[0], body };
 }
@@ -6432,6 +6770,21 @@ function ytLinkOf(u) {
   if (!YT_ID_RE.test(id)) return null;
   return { platform: 'youtube', id, shorts, url: u };
 }
+/* Instagram: instagram.com/reel/<код>/, /reels/, /p/ (видео-пост), /tv/,
+   с ником впереди (/ник/reel/<код>) и хвостом ?igsh=… Только https, без
+   пароля и порта. По ссылке сервер никуда не ходит — код ищем среди
+   публикаций подключённого аккаунта. */
+const IG_HOSTS = new Set(['instagram.com', 'www.instagram.com', 'm.instagram.com', 'instagr.am', 'www.instagr.am']);
+function igLinkOf(u) {
+  if (!u || u.protocol !== 'https:' || u.username || u.password || u.port) return null;
+  if (!IG_HOSTS.has(u.hostname.toLowerCase())) return null;
+  const seg = u.pathname.split('/').filter(Boolean);
+  let i = seg.findIndex((x) => /^(reels?|p|tv)$/i.test(x));
+  if (i < 0 || i > 1 || !seg[i + 1]) return null;
+  const code = seg[i + 1];
+  if (!IG_CODE_RE.test(code)) return null;
+  return { platform: 'instagram', id: '', code, url: u };
+}
 /* Разбор того, что вставил человек: ссылка может прийти вместе с текстом
    («Смотри! https://vm.tiktok.com/…»), без https:// или с хвостом ?_r=1.
    Площадку определяет сама ссылка. null — не ролик TikTok и не YouTube. */
@@ -6440,7 +6793,7 @@ function vidLink(raw) {
   const m = /https?:\/\/[^\s<>"']+/i.exec(s);
   if (m) s = m[0];
   else {
-    const b = /(?:^|\s)((?:(?:www|m|vm|vt)\.)?tiktok\.com\/[^\s<>"']+|(?:(?:www|m)\.)?youtube\.com\/[^\s<>"']+|youtu\.be\/[^\s<>"']+)/i.exec(s);
+    const b = /(?:^|\s)((?:(?:www|m|vm|vt)\.)?tiktok\.com\/[^\s<>"']+|(?:(?:www|m)\.)?youtube\.com\/[^\s<>"']+|youtu\.be\/[^\s<>"']+|(?:(?:www|m)\.)?instagram\.com\/[^\s<>"']+|instagr\.am\/[^\s<>"']+)/i.exec(s);
     if (!b) return null;
     s = 'https://' + b[1];
   }
@@ -6450,6 +6803,8 @@ function vidLink(raw) {
   try { u = new URL(s); } catch (e) { return null; }
   const yt = ytLinkOf(u);
   if (yt) return yt;
+  const ig = igLinkOf(u);
+  if (ig) return ig;
   const tt = ttLinkOf(u);
   return tt ? Object.assign({ platform: 'tiktok' }, tt) : null;
 }
@@ -6728,10 +7083,178 @@ async function ytAccess(row) {
   return t.access_token;
 }
 
+/* ── Instagram (15.10.2026) ──
+   Ролики берём ТОЛЬКО доступом подключённого аккаунта: /me/media отдаёт
+   публикации владельца доступа — значит, найденный там ролик его. Ссылка
+   даёт короткий код (instagram.com/reel/<код>/), номер публикации ищем по
+   нему среди последних публикаций (IG_PAGES страниц по 50). Просмотры —
+   insights (views; у старых версий площадки — plays). Доступ долгий (60
+   дней) и продлевается сам, пока аккаунтом пользуются. */
+const IG_PAGES = 4;
+const IG_CODE_RE = /^[A-Za-z0-9_-]{5,40}$/;
+const IG_ID_RE = /^\d{5,30}$/;
+const IG_FIELDS = 'id,caption,media_type,media_product_type,permalink,shortcode,thumbnail_url,timestamp,like_count,comments_count';
+const IG_GRAPH_ORIGIN = (() => { try { return new URL(IG_GRAPH_BASE).origin; } catch (e) { return ''; } })();
+function igUrl(path) { return IG_GRAPH_BASE + (IG_GRAPH_VER ? '/' + IG_GRAPH_VER : '') + path; }
+/* Ошибка Graph → наш код: 190 — доступ протух или отозван (token), 10 и
+   200–299 — нет права (scope), остальное — сбой площадки. */
+function igCodeOf(j, status) {
+  const c = Number(j && j.error && j.error.code) || 0;
+  if (c === 190 || status === 401) return 'token';
+  if (c === 10 || (c >= 200 && c < 300)) return 'scope';
+  return 'instagram';
+}
+async function igGet(address) {
+  let last;
+  for (let i = 0; i < 2; i++) {
+    let r, j;
+    try {
+      r = await fetch(address, { signal: AbortSignal.timeout(12000) });
+      j = await r.json().catch(() => null);
+    } catch (e) { last = e; continue; }
+    if (r.ok && j && !j.error) return j;
+    if (r.status >= 500 && i === 0) { last = new Error('HTTP ' + r.status); continue; }
+    const err = ttErr(igCodeOf(j, r.status), 'Instagram: HTTP ' + r.status
+      + (j && j.error && j.error.message ? ' — ' + String(j.error.message).slice(0, 160) : ''));
+    err.igCode = Number(j && j.error && j.error.code) || 0;
+    throw err;
+  }
+  throw ttErr('instagram', 'Instagram не ответил: ' + ((last && last.message) || 'нет связи'));
+}
+/* Свежий доступ. Долгий токен Instagram продлевается им же самим (refresh
+   отдельно нет): за 15 дней до конца и не чаще раза в сутки. Протух —
+   пусто, аккаунт надо переподключить. */
+async function igAccess(row) {
+  if (!row || !row.access) return '';
+  const now = Date.now();
+  const exp = row.expires_at ? new Date(row.expires_at).getTime() : 0;
+  if (exp && exp <= now + 60000) return '';
+  const upd = Date.parse(String(row.updated_at || '').replace(' ', 'T') + 'Z') || 0;
+  if (exp && exp - now < 15 * 864e5 && now - upd > 864e5) {
+    try {
+      const j = await igGet(IG_GRAPH_BASE + '/refresh_access_token?'
+        + new URLSearchParams({ grant_type: 'ig_refresh_token', access_token: row.access }));
+      if (j && j.access_token) {
+        const e2 = new Date(now + (Number(j.expires_in) || 60 * 86400) * 1000).toISOString();
+        q.putToken.run(row.user_id, row.platform, row.external_id, j.access_token, null, e2);
+        return j.access_token;
+      }
+    } catch (e) { /* продлить не вышло — прежний ещё живёт */ }
+  }
+  return row.access;
+}
+/* Просмотры, лайки, комментарии, репосты ролика. Имя метрики просмотров у
+   площадки сменилось (plays → views) — спрашиваем новое, затем старое. */
+async function igInsights(access, id) {
+  const pick = (j) => {
+    const out = {};
+    for (const m of (j && Array.isArray(j.data) ? j.data : [])) {
+      const v = m && (m.total_value ? m.total_value.value : (Array.isArray(m.values) && m.values[0] ? m.values[0].value : null));
+      if (m && m.name && v != null) out[m.name] = Math.max(0, Math.round(Number(v) || 0));
+    }
+    return out;
+  };
+  for (const metric of ['views,likes,comments,shares', 'plays,likes,comments,shares']) {
+    try {
+      const j = await igGet(igUrl('/' + encodeURIComponent(id) + '/insights') + '?' + new URLSearchParams({ metric, access_token: access }));
+      const o = pick(j);
+      if (o.views == null && o.plays != null) o.views = o.plays;
+      if (o.views != null) return o;
+    } catch (e) {
+      /* 100 — такой метрики у этой версии нет: пробуем прежнее имя */
+      if (e.vidCode === 'token' || e.vidCode === 'scope' || e.igCode !== 100) throw e;
+    }
+  }
+  throw ttErr('instagram', 'Instagram не отдал просмотры ролика');
+}
+function igVid(m, ins) {
+  const n = (x) => Math.max(0, Math.round(Number(x) || 0));
+  const at = Date.parse(String((m && m.timestamp) || ''));
+  const cover = String((m && m.thumbnail_url) || ''), link = String((m && m.permalink) || '');
+  const i = ins || {};
+  return {
+    id: String((m && m.id) || ''), code: String((m && m.shortcode) || ''),
+    at: Number.isFinite(at) ? Math.floor(at / 1000) : 0,
+    cover: /^https:\/\//i.test(cover) ? cover.slice(0, 1000) : '',
+    share: /^https:\/\/(www\.)?instagram\.com\/[^\s"'<>]+$/i.test(link) ? link.slice(0, 300) : '',
+    title: String((m && m.caption) || '').replace(/\s+/g, ' ').trim().slice(0, 150),
+    duration: null,
+    views: n(i.views), likes: i.likes != null ? n(i.likes) : n(m && m.like_count),
+    comments: i.comments != null ? n(i.comments) : n(m && m.comments_count), shares: n(i.shares),
+    video: !!m && (String(m.media_product_type || '') === 'REELS' || String(m.media_type || '') === 'VIDEO'),
+  };
+}
+/* Публикация по короткому коду среди последних публикаций аккаунта. */
+async function igFind(access, code) {
+  if (!IG_CODE_RE.test(String(code || ''))) return null;
+  const inLink = new RegExp('/(?:reels?|p|tv)/' + code + '(?:/|[?#]|$)');
+  let next = igUrl('/me/media') + '?' + new URLSearchParams({ fields: IG_FIELDS, limit: '50', access_token: access });
+  for (let page = 0; page < IG_PAGES && next; page++) {
+    const j = await igGet(next);
+    const hit = (Array.isArray(j.data) ? j.data : []).find((m) => m
+      && (String(m.shortcode || '') === code || inLink.test(String(m.permalink || ''))));
+    if (hit) return hit;
+    const nx = j.paging && j.paging.next ? String(j.paging.next) : '';
+    /* дальше — только по адресу самой площадки */
+    next = (() => { try { return IG_GRAPH_ORIGIN && new URL(nx).origin === IG_GRAPH_ORIGIN ? nx : ''; } catch (e) { return ''; } })();
+  }
+  return null;
+}
+function igEmbed(url) {
+  const m = /instagram\.com\/(?:[\w.]+\/)?(?:reels?|p|tv)\/([A-Za-z0-9_-]{5,40})/i.exec(String(url || ''));
+  return m ? 'https://www.instagram.com/reel/' + m[1] + '/embed/' : '';
+}
+/* YouTube Shorts ли ролик: true / false, null — не узнали. Нет связи или
+   площадка увела на согласие — решаем по длительности (Shorts — до 3
+   минут). Ответ помним. */
+const ytShortSeen = new Map();
+async function ytIsShort(id) {
+  if (!YT_ID_RE.test(String(id || ''))) return null;
+  if (ytShortSeen.has(id)) return ytShortSeen.get(id);
+  let res = null;
+  for (const method of ['HEAD', 'GET']) {
+    try {
+      const r = await fetch(YT_WEB_BASE + '/shorts/' + id, {
+        method, redirect: 'manual', headers: { 'User-Agent': TT_UA }, signal: AbortSignal.timeout(6000) });
+      try { if (r.body && r.body.cancel) r.body.cancel(); } catch (e) { /* тело не нужно */ }
+      if (r.status === 405 && method === 'HEAD') continue;
+      if (r.status === 200) res = true;
+      else if (r.status >= 300 && r.status < 400 && /\/watch\b|[?&]v=/.test(String(r.headers.get('location') || ''))) res = false;
+    } catch (e) { /* нет связи — по длительности */ }
+    break;
+  }
+  /* нет ответа — «неизвестно» (null): догадку по длительности делает только
+     проверка задания «только Shorts», подпись ролика её не берёт */
+  if (res !== null) {
+    ytShortSeen.set(id, res);
+    if (ytShortSeen.size > 5000) ytShortSeen.delete(ytShortSeen.keys().next().value);
+  }
+  return res;
+}
+/* Код сбоя по площадке ссылки. */
+function vidPlatErr(p) { return VID_PLAT[p] ? p : 'tiktok'; }
+
 /* Цифры роликов ОДНОГО канала блогера — только найденные и только этого
-   канала. Бросает ttErr с кодом token / scope / tiktok / youtube. */
+   канала. Бросает ttErr с кодом token / scope / tiktok / youtube / instagram. */
 async function vidFetch(platform, userId, extId, ids) {
   const list = (ids || []).map(String);
+  if (platform === 'instagram') {
+    const access = await igAccess(q.getToken.get(userId, 'instagram', String(extId)));
+    if (!access) throw ttErr('token');
+    const out = [];
+    for (const id of list) {
+      if (!IG_ID_RE.test(id)) continue;
+      let m;
+      try { m = await igGet(igUrl('/' + id) + '?' + new URLSearchParams({ fields: IG_FIELDS, access_token: access })); }
+      catch (e) {
+        /* публикации нет (удалена) — не отдаём её: круг сочтёт промах */
+        if (e.vidCode === 'instagram' && e.igCode === 100) continue;
+        throw e;
+      }
+      out.push(igVid(m, await igInsights(access, id)));
+    }
+    return out;
+  }
   if (platform === 'youtube') {
     let how;
     if (YT_API_KEY) how = { key: YT_API_KEY };
@@ -6770,10 +7293,35 @@ async function vidLocate(userId, link, chans, chosen) {
     try { const r = await ttResolve(link.url); id = r.id; page = r.url; }
     catch (e) { return { fail: e.vidCode || 'tiktok' }; }
   }
-  const rank = { scope: 3, token: 2, tiktok: 1, youtube: 1 };
+  const rank = { scope: 3, token: 2, tiktok: 1, youtube: 1, instagram: 1 };
   let why = '';
   const note = (code) => { if (!why || (rank[code] || 0) > (rank[why] || 0)) why = code; };
   const yours = chosen ? { chosen: true, handle: vidShowName(chans[0]) } : {};
+
+  if (p === 'instagram') {
+    if (!IG_CODE_RE.test(String(link.code || ''))) return { fail: 'bad_url' };
+    let answered = false;
+    for (const ch of chans) {
+      if (!ch.has_token) { note('token'); continue; }
+      let access = '';
+      try { access = await igAccess(q.getToken.get(userId, 'instagram', String(ch.external_id))); }
+      catch (e) { note(e.vidCode || 'instagram'); continue; }
+      if (!access) { note('token'); continue; }
+      let m = null;
+      try { m = await igFind(access, link.code); answered = true; }
+      catch (e) { note(e.vidCode || 'instagram'); continue; }
+      if (!m) continue;
+      const v0 = igVid(m, null);
+      if (!v0.video) return { fail: 'not_video' };
+      if (!IG_ID_RE.test(v0.id)) return { fail: 'instagram' };
+      let ins;
+      try { ins = await igInsights(access, v0.id); }
+      catch (e) { return { fail: e.vidCode || 'instagram' }; }
+      return { owner: ch, v: igVid(m, ins), id: v0.id, page: link.url };
+    }
+    if (!answered) return { fail: why || 'instagram' };
+    return { fail: 'not_yours', x: yours };
+  }
 
   if (p === 'tiktok') {
     let answered = false;
@@ -6931,9 +7479,10 @@ function vidPlatList(v) {
     .filter(Boolean);
 }
 const VID_SYN = { tt: 'tiktok', tiktok: 'tiktok', 'тикток': 'tiktok', yt: 'youtube', youtube: 'youtube', 'ютуб': 'youtube',
+  ys: 'shorts', yts: 'shorts', shorts: 'shorts', youtube_shorts: 'shorts', youtubeshorts: 'shorts', 'шортс': 'shorts',
   tg: 'telegram', telegram: 'telegram', ig: 'instagram', inst: 'instagram', insta: 'instagram', instagram: 'instagram',
-  vk: 'vk', vkontakte: 'vk', twitch: 'twitch' };
-const VID_PNAMES = { tiktok: 'TikTok', youtube: 'YouTube', telegram: 'Telegram', instagram: 'Instagram',
+  reels: 'instagram', 'инстаграм': 'instagram', vk: 'vk', vkontakte: 'vk', twitch: 'twitch' };
+const VID_PNAMES = { tiktok: 'TikTok', youtube: 'YouTube', shorts: 'YouTube Shorts', telegram: 'Telegram', instagram: 'Instagram',
   vk: 'VK', twitch: 'Twitch', rutube: 'RUTUBE', dzen: 'Дзен' };
 function vidPlatNorm(x) { const k = String(x == null ? '' : x).trim().toLowerCase(); return VID_SYN[k] || k; }
 function vidCampPlats(camp) {
@@ -6946,8 +7495,12 @@ function vidCampPlats(camp) {
 function vidCampAllows(camp, platform) {
   const all = vidCampPlats(camp);
   if (!all.length) return platform === 'tiktok' || platform === 'youtube';
+  /* «YouTube Shorts» — тот же YouTube-канал, но только Shorts (проверка при загрузке) */
+  if (platform === 'youtube') return all.includes('youtube') || all.includes('shorts');
   return all.includes(platform);
 }
+/* Задание только для Shorts: YouTube разрешён лишь как Shorts. */
+function vidCampShortsOnly(camp) { const all = vidCampPlats(camp); return all.includes('shorts') && !all.includes('youtube'); }
 function vidCampPlatNames(camp) {
   return vidCampPlats(camp).map((p) => VID_PNAMES[p] || (p.charAt(0).toUpperCase() + p.slice(1)).slice(0, 24)).join(', ');
 }
@@ -7206,7 +7759,10 @@ function vidDTO(r, view, opts) {
     /* Засчитано, а начисления держит открытый спор по заданию. */
     disputeHeld: r.status === 'active' && !!q.openDisputeFor.get('camp:' + r.camp_id, r.blogger_id),
     cover: yt ? (vidCoverOf(r.id) || ytThumb(vid)) : vidCoverOf(r.id),
-    player: yt ? 'https://www.youtube.com/embed/' + vid : 'https://www.tiktok.com/player/v1/' + vid,
+    player: yt ? 'https://www.youtube.com/embed/' + vid
+      : r.platform === 'instagram' ? igEmbed(r.url) : 'https://www.tiktok.com/player/v1/' + vid,
+    /* 'shorts' — YouTube Shorts, 'reels' — Instagram Reels (15.10.2026) */
+    kind: r.vkind || null,
   };
   if (opts && opts.history) out.history = q.vidHist.all(r.id);
   return out;
@@ -7364,7 +7920,7 @@ async function vidRefresh(rows0, now) {
     let got;
     try { got = await vidFetch(p, b, ext, list.map((r) => String(r.video_id))); }
     catch (e) {
-      const code = e.vidCode || (p === 'youtube' ? 'youtube' : 'tiktok');
+      const code = e.vidCode || vidPlatErr(p);
       /* Тревога и просьба переподключить — только если на кону ещё что-то
          есть (ролик на проверке). Закрытые подсчётом обновляются лишь для
          показа: по ним молчим. */
@@ -7461,7 +8017,7 @@ async function vidMeasure(row, now) {
   let got;
   try { got = await vidFetch(p, row.blogger_id, row.external_id, [String(row.video_id)]); }
   catch (e) {
-    const code = e.vidCode || (p === 'youtube' ? 'youtube' : 'tiktok');
+    const code = e.vidCode || vidPlatErr(p);
     if (code === 'token' || code === 'scope') vidTokenAlert(row.blogger_id, p, row.external_id, 1, code);
     return { fail: code };
   }
@@ -7905,7 +8461,7 @@ function vidPubChan(campId, uid) {
   if (!nick && top && platform === 'tiktok') nick = vidNick(top.handle);
   return {
     handle: nick ? '@' + nick : '',
-    platform: platform === 'tiktok' || platform === 'youtube' ? platform : '',
+    platform: VID_PLAT[platform] ? platform : '',
     avatar: vidHttps(ch && ch.avatar),
   };
 }
@@ -8292,6 +8848,46 @@ async function handleVerifyCallback(req, res, url) {
       rec.access = tok.access_token || '';
       rec.refresh = tok.refresh_token || '';
       rec.expires = Number(tok.expires_in) || 0;
+    } else if (p === 'instagram') {
+      const tok = await ask(cfg.token, {
+        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: cfg.id, client_secret: cfg.secret,
+          grant_type: 'authorization_code', redirect_uri: redirect, code,
+        }),
+      });
+      /* ответ бывает двух видов: { access_token, user_id } и { data: [ … ] } */
+      const t0 = (tok && Array.isArray(tok.data) ? tok.data[0] : tok) || {};
+      if (!t0.access_token) {
+        throw new Error(String((tok && (tok.error_message || (tok.error && (tok.error.message || tok.error))))
+          || 'Instagram не выдал доступ').slice(0, 200));
+      }
+      /* короткий доступ живёт час — меняем на долгий (60 дней), его продлевает igAccess */
+      let access = t0.access_token, expires = 3600;
+      try {
+        const ll = await ask(IG_GRAPH_BASE + '/access_token?' + new URLSearchParams({
+          grant_type: 'ig_exchange_token', client_secret: cfg.secret, access_token: t0.access_token }));
+        if (ll && ll.access_token) { access = ll.access_token; expires = Number(ll.expires_in) || 60 * 86400; }
+      } catch (e) { /* остаётся короткий: продлить можно будет, переподключив */ }
+      const me = await ask(igUrl('/me') + '?' + new URLSearchParams({
+        fields: 'user_id,username,name,profile_picture_url,followers_count,media_count,account_type',
+        access_token: access }));
+      if (!me || (!me.user_id && !me.id)) {
+        throw new Error('Instagram не отдал данные аккаунта'
+          + (me && me.error && me.error.message ? ': ' + String(me.error.message).slice(0, 160) : ''));
+      }
+      const nick = String(me.username || '').replace(/[^\w.]/g, '').slice(0, 40);
+      const pic = String(me.profile_picture_url || '');
+      channel = {
+        id: String(me.user_id || me.id), title: String(me.name || nick || '').slice(0, 80),
+        url: nick ? 'https://www.instagram.com/' + nick + '/' : '',
+        subs: Number(me.followers_count) || 0,
+        avatar: /^https:\/\//i.test(pic) ? pic.slice(0, 1000) : '',
+        username: nick, videosTotal: Number(me.media_count) || 0,
+      };
+      rec.access = access;
+      rec.refresh = '';
+      rec.expires = expires;
     } else {
       const tok = await ask(cfg.token, {
         method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -8551,6 +9147,12 @@ const handler = async (req, res) => {
   }
   if (req.method === 'GET' && url.pathname.startsWith('/api/verify/callback/')) {
     return handleVerifyCallback(req, res, url);
+  }
+  /* Instagram (Meta): человек отключил наше приложение или попросил удалить
+     данные — площадка присылает signed_request формой, а не JSON. */
+  if (req.method === 'POST' && (url.pathname === '/api/verify/instagram/deauth'
+      || url.pathname === '/api/verify/instagram/delete')) {
+    return handleIgSigned(req, res, url);
   }
   /* Возврат человека от Google после входа. Отдаём страницу, а не JSON:
      сюда приходит браузер, а не приложение. */

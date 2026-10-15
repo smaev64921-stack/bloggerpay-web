@@ -367,6 +367,9 @@ const gfake = createServer((req, res) => {
   req.on('end', () => {
     const u = new URL(req.url, GG);
     const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    /* страница youtube.com/shorts/<id> (YT_WEB_BASE): ролики этого набора — обычные,
+       YouTube уводит их на /watch (настоящий youtube.com в проверках не трогаем) */
+    if (u.pathname.startsWith('/shorts/')) { res.statusCode = 303; res.setHeader('Location', '/watch?v=' + u.pathname.slice(8)); res.end(); return; }
     res.setHeader('Content-Type', 'application/json');
     if (u.pathname === '/token') {
       const f = new URLSearchParams(raw);
@@ -433,7 +436,7 @@ const common = {
   ADMIN_KEY: KEY, ADMIN_EMAIL: '', APP_URL: 'http://127.0.0.1:9999/app',
   TT_CLIENT_KEY: 'ключ', TT_CLIENT_SECRET: 'секрет', TT_SCOPE: 'user.info.basic,video.list',
   TT_AUTH_BASE: TT, TT_API_BASE: TT, TT_WEB_BASE: TT,
-  YT_CLIENT_ID: 'yt-client', YT_CLIENT_SECRET: 'yt-secret', YT_API_BASE: GG, YT_OAUTH_BASE: GG,
+  YT_CLIENT_ID: 'yt-client', YT_CLIENT_SECRET: 'yt-secret', YT_API_BASE: GG, YT_OAUTH_BASE: GG, YT_WEB_BASE: GG,
   TRUST_PROXY: '1', ADMIN_CHAT_ID: '', RESEND_API_KEY: '', VID_AUTO_ACCEPT_H: '', VID_TRACK_DAYS: '',
   TEST_TOPUP: '1', TEST_TOPUP_OPEN: '1', YOOKASSA_SHOP_ID: '', YOOKASSA_SECRET_KEY: '',
   /* механика начислений — без комиссий; комиссии 7% проверяет test-fees.mjs */
@@ -697,7 +700,7 @@ try {
   const e401 = await api('POST', '/api/tasks/video/bind', { campId: camps.main, url: link('blogera', ID.A1), agree: true });
   ok(e401.status === 401, '401 без входа', e401.body);
   const yt = await bind(A, 'main', 'https://youtube.com/watch?v=1');
-  ok(yt.status === 400 && yt.body.code === 'bad_url' && yt.body.error === 'Это не ссылка на видео TikTok или YouTube', 'bad_url: YouTube без настоящего id', yt.body);
+  ok(yt.status === 400 && yt.body.code === 'bad_url' && yt.body.error === 'Это не ссылка на видео TikTok, YouTube или Instagram', 'bad_url: YouTube без настоящего id', yt.body);
   const prof = await bind(A, 'main', 'https://www.tiktok.com/@blogera');
   ok(prof.status === 400 && prof.body.code === 'bad_url', 'bad_url: ссылка на профиль, а не на ролик', prof.body);
   const plain = await bind(A, 'main', 'http://www.tiktok.com/@blogera/video/' + ID.A1);

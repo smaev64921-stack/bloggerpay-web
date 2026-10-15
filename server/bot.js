@@ -254,6 +254,9 @@ async function onMessage(msg) {
     return;
   }
 
+  /* /support — разговор с поддержкой: сервер передаёт его владельцу */
+  if (/^\/support(?:@\w+)?\b/.test(text) && await hook('start', 'support', msg)) return;
+
   if (/^\/help/.test(text)) {
     await tg('sendMessage', {
       chat_id: chatId,
@@ -271,7 +274,7 @@ async function onMessage(msg) {
      ждёт ответа. Переписки здесь нет — вся работа в приложении. */
   await tg('sendMessage', {
     chat_id: chatId,
-    text: 'Я открываю приложение — переписка ведётся внутри него, в разделе «Чаты».',
+    text: 'Я открываю приложение — переписка ведётся внутри него, в разделе «Чаты».\n\nВопрос к нам — команда /support.',
     reply_markup: keyboard(''),
   });
 }
@@ -298,6 +301,7 @@ async function setup() {
     commands: [
       { command: 'start', description: 'Открыть BloggerPay' },
       { command: 'help', description: 'Как это работает' },
+      { command: 'support', description: 'Написать в поддержку' },
     ],
   });
   /* Владельцу — постоянная кнопка «Админка» у поля ввода и команда /admin

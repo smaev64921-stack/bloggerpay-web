@@ -636,14 +636,14 @@ var SECTIONS = [
   /* tool — своя кнопка раздела в шапке, рядом с «Обновить»: «Обновить»
      перечитывает нашу базу, а эта спрашивает площадки (TikTok, YouTube)
      о свежих цифрах. */
-  { id:'videos', t:'Видео заданий',  sub:'Ролики блогеров по заданиям (TikTok и YouTube). Возражения рекламодателей, подозрения на накрутку и задержанные выплаты ждут вашего решения.', badge:'videos',
-    tool:'<button type="button" class="btn ghost sm" data-act="vidsync" title="Спросить TikTok и YouTube о свежих цифрах сейчас, не дожидаясь суточного круга">' + ICON.pulse + 'Обновить данные сейчас</button>' },
+  { id:'videos', t:'Видео заданий',  sub:'Ролики блогеров по заданиям (TikTok, YouTube и Instagram). Возражения рекламодателей, подозрения на накрутку и задержанные выплаты ждут вашего решения.', badge:'videos',
+    tool:'<button type="button" class="btn ghost sm" data-act="vidsync" title="Спросить TikTok, YouTube и Instagram о свежих цифрах сейчас, не дожидаясь суточного круга">' + ICON.pulse + 'Обновить данные сейчас</button>' },
   'sep',
   { id:'users',  t:'Пользователи',   sub:'Все аккаунты на сервере: баланс, проверка личности, каналы, блокировка.' },
   { id:'cards',  t:'Каталог',        sub:'Карточки блогеров в общем каталоге. Снятая карточка пропадает у всех, но остаётся у автора.' },
   'sep',
   { id:'errors', t:'Поломки',        sub:'Что сломалось у людей в приложении.', badge:'errors' },
-  { id:'plats',  t:'Площадки',       sub:'Подключение входа через TikTok и YouTube: ключи и адреса возврата.' },
+  { id:'plats',  t:'Площадки',       sub:'Подключение входа через TikTok, YouTube и Instagram: ключи и адреса возврата.' },
   { id:'log',    t:'Журнал',         sub:'Кто и что сделал в панели: выплаты, решения, блокировки.' },
 ];
 function secById(id){ for(var i = 0; i < SECTIONS.length; i++) if(SECTIONS[i].id === id) return SECTIONS[i]; return null; }
@@ -1177,8 +1177,13 @@ var VID_ST = {
 };
 /* вид паузы начислений → как назвать */
 var VID_HOLD = { money:'не хватило денег в бюджете', access:'нет доступа к каналу блогера' };
-var VID_PL = { tiktok:'TikTok', youtube:'YouTube' };
-function vidPl(v){ return VID_PL[v && v.platform] || 'TikTok'; }
+var VID_PL = { tiktok:'TikTok', youtube:'YouTube', instagram:'Instagram' };
+/* 15.10.2026: Shorts и Reels — по пометке ролика (kind) */
+function vidPl(v){
+  if(v && v.kind === 'shorts') return 'YouTube Shorts';
+  if(v && v.platform === 'instagram') return 'Instagram Reels';
+  return VID_PL[v && v.platform] || 'TikTok';
+}
 /* Уровни — те же, что в quality.js (LEVEL_RU); для значка — короче.
    [значок, класс .st, полная фраза, класс плашки с причинами] */
 var VID_RISK = {
@@ -1196,6 +1201,10 @@ function vidDay(d){ var m = /^\d{4}-(\d\d)-(\d\d)$/.exec(String(d || '')); retur
 function vidPlayer(v){
   var id = String(v.videoId || '');
   if(v.platform === 'youtube') return /^[A-Za-z0-9_-]{11}$/.test(id) ? 'https://www.youtube.com/embed/' + id : '';
+  if(v.platform === 'instagram'){
+    var m = /instagram\.com\/(?:[\w.]+\/)?(?:reels?|p|tv)\/([A-Za-z0-9_-]{5,40})/i.exec(String(v.url || ''));
+    return m ? 'https://www.instagram.com/reel/' + m[1] + '/embed/' : '';
+  }
   if(/^\d{5,25}$/.test(id)) return 'https://www.tiktok.com/player/v1/' + id;
   return /^https:\/\/www\.tiktok\.com\//.test(String(v.player || '')) ? v.player : '';
 }
@@ -1360,7 +1369,7 @@ VIEWS.videos = function(first, seq){
     $('view').innerHTML = chips
       + (!rows.length ? '<div class="box" id="vidList"><div class="empty">' + esc(VID_EMPTY[tab] || 'Здесь пусто') + '</div></div>'
         : '<div class="vlist" id="vidList">' + rows.map(vidCard).join('') + '</div>')
-      + '<p class="note">Блогер загружает ролик со своего подтверждённого TikTok или YouTube сразу после публикации — хоть с нулём просмотров, '
+      + '<p class="note">Блогер загружает ролик со своего подтверждённого TikTok, YouTube или Instagram сразу после публикации — хоть с нулём просмотров, '
       + 'рекламодатель проверяет интеграцию, и засчитанное видео <b>30 дней считается</b>: раз в сутки сервер снимает просмотры и доначисляет блогеру прибавку '
       + '(начислено по наибольшим просмотрам минус уже выплаченное), пока не взят максимум за видео или не вышел срок. '
       + 'Сюда приходит то, что рекламодатель <b>вернул с причиной</b>, ролики с <b>признаками накрутки</b> и начисления, которым <b>не хватило денег</b>, '
@@ -1646,7 +1655,7 @@ VIEWS.plats = function(first){
             + '<button type="button" class="btn ghost sm" data-probe="' + esc(k) + '">Проверить</button></div>'
             + '<div class="plat-out' + (pr ? ' ' + pr.cls : '') + '" id="plat-out-' + esc(k) + '">' + (pr ? esc(pr.text) : '') + '</div></div>';
         }).join('') + '</div>'
-      + '<p class="note">Блогер подтверждает канал входом в TikTok или YouTube. Если ключи площадки не заданы, кнопка в приложении честно говорит «не подключено». '
+      + '<p class="note">Блогер подтверждает канал входом в TikTok, YouTube или Instagram (профессиональный аккаунт). Если ключи площадки не заданы, кнопка в приложении честно говорит «не подключено». '
       + 'Неверный адрес возврата и лишние кавычки в ключе — две главные причины ошибки «client_key» на стороне площадки.</p>';
   });
 };
@@ -1656,7 +1665,7 @@ var LOG_RU = {
   'wd-take':'Заявка на вывод взята в работу', 'wd-paid':'Выплата отмечена', 'wd-reject':'Вывод отклонён',
   'kyc-approve':'Личность подтверждена', 'kyc-reject':'Проверка личности отклонена', 'settle':'Спор решён',
   'card-hide':'Карточка снята с витрины', 'card-show':'Карточка возвращена в каталог', 'channel-unlink':'Канал отвязан',
-  'user-block':'Пользователь заблокирован', 'user-unblock':'Пользователь разблокирован',
+  'user-block':'Пользователь заблокирован', 'user-unblock':'Пользователь разблокирован', 'erase-request':'Человек попросил удалить аккаунт',
   /* имена действий по видео заданий — в духе остальных («что-сделано»);
      незнакомое имя журнал всё равно покажет как есть */
   'video-count':'Видео засчитано', 'video-decline':'Видео не засчитано', 'video-sync':'Данные видео обновлены вручную',

@@ -793,3 +793,67 @@ Google при обмене доступа → `youtube`, оплаченный р
 «засчитать» после чистки накрутки — по нынешним цифрам; ручная выплата из
 бюджета держит максимум за живые ролики (без потолка — `videos_live`);
 блогеру приходит `holdKind`; `/api/ops/mine` отдаёт итог по ролику.
+
+## 12. Instagram (Reels) и YouTube Shorts (15.10.2026)
+
+Владелец: «добавь полностью соцсеть инсту и шортс».
+
+### 12.1. Площадки задания
+- Коды в задании: `inst` / `reels` / `instagram` → `instagram`; `ys` / `yts` /
+  `shorts` / `youtube_shorts` → `shorts` (синонимы `VID_SYN`).
+- `vidCampAllows(camp, p)`: без площадок — TikTok и YouTube (как раньше);
+  YouTube принимается, если в задании есть `youtube` **или** `shorts`.
+- `vidCampShortsOnly(camp)` — есть `shorts` и нет `youtube`: ролик YouTube
+  принимается, только если он Shorts (`not_shorts`, 400).
+- Мастер «Создать задание» (bp-mv-wiz): `ys` — «YouTube Shorts», `inst` —
+  «Instagram Reels»; кружок `ys` на карточках (bp-mv-vbup, CAMP_PLATFORMS).
+
+### 12.2. Ссылки и поиск ролика
+- Instagram: `instagram.com/(reel|reels|p|tv)/<код>/` (в том числе с ником
+  перед путём, без https) — `igLinkOf`. Ролик ищется по короткому коду среди
+  публикаций аккаунта (`/me/media`, до 4 страниц по 50, только с
+  `IG_GRAPH_BASE`); не видео (не REELS / VIDEO) — `not_video`; не найден —
+  `not_yours`. Один ролик — один раз: UNIQUE(platform, video_id), где
+  video_id — id публикации Instagram.
+- Shorts: `ytIsShort(id, duration)` — `HEAD/GET YT_WEB_BASE/shorts/<id>` с
+  `redirect:'manual'`: 200 → Shorts, 3xx на `/watch` → обычное видео; нет
+  связи — «неизвестно»: подпись Shorts только у ссылки `/shorts/`, а задание
+  «только Shorts» тогда судит по длительности (≤ 180 с). Кэш в памяти на
+  5 000 id (только точные ответы).
+- `task_videos.vkind`: `shorts` | `reels` | NULL; в DTO — `kind`. Постоянная
+  ссылка Shorts — `youtube.com/shorts/<id>`, плеер — встраивание (Instagram —
+  `igEmbed(url)`).
+
+### 12.3. Доступ Instagram
+- OAuth: `IG_AUTH_BASE/oauth/authorize` (client_id, enable_fb_login=0,
+  force_authentication=1, scope `instagram_business_basic,
+  instagram_business_manage_insights`); код → `IG_API_BASE/oauth/access_token`
+  → долгий токен `IG_GRAPH_BASE/access_token?grant_type=ig_exchange_token`.
+- `igAccess(row)`: истёк — ''; меньше 15 дней до конца и токену больше суток —
+  `refresh_access_token?grant_type=ig_refresh_token`, новый срок — `putToken`.
+- Цифры: публикация по id (`IG_FIELDS`) + `/{id}/insights?metric=views,…`
+  (нет метрики, код 100 → прежнее имя `plays`). Длительность Instagram не
+  отдаёт (`duration: null`).
+- Ошибки Graph: 190 → `token`, 10/200–299 → `scope`, остальное — `instagram` (502).
+- Обратные вызовы Meta: `POST /api/verify/instagram/deauth|delete` →
+  `handleIgSigned`: подпись `signed_request` (HMAC-SHA256 секретом IG,
+  base64url) → удалить канал везде, токены, снимки, `vidRevoke(...,'gone')`;
+  `delete` отвечает `{url: PUBLIC_URL + '/privacy.html#delete',
+  confirmation_code}`. Адрес — сайта (PUBLIC_URL), не ретранслятора.
+
+### 12.4. Приложение
+- bp-vbind: `VIDP = ['tiktok','youtube','instagram']`, `allowed(c)`,
+  `shortsOnly(c)` (подсказка «принимаются только YouTube Shorts»), сверка
+  дубля Instagram по короткому коду; в MV нет «Сдать по ссылке» (`.vb-alt`).
+- bp-mv-me: Instagram в «Подключить аккаунт» (плашка «только
+  профессиональный аккаунт»), в «Подключенных аккаунтах»; bp-mv-wal —
+  строка Instagram в «Заработано всего», если есть ролики оттуда.
+
+### 12.5. Тесты
+- `server/test-instagram.mjs` (8494/8495, 41): поддельные Instagram и YouTube
+  (страница Shorts) — вход, долгий токен и продление, Reels принят, фото — нет,
+  чужой — нет, Shorts-only отказ обычному видео, Shorts принят, deauth/delete
+  с подписью и без.
+- e2e `insta.mjs` (8322/8323, 16): подключение через профиль, кружки на
+  карточке, загрузка Reels, отказ и приём Shorts, нет «Сдать по ссылке».
+- `test-videos.mjs` ходит на поддельную страницу Shorts (`YT_WEB_BASE`).
