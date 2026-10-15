@@ -126,6 +126,7 @@ const relayProc = spawn(process.execPath, ['server.js'], {
   cwd: CWD,
   env: { ...process.env, ...clean, BP_MODE: 'relay', PORT: String(P_RELAY), RELAY_PORTS: String(P_RELAY),
     BOT_TOKEN: TOKEN, MOVED_TO: RU, RELAY_TEST_UPSTREAM: 'http://127.0.0.1:' + P_UP,
+    RELAY_PASS: '/api/verify/instagram/',
     DB_PATH: path.join(relayDir, 'db.sqlite') },
   stdio: process.env.BP_DEBUG ? 'inherit' : 'ignore',
 });
@@ -249,11 +250,14 @@ try {
   j = await r.json();
   const got = ruLog[ruLog.length - 1] || {};
   ok(r.status === 200 && j.method === 'POST' && j.body === 'signed_request=abc.def%3D' && j.ct === 'application/x-www-form-urlencoded'
-    && ruLog.length === k0 + 1, 'обратный вызов Meta (POST) уходит в Москву телом один в один', j);
+    && ruLog.length === k0 + 1, 'путь из RELAY_PASS (обратный вызов Meta): POST уходит в Москву телом один в один', j);
   ok(!got.headers['x-bp-relay'] && !got.headers['x-forwarded-for'], 'чужой X-Forwarded-For дальше не идёт (перебор паролей в обход не пройдёт)', got.headers);
   r = await realFetch(RELAY + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
   j = await r.json().catch(() => ({}));
   ok(r.status === 410 && (j.error || '').includes(RU) && ruLog.length === k0 + 1, 'вход, деньги и прочее API по старому адресу — 410, в Москву не пускаем', { s: r.status, j });
+  r = await realFetch(RELAY + '/api/verify/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  ok(r.status === 410 && ruLog.length === k0 + 1 && relayLib.DEFAULT_PASS.length === 0,
+    'без RELAY_PASS ни один POST в Москву не идёт: общий адрес ретранслятора не исчерпает лимиты за всех', r.status);
 
   console.log('\nНастоящий сервер за ретранслятором');
   const srvDir = mkdtempSync(path.join(tmpdir(), 'bp-relay-srv-'));
