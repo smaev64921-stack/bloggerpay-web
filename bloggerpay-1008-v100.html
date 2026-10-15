@@ -478,7 +478,7 @@ body{
 
 /* toast notification */
 .auth-toast{
-  position:fixed;top:calc(env(safe-area-inset-top,0px) + 14px);left:50%;
+  position:fixed;top:calc(var(--bp-sat,env(safe-area-inset-top,0px)) + 14px);left:50%;
   transform:translateX(-50%) translateY(-150px);opacity:0;
   display:flex;align-items:center;gap:11px;
   min-width:210px;max-width:min(430px,calc(100vw - 26px));
@@ -506,7 +506,7 @@ body{
 /* ===== Премиальные уведомления (top-right, стопка, стекло, без неона) ===== */
 /* z-index 700: уведомления обязаны быть выше любых шторок (560/600),
    иначе тост с результатом проверки уходил под их затемнение */
-#bpToastWrap{ position:fixed; top:calc(env(safe-area-inset-top,0px) + 14px); right:14px; z-index:700; display:flex; flex-direction:column; align-items:flex-end; pointer-events:none; }
+#bpToastWrap{ position:fixed; top:calc(var(--bp-sat,env(safe-area-inset-top,0px)) + 14px); right:14px; z-index:700; display:flex; flex-direction:column; align-items:flex-end; pointer-events:none; }
 
 /* ===== Мягкая вспышка экрана сделки при автоматическом обновлении статуса ===== */
 @keyframes bpLiveFlash{ 0%{opacity:1} 30%{opacity:.55} 100%{opacity:1} }
@@ -1482,7 +1482,7 @@ body{
   align-items:center;
   gap:10px;
   padding:10px 12px;
-  padding-top:max(10px, env(safe-area-inset-top));
+  padding-top:max(10px, var(--bp-sat,env(safe-area-inset-top)));
   border-bottom:1px solid rgba(255,255,255,.06);
   flex-shrink:0;
   /* Transparent with blur — Telegram style */
@@ -1974,7 +1974,7 @@ body{
   align-items:flex-end;
   gap:0;
   padding:8px 12px;
-  padding-bottom:max(10px, env(safe-area-inset-bottom));
+  padding-bottom:max(10px, var(--bp-sab,env(safe-area-inset-bottom)));
   flex-shrink:0;
   background:rgba(17,20,27,.97);
   backdrop-filter:blur(16px);
@@ -2557,7 +2557,7 @@ body{
 
 /* ── FOOTER ── */
 .cs1-footer{
-  padding:10px 16px max(14px,env(safe-area-inset-bottom));
+  padding:10px 16px max(14px,var(--bp-sab,env(safe-area-inset-bottom)));
   background:#101319;
   border-top:1px solid rgba(255,255,255,.05);
   flex-shrink:0;
@@ -2754,7 +2754,7 @@ body{
 
 /* footer — btn styles defined earlier */
 .cs1-footer{
-  padding:10px 16px max(14px,env(safe-area-inset-bottom));
+  padding:10px 16px max(14px,var(--bp-sab,env(safe-area-inset-bottom)));
   background:#101319;
   border-top:1px solid rgba(255,255,255,.05);
   flex-shrink:0;
@@ -3581,7 +3581,7 @@ body{
    (bp-abc-pin-css). Здесь только внутренние отступы и рамка: прежние
    position:relative / z-index:70 и полупрозрачный градиент конфликтовали
    с закреплением и просвечивали содержимым. */
-.abc-footer{padding:12px 16px calc(env(safe-area-inset-bottom,0px) + 16px);border-top:1px solid var(--brd)}
+.abc-footer{padding:12px 16px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 16px);border-top:1px solid var(--brd)}
 .abc-continue-btn{width:100%;padding:15px;border-radius:14px;background:linear-gradient(135deg,#3ddc84,#2bb96b);border:none;font-size:15px;font-weight:800;color:#fff;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;transition:opacity .2s}
 .abc-continue-btn:disabled{opacity:.35;cursor:not-allowed}
 .wd-nav{
@@ -4787,7 +4787,7 @@ button:focus, input:focus, select:focus, textarea:focus, [contenteditable]:focus
 
 .dp-dock{
   flex-shrink:0;display:flex;align-items:center;gap:9px;
-  padding:11px 14px calc(env(safe-area-inset-bottom,0px) + 12px);
+  padding:11px 14px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 12px);
   border-top:1px solid var(--dp-line);background:rgba(17,20,27,.9);
   -webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);
 }
@@ -5386,7 +5386,7 @@ button:focus, input:focus, select:focus, textarea:focus, [contenteditable]:focus
 .cd-bl-stats{font-size:11px;color:var(--t3);display:flex;gap:12px;flex-wrap:wrap;margin-left:46px;margin-top:4px}
 
 /* Панель выбора блогеров для кампании (режим «Добавить блогера») */
-.camp-add-banner{position:fixed;left:50%;transform:translateX(-50%);bottom:0;width:100%;max-width:420px;z-index:270;background:#191e28;border-top:1px solid rgba(255,255,255,.1);box-shadow:0 -12px 34px rgba(0,0,0,.55);padding:12px 14px calc(12px + env(safe-area-inset-bottom));display:none;align-items:center;gap:10px}
+.camp-add-banner{position:fixed;left:50%;transform:translateX(-50%);bottom:0;width:100%;max-width:420px;z-index:270;background:#191e28;border-top:1px solid rgba(255,255,255,.1);box-shadow:0 -12px 34px rgba(0,0,0,.55);padding:12px 14px calc(12px + var(--bp-sab,env(safe-area-inset-bottom)));display:none;align-items:center;gap:10px}
 .camp-add-banner.on{display:flex}
 .camp-add-banner .cab-cancel{width:40px;height:40px;flex-shrink:0;border-radius:12px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:var(--t2);cursor:pointer;display:flex;align-items:center;justify-content:center}
 .camp-add-banner .cab-mid{flex:1;min-width:0}
@@ -5407,7 +5407,7 @@ body.camp-add-mode #campBar{display:none!important}
   background:linear-gradient(180deg,#132c1c,#13171e);
   border-radius:24px 24px 0 0;
   border-top:1px solid rgba(255,255,255,.08);
-  padding:0 18px calc(28px + env(safe-area-inset-bottom));
+  padding:0 18px calc(28px + var(--bp-sab,env(safe-area-inset-bottom)));
   max-height:88dvh;overflow-y:auto;
   transform:translateY(100%);
   transition:transform .38s cubic-bezier(.22,1,.36,1);
@@ -5933,7 +5933,7 @@ body.camp-add-mode #campBar{display:none!important}
 @keyframes ncIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 .nc-hd{
   display:flex;align-items:center;gap:11px;flex-shrink:0;
-  padding:calc(env(safe-area-inset-top,0px) + 13px) 14px 12px;
+  padding:calc(var(--bp-sat,env(safe-area-inset-top,0px)) + 13px) 14px 12px;
   border-bottom:1px solid rgba(255,255,255,.06);
   background:rgba(17,20,27,.9);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);
 }
@@ -6070,7 +6070,7 @@ body.camp-add-mode #campBar{display:none!important}
 
 /* отмена удаления */
 .nc-undo{
-  position:absolute;left:14px;right:14px;bottom:calc(env(safe-area-inset-bottom,0px) + 16px);
+  position:absolute;left:14px;right:14px;bottom:calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 16px);
   z-index:80;display:flex;align-items:center;gap:11px;
   padding:12px 13px;border-radius:16px;
   background:rgba(24,48,33,.96);border:1px solid rgba(255,255,255,.12);
@@ -6219,7 +6219,7 @@ body.camp-add-mode #campBar{display:none!important}
 #videoReviewModal,#vrRoot{background:var(--bg)}
 .vr-hd{
   display:flex;align-items:center;gap:11px;flex-shrink:0;
-  padding:calc(env(safe-area-inset-top,0px) + 12px) 14px 12px;
+  padding:calc(var(--bp-sat,env(safe-area-inset-top,0px)) + 12px) 14px 12px;
   border-bottom:1px solid rgba(255,255,255,.06);
   background:rgba(17,20,27,.9);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);
 }
@@ -6325,7 +6325,7 @@ body.camp-add-mode #campBar{display:none!important}
 
 .vr-dock{
   flex-shrink:0;display:flex;gap:9px;
-  padding:11px 14px calc(env(safe-area-inset-bottom,0px) + 12px);
+  padding:11px 14px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 12px);
   border-top:1px solid rgba(255,255,255,.06);
   background:rgba(17,20,27,.92);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);
 }
@@ -6698,7 +6698,7 @@ body.camp-add-mode #campBar{display:none!important}
   width:100%;max-width:420px;box-sizing:border-box;
   background:#0e2416;border:1px solid rgba(255,255,255,.09);
   border-radius:26px 26px 0 0;
-  padding:8px 20px calc(env(safe-area-inset-bottom,0px) + 22px);
+  padding:8px 20px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 22px);
   max-height:100%;overflow-y:auto;overscroll-behavior:contain;
   -webkit-overflow-scrolling:touch;
   animation:kycUp .34s cubic-bezier(.22,1,.36,1);
@@ -8016,9 +8016,9 @@ input:focus,input:focus-visible,textarea:focus,textarea:focus-visible,
 /* нижние панели действий не залезают под системную полосу */
 .cd-input-area,.cs3-pay-bar,.abc-bottom-bar,.cpw-bottom,.cs1-bottom,
 .tz-cta-row,.bds-actions{
-  padding-bottom:max(12px,env(safe-area-inset-bottom))!important;
+  padding-bottom:max(12px,var(--bp-sab,env(safe-area-inset-bottom)))!important;
 }
-.drw-foot{padding-bottom:max(18px,env(safe-area-inset-bottom))!important}
+.drw-foot{padding-bottom:max(18px,var(--bp-sab,env(safe-area-inset-bottom)))!important}
 
 /* ничего не «дёргается» при наведении: движение только по нажатию */
 .blc:hover,.cd-card:hover,.sett-item:hover,.dl-card:hover,.dp-card:hover,
@@ -8503,7 +8503,7 @@ button[onclick*="bpSubmitCardReview"],button[onclick*="SubmitReview"]{
 .own-card-sheet .ocs-sheet{
   width:100%;max-width:420px;background:var(--bg2);
   border:1px solid var(--brd);border-bottom:none;
-  border-radius:22px 22px 0 0;padding:12px 16px calc(20px + env(safe-area-inset-bottom));
+  border-radius:22px 22px 0 0;padding:12px 16px calc(20px + var(--bp-sab,env(safe-area-inset-bottom)));
   box-shadow:var(--e3);
 }
 .own-card-sheet .ocs-grip{width:40px;height:4px;border-radius:99px;background:var(--brd2);margin:0 auto 14px}
@@ -8737,7 +8737,7 @@ button[onclick*="bpSubmitCardReview"],button[onclick*="SubmitReview"]{
   position:relative;width:100%;max-width:440px;
   background:var(--bg2);border:1px solid var(--brd);border-bottom:none;
   border-radius:22px 22px 0 0;
-  padding:12px 18px calc(22px + env(safe-area-inset-bottom));
+  padding:12px 18px calc(22px + var(--bp-sab,env(safe-area-inset-bottom)));
   box-shadow:var(--e3);
 }
 .bp-escrow-x{
@@ -9056,7 +9056,7 @@ button[onclick*="bpSubmitCardReview"],button[onclick*="SubmitReview"]{
 }
 .tk-mark b{display:block;margin-top:7px;color:var(--t1);word-break:break-word}
 .tk-sheet-foot{
-  display:flex;gap:10px;padding:12px 18px calc(16px + env(safe-area-inset-bottom));
+  display:flex;gap:10px;padding:12px 18px calc(16px + var(--bp-sab,env(safe-area-inset-bottom)));
   border-top:1px solid var(--brd);background:var(--bg2);
 }
 .tk-btn-ghost,.tk-btn-main{
@@ -9579,8 +9579,8 @@ button[onclick*="bpSubmitCardReview"],button[onclick*="SubmitReview"]{
   width:100%!important;max-width:100%!important;
   border:none!important;border-radius:0!important;
   box-shadow:none!important;
-  padding-top:env(safe-area-inset-top,0px)!important;
-  padding-bottom:env(safe-area-inset-bottom,0px)!important;
+  padding-top:var(--bp-sat,env(safe-area-inset-top,0px))!important;
+  padding-bottom:var(--bp-sab,env(safe-area-inset-bottom,0px))!important;
 }
 /* ═══ 42 · КАРТОЧКА КАМПАНИИ: ПАНЕЛИ И ОБЛАСТЬ ПРОКРУТКИ ══════════════
    Панели не «прилипают» и не позиционируются — их незачем прилипать.
@@ -9621,7 +9621,7 @@ button[onclick*="bpSubmitCardReview"],button[onclick*="SubmitReview"]{
   align-items:center;gap:10px;
   box-sizing:border-box;
   padding:10px 12px;
-  padding-top:calc(10px + env(safe-area-inset-top));
+  padding-top:calc(10px + var(--bp-sat,env(safe-area-inset-top)));
   background:var(--bg2);
   border-bottom:1px solid var(--brd);
 }
@@ -9695,7 +9695,7 @@ button[onclick*="bpSubmitCardReview"],button[onclick*="SubmitReview"]{
   gap:0;
   box-sizing:border-box;
   margin:0 12px 12px;
-  margin-bottom:calc(12px + env(safe-area-inset-bottom));
+  margin-bottom:calc(12px + var(--bp-sab,env(safe-area-inset-bottom)));
   padding:6px;
   border:1px solid var(--brd2);border-radius:20px;
   background:rgba(27,33,43,.86);
@@ -9749,7 +9749,7 @@ button[onclick*="bpSubmitCardReview"],button[onclick*="SubmitReview"]{
    ══════════════════════════════════════════════════════════════════ */
 
 #campModal{
-  padding-top:max(6px,env(safe-area-inset-top))!important;
+  padding-top:max(6px,var(--bp-sat,env(safe-area-inset-top)))!important;
   /* Акцент мастера был синим, чтобы не спорить с зелёными кнопками
      соседних экранов. Но так в приложении стало три акцентные системы
      сразу — фиолетовая (--acc), зелёная и синяя. Ведём всё к --acc:
@@ -10402,7 +10402,7 @@ button[onclick*="bpSubmitCardReview"],button[onclick*="SubmitReview"]{
 @keyframes cdoFade{from{opacity:0}to{opacity:1}}
 .cdo-ask-box{
   width:100%;box-sizing:border-box;
-  padding:18px 16px calc(18px + env(safe-area-inset-bottom));
+  padding:18px 16px calc(18px + var(--bp-sab,env(safe-area-inset-bottom)));
   border-radius:20px 20px 0 0;
   background:var(--bg2);border-top:1px solid var(--brd2);
   box-shadow:0 -18px 44px rgba(0,0,0,.6);
@@ -10589,7 +10589,7 @@ html.bp-locked,html.bp-locked body{
 .tk-sheet{max-height:94dvh!important}
 .tk-sheet-body{overscroll-behavior:contain}
 /* ───── bp-nav-css ───── */
-#bpNavToast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));
+#bpNavToast{position:fixed;left:50%;bottom:calc(84px + var(--bp-sab,env(safe-area-inset-bottom)));
   transform:translate(-50%,14px);z-index:530;padding:11px 18px;border-radius:12px;
   background:rgba(29,35,46,.96);border:1px solid rgba(255,255,255,.12);color:#fff;
   font-size:12.5px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .18s,transform .18s;
@@ -10625,8 +10625,8 @@ html.bp-lite [class*="modal"]{backdrop-filter:none!important;-webkit-backdrop-fi
 html.bp-lite *{box-shadow:none!important}
 /* ───── bp-offline-css ───── */
 #bpOffline{position:fixed;left:0;right:0;top:0;z-index:545;display:flex;align-items:center;
-  justify-content:center;gap:8px;height:calc(30px + env(safe-area-inset-top));
-  padding-top:env(safe-area-inset-top);background:#373f4d;color:#fff;font-size:12px;font-weight:700;
+  justify-content:center;gap:8px;height:calc(30px + var(--bp-sat,env(safe-area-inset-top)));
+  padding-top:var(--bp-sat,env(safe-area-inset-top));background:#373f4d;color:#fff;font-size:12px;font-weight:700;
   transform:translateY(-100%);transition:transform .22s ease;pointer-events:none;cursor:pointer;
   -webkit-tap-highlight-color:transparent}
 /* Плашку можно смахнуть касанием, поэтому она обязана ловить нажатия. */
@@ -10713,9 +10713,11 @@ html.bp-tg #tabLogin,html.bp-tg #tabReg{opacity:.9}
      initTelegram/tgUser/stash/offerExit, и все на DOMContentLoaded и
      позже, каждый через «if(!tg) return». Поведение внутри Telegram
      не меняется. -->
-<!-- Мини-аппа у сайта нет. Скрипт telegram-web-app.js убран: он включал
+<!-- (До 15.10.2026) Мини-аппа у сайта нет. Скрипт telegram-web-app.js убран: он включал
      режим приложения внутри Телеграма и тянулся с telegram.org при каждом
-     открытии — лишняя внешняя зависимость на старте. Всё, что его
+     открытии — лишняя внешняя зависимость на старте.
+     С 15.10.2026 кнопка бота снова открывает мини-приложение, и скрипт
+     грузится — но только внутри него (bp-tg-boot в <head>, с defer). Всё, что его
      спрашивало, написано через `window.Telegram && window.Telegram.WebApp`
      и без него просто не делает ничего: отклик уходит в navigator.vibrate,
      кнопка «назад» — в обычную историю браузера. -->
@@ -10881,6 +10883,43 @@ html.bp-tg #tabLogin,html.bp-tg #tabReg{opacity:.9}
 window.BP_SERVER = window.BP_SERVER || '';
 </script>
 
+<script id="bp-tg-boot">
+/* ══ ТЕЛЕГРАМ: МИНИ-ПРИЛОЖЕНИЕ (bp-tg-boot, 15.10.2026) ═══════════════
+   Кнопка бота открывает сайт мини-приложением (bot.js, web_app): Телеграм
+   кладёт подписанные данные в адрес (#tgWebAppData=…). Только тогда грузим
+   его скрипт telegram-web-app.js, с defer: парсер его не ждёт (белого экрана
+   не будет, даже если telegram.org медленный), а выполнится он до
+   DOMContentLoaded — к initTelegram (bp-nav) и bp-tg-fs. В обычном браузере
+   скрипт не нужен и не грузится.
+   Данные запуска сохраняем в sessionStorage тем же ключом, что и сам скрипт
+   Телеграма (__telegram__initParams): адрес могут переписать раньше
+   (знакомство onboarding.html, маршруты #/…), а после перезагрузки внутри
+   мини-приложения данных в адресе уже нет. Откат: удалить этот блок.
+   Заодно — адрес запуска как есть (window.__bpHash0) для bp-mv-guest:
+   bp-mailback стирает #/recover?… ещё при разборе файла, роутер пишет
+   свой #/auth — к концу файла исходного адреса уже не видно. */
+(function(){
+  try{ window.__bpHash0 = String(location.hash || ''); }catch(e){}
+  try{
+    var h = String(location.hash || ''), inTg = false, ss = null;
+    try{ ss = window.sessionStorage; }catch(e){ ss = null; }
+    if(/(^|[#&])tgWebAppData=/.test(h)){
+      inTg = true;
+      var p = {};
+      h.replace(/^#/, '').split('&').forEach(function(kv){
+        var i = kv.indexOf('='); if(i <= 0) return;
+        try{ p[decodeURIComponent(kv.slice(0, i))] = decodeURIComponent(kv.slice(i + 1).replace(/\+/g, '%20')); }catch(e){}
+      });
+      try{ if(ss){ ss.setItem('__telegram__initParams', JSON.stringify(p)); ss.setItem('bp_in_tg', '1'); } }catch(e){}
+    } else {
+      try{ inTg = !!(ss && ss.getItem('bp_in_tg') === '1'); }catch(e){}
+    }
+    if(!inTg) return;
+    document.documentElement.classList.add('bp-tgapp');
+    document.write('<script src="https://telegram.org/js/telegram-web-app.js" defer><\/script>');
+  }catch(e){}
+})();
+</script>
 <script id="bp-onb-gate">
 /* ══ Знакомство при первом входе ════════════════════════════════════
    Новичок сначала видит onboarding.html (4 экрана-сторис: что это,
@@ -14443,7 +14482,7 @@ function showVerifyPicker() {
     background:linear-gradient(170deg,#0c2616 0%,#102e1b 100%);
     border-radius:28px 28px 0 0;
     border-top:1px solid rgba(255,255,255,0.125);
-    padding:0 0 env(safe-area-inset-bottom,20px);
+    padding:0 0 var(--bp-sab,env(safe-area-inset-bottom,20px));
     transform:translateY(100%);
     transition:transform .52s cubic-bezier(.22,1,.36,1);
     box-shadow:0 -20px 100px rgba(0,0,0,.85), 0 -1px 0 rgba(0,0,0,.15) inset;
@@ -15450,7 +15489,7 @@ function _bpnWrap(){
   var w = document.getElementById('bpToastWrap');
   if(!w){
     w = document.createElement('div'); w.id = 'bpToastWrap'; w.setAttribute('aria-live','polite');
-    w.style.cssText = 'position:fixed;top:calc(env(safe-area-inset-top,0px) + 14px);right:14px;left:auto;bottom:auto;z-index:700;display:flex;flex-direction:column;align-items:flex-end;pointer-events:none;max-width:calc(100vw - 28px);';
+    w.style.cssText = 'position:fixed;top:calc(var(--bp-sat,env(safe-area-inset-top,0px)) + 14px);right:14px;left:auto;bottom:auto;z-index:700;display:flex;flex-direction:column;align-items:flex-end;pointer-events:none;max-width:calc(100vw - 28px);';
     (document.body || document.documentElement).appendChild(w);
   }
   return w;
@@ -16534,7 +16573,7 @@ function _bpSheetOpen(title, bodyHtml, footHtml){
       <div class="bpsheet-x"  onclick="_bpSheetClose()" role="button" tabindex="0"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--t2)" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div>
     </div>
     <div style="flex:1;overflow-y:auto;padding:16px 18px 8px">${bodyHtml}</div>
-    ${footHtml ? `<div style="padding:12px 18px calc(env(safe-area-inset-bottom,0px) + 18px);flex-shrink:0">${footHtml}</div>` : '<div style="padding-bottom:calc(env(safe-area-inset-bottom,0px) + 16px)"></div>'}
+    ${footHtml ? `<div style="padding:12px 18px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 18px);flex-shrink:0">${footHtml}</div>` : '<div style="padding-bottom:calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 16px)"></div>'}
   </div>`;
   ov.addEventListener('click', e=>{ if(e.target === ov) _bpSheetClose(); });
   document.body.appendChild(ov);
@@ -16826,7 +16865,7 @@ function openLegal(kind){
   ov.id = 'legalOverlay';
   ov.style.cssText = 'position:fixed;inset:0;z-index:520;background:var(--bg);display:flex;flex-direction:column;max-width:420px;margin:0 auto;overflow:hidden';
   ov.innerHTML = `
-    <div style="display:flex;align-items:center;gap:12px;padding:calc(env(safe-area-inset-top,0px) + 14px) 16px 13px;border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0">
+    <div style="display:flex;align-items:center;gap:12px;padding:calc(var(--bp-sat,env(safe-area-inset-top,0px)) + 14px) 16px 13px;border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0">
       <div  onclick="closeLegal()" style="width:34px;height:34px;border-radius:12px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0" role="button" tabindex="0">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--t1)" stroke-width="2.4" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
       </div>
@@ -16839,7 +16878,7 @@ function openLegal(kind){
       <div  onclick="openLegal('terms')" style="flex:1;text-align:center;padding:9px;border-radius:12px;font-size:12px;font-weight:700;cursor:pointer;${isTerms?'background:rgba(255,255,255,0.083);border:1px solid rgba(255,255,255,0.14);color:var(--t1)':'background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);color:var(--t3)'}" role="button" tabindex="0">Соглашение</div>
       <div  onclick="openLegal('privacy')" style="flex:1;text-align:center;padding:9px;border-radius:12px;font-size:12px;font-weight:700;cursor:pointer;${!isTerms?'background:rgba(255,255,255,0.083);border:1px solid rgba(255,255,255,0.14);color:var(--t1)':'background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);color:var(--t3)'}" role="button" tabindex="0">Политика</div>
     </div>
-    <div style="flex:1;overflow-y:auto;padding:6px 18px calc(env(safe-area-inset-bottom,0px) + 30px)">${isTerms?termsBody:privacyBody}</div>`;
+    <div style="flex:1;overflow-y:auto;padding:6px 18px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 30px)">${isTerms?termsBody:privacyBody}</div>`;
   document.body.appendChild(ov);
 }
 function closeLegal(){
@@ -21605,7 +21644,7 @@ function _chatShowDelete(id) {
     ov.onclick = function(ev){ if(ev.target === ov) _chatHideDelete(); };
     document.body.appendChild(ov);
   }
-  ov.innerHTML = `<div style="width:100%;max-width:420px;padding:0 12px calc(env(safe-area-inset-bottom,0px) + 14px);transform:translateY(0);animation:cdlSheetIn .26s cubic-bezier(.22,1,.36,1)">
+  ov.innerHTML = `<div style="width:100%;max-width:420px;padding:0 12px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 14px);transform:translateY(0);animation:cdlSheetIn .26s cubic-bezier(.22,1,.36,1)">
     <div style="background:#1d222d;border:1px solid rgba(255,255,255,.07);border-radius:16px;overflow:hidden;margin-bottom:8px">
       <div style="padding:14px 16px 12px;text-align:center;border-bottom:1px solid rgba(255,255,255,.06)">
         <div style="font-size:12.5px;color:var(--t3)">Чат с <b style="color:var(--t1)">${bpEsc(c.name)}</b></div>
@@ -24546,7 +24585,7 @@ function _showAvaActionsSheet(bp, userId) {
   var avaHtml = bp.img
     ? '<img src="' + bpUrl(bp.img) + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%" alt="">'
     : '<div style="width:100%;height:100%;border-radius:50%;background:' + (bp.color || 'linear-gradient(135deg,#3ddc84,#2bb96b)') + ';display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;color:#fff">' + (bp.initials || (bp.name || 'Б')[0].toUpperCase()) + '</div>';
-  ov.innerHTML = '<div style="width:100%;max-width:420px;background:linear-gradient(160deg,#13171e,#191e28);border-top-left-radius:24px;border-top-right-radius:24px;padding:18px 18px max(22px,env(safe-area-inset-bottom))"  onclick="event.stopPropagation()" role="button" tabindex="0">'
+  ov.innerHTML = '<div style="width:100%;max-width:420px;background:linear-gradient(160deg,#13171e,#191e28);border-top-left-radius:24px;border-top-right-radius:24px;padding:18px 18px max(22px,var(--bp-sab,env(safe-area-inset-bottom)))"  onclick="event.stopPropagation()" role="button" tabindex="0">'
     + '<div style="width:40px;height:4px;border-radius:2px;background:rgba(255,255,255,.15);margin:0 auto 16px"></div>'
     + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">'
     +   '<div style="width:52px;height:52px;border-radius:50%;overflow:hidden;flex-shrink:0">' + avaHtml + '</div>'
@@ -24782,7 +24821,7 @@ function openOfferSheetFromModal(){
   sheet.style.cssText = 'position:fixed;inset:0;z-index:450;background:rgba(12,14,19,.92);backdrop-filter:blur(18px);display:flex;align-items:flex-end;justify-content:center';
   sheet.onclick = function(e){ if(e.target===sheet) sheet.remove(); };
   var priceHint = bp.price ? ('Прайс блогера: ' + bp.price) : '';
-  sheet.innerHTML = `<div style="width:100%;max-width:430px;background:linear-gradient(160deg,#13171e,#191e28);border:1px solid rgba(255,255,255,0.11);border-radius:22px 22px 0 0;padding:20px 18px calc(20px + env(safe-area-inset-bottom))">
+  sheet.innerHTML = `<div style="width:100%;max-width:430px;background:linear-gradient(160deg,#13171e,#191e28);border:1px solid rgba(255,255,255,0.11);border-radius:22px 22px 0 0;padding:20px 18px calc(20px + var(--bp-sab,env(safe-area-inset-bottom)))">
     <div style="display:flex;justify-content:center;padding-bottom:10px"><div style="width:38px;height:4px;border-radius:3px;background:rgba(255,255,255,.14)"></div></div>
     <div style="font-size:18px;font-weight:800;color:#fff;margin-bottom:3px">Предложить сделку</div>
     <div style="font-size:12.5px;color:rgba(255,255,255,.45);margin-bottom:16px">Блогеру ${bpEsc((bp.name||'').replace(/</g,'&lt;'))} · ${priceHint}</div>
@@ -25432,7 +25471,7 @@ textarea.ep-inp{ resize:none; line-height:1.5; font-weight:500; }
 #bpRoleSheet{
   position:fixed; inset:0; z-index:640;
   display:flex; align-items:flex-end; justify-content:center;
-  background:rgba(0,0,0,.45); padding:0 14px calc(24px + env(safe-area-inset-bottom,0px));
+  background:rgba(0,0,0,.45); padding:0 14px calc(24px + var(--bp-sab,env(safe-area-inset-bottom,0px)));
 }
 .bprl-card{
   width:100%; max-width:392px;
@@ -28054,7 +28093,7 @@ function openVideoReviewModal(dealId) {
     </div>
   </div>
   <!-- Action buttons -->
-  <div id="vrActionBtns" style="display:flex;padding:10px 14px calc(env(safe-area-inset-bottom,0px) + 14px);gap:10px;border-top:1px solid var(--brd);background:var(--card);flex-shrink:0">
+  <div id="vrActionBtns" style="display:flex;padding:10px 14px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 14px);gap:10px;border-top:1px solid var(--brd);background:var(--card);flex-shrink:0">
     ${canRevise
       ? `<button onclick="document.getElementById('vrRevBlock').style.display='block';document.getElementById('vrActionBtns').style.display='none';document.getElementById('vrRevBlock').scrollIntoView({behavior:'smooth'})" style="flex:1;background:rgba(246,168,35,.12);border:1.5px solid rgba(246,168,35,.28);border-radius:14px;padding:14px;font-size:14px;font-weight:800;color:#f6a823;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>Правки</button>`
       : `<button disabled style="flex:1;background:var(--card2);border:1px solid var(--brd);border-radius:14px;padding:14px;font-size:14px;font-weight:700;color:var(--t3);cursor:not-allowed;font-family:inherit">Лимит правок</button>`}
@@ -28287,7 +28326,7 @@ function openPublicationReviewModal(dealId){
     </div>
   </div>
 
-  <div style="display:flex;padding:10px 14px calc(env(safe-area-inset-bottom,0px) + 14px);gap:10px;border-top:1px solid var(--brd);background:var(--card);flex-shrink:0">
+  <div style="display:flex;padding:10px 14px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 14px);gap:10px;border-top:1px solid var(--brd);background:var(--card);flex-shrink:0">
     <button onclick="disputePublicationFromModal('${dealId}')" style="flex:1;background:rgba(232,48,80,.1);border:1px solid rgba(232,48,80,.28);border-radius:14px;padding:14px;font-size:14px;font-weight:800;color:#ff8090;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Оспорить
     </button>
@@ -33740,7 +33779,7 @@ function _buildOfferOverlay(role) {
         </div>
       </div>
     </div>
-    <div style="padding:14px 20px max(20px,env(safe-area-inset-bottom));flex-shrink:0;border-top:1px solid rgba(255,255,255,.06)">
+    <div style="padding:14px 20px max(20px,var(--bp-sab,env(safe-area-inset-bottom)));flex-shrink:0;border-top:1px solid rgba(255,255,255,.06)">
       <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:13px;user-select:none" onclick="_toggleOfferCheck(event)">
         <span id="offerCheckBox" style="width:22px;height:22px;border-radius:7px;border:2px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .2s">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" style="opacity:0;transition:opacity .2s" id="offerCheckMark"><polyline points="20 6 9 17 4 12"/></svg>
@@ -35054,7 +35093,7 @@ function bpInjectCSS(){
     }
     .npn-head{
       display:flex;align-items:center;justify-content:space-between;gap:10px;
-      padding:calc(env(safe-area-inset-top,0px) + 16px) 16px 12px;
+      padding:calc(var(--bp-sat,env(safe-area-inset-top,0px)) + 16px) 16px 12px;
     }
     .npn-head-l{ display:flex;align-items:center;gap:11px;min-width:0 }
     .npn-bell{
@@ -35161,7 +35200,7 @@ function bpInjectCSS(){
     .npn-empty-t{ font-size:14.5px;font-weight:800;color:var(--t1) }
     .npn-empty-s{ font-size:12px;margin-top:4px;line-height:1.5 }
     .npn-foot{
-      padding:10px 14px calc(env(safe-area-inset-bottom,0px) + 12px);
+      padding:10px 14px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 12px);
       border-top:1px solid rgba(255,255,255,.06);flex-shrink:0;
       background:rgba(10,26,16,.6);backdrop-filter:blur(8px);
     }
@@ -36819,7 +36858,7 @@ function host(){
     w.setAttribute('aria-live', 'polite');
     (document.body || document.documentElement).appendChild(w);
   }
-  w.style.cssText = 'position:fixed;top:calc(env(safe-area-inset-top,0px) + 14px);right:14px;left:auto;bottom:auto;' +
+  w.style.cssText = 'position:fixed;top:calc(var(--bp-sat,env(safe-area-inset-top,0px)) + 14px);right:14px;left:auto;bottom:auto;' +
     'z-index:540;display:flex;flex-direction:column;align-items:flex-end;pointer-events:none;max-width:calc(100vw - 28px);';
   return w;
 }
@@ -41972,6 +42011,14 @@ else setTimeout(boot, 0);
       }
     } catch(e){ BPERR(e); }
 
+    /* Экран входа без аккаунта (режим MV): «Назад» — к просмотру заданий,
+       как «‹» на самом экране (bp-mv-guest, 15.10.2026). Иначе здесь «дальше
+       некуда», и в мини-приложении Телеграма «Назад» закрывала его. */
+    try {
+      var gb = document.querySelector('#pg-auth.on > .mvgu-back');
+      if (gb && isVisible(gb)){ gb.click(); return true; }
+    } catch(e){ BPERR(e); }
+
     var page = currentPage();
     if (page !== HOME && page !== 'auth'){
       var to = popPage();
@@ -42071,10 +42118,20 @@ else setTimeout(boot, 0);
     } catch(e){ BPERR(e); }
   }
 
+  /* Корень — там у Телеграма «Закрыть», а не «Назад»: главная, а в режиме
+     «как More Views» (html.bp-mv) — разделы полки. Мини-приложение вернулось
+     15.10.2026, а у MV главная — задания: без этого «Назад» висела и там. */
+  var MV_ROOTS = { tasks:1, mytasks:1, chats:1, profile:1, campaigns:1 };
+  function isRoot(p){
+    if (p === HOME) return true;
+    try { return document.documentElement.classList.contains('bp-mv') && !!MV_ROOTS[p]; }
+    catch(_){ return false; }
+  }
+
   function updateTgBack(){
     if (!tg || !tg.BackButton) return;
     try {
-      var deep = currentPage() !== HOME || !!topLayer();
+      var deep = !isRoot(currentPage()) || !!topLayer();
       if (deep) tg.BackButton.show(); else tg.BackButton.hide();
     } catch(e){ BPERR(e); }
   }
@@ -42835,9 +42892,11 @@ else setTimeout(boot, 0);
       };
       set('regName', u.name);
       set('regUsername', u.username);
-      var pass = 'tg' + u.tgId + 'bp';
-      set('regPass', pass); set('regPass2', pass);
-      set('loginPass', pass);
+      /* Пароль НЕ подставляем (15.10.2026). Было 'tg' + id + 'bp': зная номер
+         в Телеграме, в такой аккаунт вошёл бы кто угодно, а человек мог и не
+         заметить, что поле уже заполнено. Мини-приложение вернулось — путь
+         снова живой. Вход по Телеграму — кнопкой «Telegram» (подпись initData
+         проверяет сервер), пароль у формы — свой. */
 
       var hint = document.getElementById('bpTgHint');
       if (!hint){
@@ -44066,7 +44125,7 @@ html.bp-screen-open #campAddBanner{
 /* кнопка внизу */
 .abc-footer{
   padding:clamp(7px,calc(1.4 * var(--abc-vh)),11px) 16px
-          calc(env(safe-area-inset-bottom,0px) + clamp(8px,calc(1.5 * var(--abc-vh)),14px))!important;
+          calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + clamp(8px,calc(1.5 * var(--abc-vh)),14px))!important;
 }
 .abc-continue-btn{
   border-radius:15px!important;
@@ -44482,7 +44541,7 @@ img[data-full]{
   box-shadow:none!important;
   transform:none!important;
   will-change:auto!important;
-  padding:8px 16px calc(20px + env(safe-area-inset-bottom))!important;
+  padding:8px 16px calc(20px + var(--bp-sab,env(safe-area-inset-bottom)))!important;
 }
 </style>
 <script id="bp-resync-js">
@@ -44641,7 +44700,7 @@ img[data-full]{
 .bparb-x{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;cursor:pointer;
   background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);flex-shrink:0}
 .bparb-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 16px 4px}
-.bparb-foot{flex-shrink:0;padding:12px 16px calc(env(safe-area-inset-bottom,0px) + 16px);
+.bparb-foot{flex-shrink:0;padding:12px 16px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 16px);
   border-top:1px solid rgba(255,255,255,.06);background:rgba(17,21,27,.6);display:flex;flex-direction:column;gap:8px}
 
 /* ── шапка-контекст: сумма · статус · таймер ── */
@@ -54720,8 +54779,8 @@ else boot();
 #pg-bl-profile{position:fixed;inset:0;z-index:270;display:none;flex-direction:column;
   background:var(--bg,#11141b);overflow:hidden}
 #pg-bl-profile.on{display:flex}
-.blp-scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:calc(28px + env(safe-area-inset-bottom))}
-.blp-head{display:flex;align-items:center;gap:11px;padding:calc(12px + env(safe-area-inset-top)) 14px 12px;
+.blp-scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:calc(28px + var(--bp-sab,env(safe-area-inset-bottom)))}
+.blp-head{display:flex;align-items:center;gap:11px;padding:calc(12px + var(--bp-sat,env(safe-area-inset-top))) 14px 12px;
   border-bottom:1px solid rgba(255,255,255,.07);background:rgba(17,20,27,.96);
   position:sticky;top:0;z-index:5;backdrop-filter:blur(12px)}
 .blp-back{width:34px;height:34px;border-radius:11px;flex-shrink:0;display:flex;align-items:center;
@@ -56877,7 +56936,7 @@ else setTimeout(boot, 350);
 #bpTabbar{
   position:fixed;left:50%;bottom:0;transform:translateX(-50%);
   width:100%;max-width:420px;z-index:155;
-  padding:0 10px calc(env(safe-area-inset-bottom,0px) + 8px);
+  padding:0 10px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 8px);
   pointer-events:none;display:none;
 }
 body.bp-tabbar #bpTabbar{display:block}
@@ -56928,23 +56987,23 @@ body.bp-campmini #bpTabbar{display:none!important}
 
 /* ── панель кампании поднимается над полкой ── */
 body.bp-tabbar #campBar{
-  padding-bottom:calc(var(--bptab-h) + env(safe-area-inset-bottom,0px) + 12px)!important;
+  padding-bottom:calc(var(--bptab-h) + var(--bp-sab,env(safe-area-inset-bottom,0px)) + 12px)!important;
 }
 
 /* ── воздух под содержимым, чтобы полка ничего не накрывала ── */
 body.bp-tabbar #pg-profile,body.bp-tabbar #pg-company,
 body.bp-tabbar #pg-campaigns,body.bp-tabbar #pg-settings,
 body.bp-tabbar .pg-home-pad{
-  padding-bottom:calc(var(--bptab-h) + env(safe-area-inset-bottom,0px) + 18px)!important;
+  padding-bottom:calc(var(--bptab-h) + var(--bp-sab,env(safe-area-inset-bottom,0px)) + 18px)!important;
 }
 body.bp-tabbar.bp-campbar #pg-profile,body.bp-tabbar.bp-campbar #pg-company,
 body.bp-tabbar.bp-campbar #pg-campaigns,body.bp-tabbar.bp-campbar #pg-settings,
 body.bp-tabbar.bp-campbar .pg-home-pad{
-  padding-bottom:calc(var(--bptab-h) + env(safe-area-inset-bottom,0px) + 104px)!important;
+  padding-bottom:calc(var(--bptab-h) + var(--bp-sab,env(safe-area-inset-bottom,0px)) + 104px)!important;
 }
 body.bp-tabbar #chatsSectionWrap,body.bp-tabbar #dealsSectionWrap,
 body.bp-tabbar #offersSectionWrap{
-  padding-bottom:calc(var(--bptab-h) + env(safe-area-inset-bottom,0px) + 16px)!important;
+  padding-bottom:calc(var(--bptab-h) + var(--bp-sab,env(safe-area-inset-bottom,0px)) + 16px)!important;
 }
 
 /* ── палитра онбординга: блок идёт после bp-onb-color, поэтому
@@ -57205,7 +57264,7 @@ else boot();
 .bpdc-t{font-size:16.5px;font-weight:800;color:var(--t1);letter-spacing:-.3px}
 .bpdc-s{font-size:11.5px;color:var(--t3);margin-top:2px;line-height:1.4}
 .bpdc-body{flex:1;min-height:0;overflow-y:auto;padding:0 18px 8px;overscroll-behavior:contain}
-.bpdc-foot{flex-shrink:0;padding:12px 18px calc(14px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--brd)}
+.bpdc-foot{flex-shrink:0;padding:12px 18px calc(14px + var(--bp-sab,env(safe-area-inset-bottom,0px)));border-top:1px solid var(--brd)}
 
 .bpdc-card{background:var(--card);border:1px solid var(--brd);border-radius:15px;padding:14px 15px;margin-bottom:11px}
 .bpdc-row{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px}
@@ -59716,7 +59775,7 @@ html .tzd-empty{
 
 /* ── кнопка внизу: как все главные кнопки приложения ── */
 html #tzModalSheet .tzd-close{
-  width:100%;margin:16px 0 calc(16px + env(safe-area-inset-bottom,0px));
+  width:100%;margin:16px 0 calc(16px + var(--bp-sab,env(safe-area-inset-bottom,0px)));
   background:var(--acc)!important;background-image:none!important;
   border:none;border-radius:14px;padding:14px;
   font-family:inherit;font-size:15px;font-weight:800;color:var(--acc-fg)!important;
@@ -59867,7 +59926,7 @@ html #offersSectionWrap{
 html #dealOverlayBody,
 html #bdsBody,
 html #dealDetailBody{
-  padding-bottom:calc(24px + env(safe-area-inset-bottom,0px))!important;
+  padding-bottom:calc(24px + var(--bp-sab,env(safe-area-inset-bottom,0px)))!important;
 }
 </style>
 
@@ -61787,7 +61846,7 @@ window.bpwReceipt = function(ts){
     ov.className = 'own-card-sheet';
     ov.onclick = function(e){ if(e.target === ov) ov.remove(); };
     ov.innerHTML =
-      '<div class="bpw-receipt bpw-card" style="width:100%;max-width:420px;margin:auto 0 0;border-radius:20px 20px 0 0;padding:18px 18px calc(18px + env(safe-area-inset-bottom,0px))">' +
+      '<div class="bpw-receipt bpw-card" style="width:100%;max-width:420px;margin:auto 0 0;border-radius:20px 20px 0 0;padding:18px 18px calc(18px + var(--bp-sab,env(safe-area-inset-bottom,0px)))">' +
         '<div class="bpw-rc-sum"><div class="bpw-rc-v">' + (it.wd ? money(t.net || (amt - (t.fee || 0))) : money(amt)) + '</div>' +
           '<div class="bpw-rc-k">' + (it.wd ? 'к выплате на карту' : 'зачислено на баланс') + '</div></div>' +
         '<div class="bpw-sum">' + rows + '</div>' +
@@ -61945,7 +62004,7 @@ window.bpwWhy = function(){
     ov.id = 'bpwWhySheet'; ov.className = 'own-card-sheet';
     ov.onclick = function(e){ if(e.target === ov) ov.remove(); };
     ov.innerHTML =
-      '<div class="bpw bpw-card" style="width:100%;max-width:420px;margin:auto 0 0;border-radius:20px 20px 0 0;padding:18px 18px calc(18px + env(safe-area-inset-bottom,0px))">' +
+      '<div class="bpw bpw-card" style="width:100%;max-width:420px;margin:auto 0 0;border-radius:20px 20px 0 0;padding:18px 18px calc(18px + var(--bp-sab,env(safe-area-inset-bottom,0px)))">' +
         '<div style="font-size:17px;font-weight:800;letter-spacing:-.3px;color:var(--t1);margin-bottom:4px">Что нужно для вывода</div>' +
         '<div style="font-size:12.5px;color:var(--t3);line-height:1.5;margin-bottom:14px">Выполнено ' + (rows.length - need.length) + ' из ' + rows.length + '</div>' +
         '<div class="bpw-states">' + html + '</div>' +
@@ -62728,7 +62787,7 @@ html .bpg-sheet{
   width:100%; max-width:420px; margin:auto 0 0;
   background:var(--bg2); border-top:1px solid var(--brd);
   border-radius:20px 20px 0 0;
-  padding:20px 18px calc(18px + env(safe-area-inset-bottom,0px));
+  padding:20px 18px calc(18px + var(--bp-sab,env(safe-area-inset-bottom,0px)));
   display:flex; flex-direction:column; gap:12px;
 }
 html .bpg-h{
@@ -63253,7 +63312,7 @@ html .bpp-sheet{
   width:100%; max-width:420px; margin:auto 0 0;
   background:var(--bg2); border-top:1px solid var(--brd);
   border-radius:20px 20px 0 0;
-  padding:20px 18px calc(18px + env(safe-area-inset-bottom,0px));
+  padding:20px 18px calc(18px + var(--bp-sab,env(safe-area-inset-bottom,0px)));
   display:flex; flex-direction:column; gap:12px;
 }
 html .bpp-sheet-h{ font-size:19px; font-weight:800; letter-spacing:-.4px; color:var(--t1); line-height:1.2 }
@@ -63579,7 +63638,7 @@ html .bpk-sheet{
   width:100%; max-width:420px; margin:auto 0 0;
   background:var(--bg2); border-top:1px solid var(--brd);
   border-radius:20px 20px 0 0;
-  padding:18px 16px calc(16px + env(safe-area-inset-bottom,0px));
+  padding:18px 16px calc(16px + var(--bp-sab,env(safe-area-inset-bottom,0px)));
   display:flex; flex-direction:column; gap:8px;
 }
 html .bpk-ttl{
@@ -63787,7 +63846,7 @@ setTimeout(addKebabs, 1100);
 /* ── шапка ── */
 .bpn2-hd{
   flex-shrink:0; display:flex; align-items:center; gap:8px;
-  padding:calc(env(safe-area-inset-top,0px) + 10px) 12px 10px;
+  padding:calc(var(--bp-sat,env(safe-area-inset-top,0px)) + 10px) 12px 10px;
   border-bottom:1px solid var(--brd,rgba(255,255,255,.09));
   background:var(--bg,#101319);
 }
@@ -63835,7 +63894,7 @@ setTimeout(addKebabs, 1100);
 /* ── список ── */
 .bpn2-list{
   flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain;
-  padding:8px 12px calc(env(safe-area-inset-bottom,0px) + 28px);
+  padding:8px 12px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 28px);
   -webkit-overflow-scrolling:touch; scrollbar-width:none;
 }
 .bpn2-list::-webkit-scrollbar{ display:none }
@@ -63946,7 +64005,7 @@ setTimeout(addKebabs, 1100);
 
 /* ── «Отменить» ── */
 .bpn2-undo{
-  position:absolute; left:14px; right:14px; bottom:calc(env(safe-area-inset-bottom,0px) + 16px);
+  position:absolute; left:14px; right:14px; bottom:calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 16px);
   display:flex; align-items:center; gap:12px; padding:12px 12px 12px 16px; border-radius:14px;
   background:#242b39; border:1px solid var(--brd2,rgba(255,255,255,.15));
   box-shadow:0 10px 30px rgba(0,0,0,.5); z-index:2;
@@ -64956,7 +65015,7 @@ html .bw2-note a{ color:var(--acc2,#5b93f5); font-weight:700; cursor:pointer; te
 /* ── закреплённая кнопка ── */
 html .bw2-cta{
   position:fixed; left:0; right:0; bottom:0; z-index:90; margin:0 auto; width:100%; max-width:420px;
-  padding:12px 14px calc(env(safe-area-inset-bottom,0px) + 14px);
+  padding:12px 14px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 14px);
   background:linear-gradient(180deg,rgba(16,19,25,0),var(--bg,#101319) 34%);
   pointer-events:none; display:none; animation:bw2Up .36s cubic-bezier(.22,1,.36,1) backwards;
 }
@@ -64998,7 +65057,7 @@ html.bp-lite .bw2-go{ box-shadow:inset 0 1px 0 rgba(255,255,255,.22)!important }
 .bw2-sheet{
   width:100%; max-width:420px; margin:auto 0 0; background:var(--bg2,#151820);
   border:1px solid var(--brd,rgba(255,255,255,.09)); border-bottom:none; border-radius:24px 24px 0 0;
-  padding:10px 18px calc(20px + env(safe-area-inset-bottom,0px));
+  padding:10px 18px calc(20px + var(--bp-sab,env(safe-area-inset-bottom,0px)));
   animation:bw2Sheet .36s cubic-bezier(.22,1,.36,1) backwards;
 }
 @keyframes bw2Sheet{ from{ transform:translateY(40px); opacity:0 } to{ transform:none; opacity:1 } }
@@ -65916,7 +65975,7 @@ html #pg-chats .chats-list, html #dealsList, html #bloggerDealsList, html #offer
    ══════════════════════════════════════════════════════════════════ */
 :root{ --bptab-h:60px }
 html body #bpTabbar{
-  padding:0 14px calc(env(safe-area-inset-bottom,0px) + 12px);
+  padding:0 14px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 12px);
 }
 html body #bpTabbar .bptab-in{
   gap:0; padding:5px 6px;
@@ -65956,15 +66015,15 @@ html body #bpTabbar .bptab-b{
 body.bp-tabbar #pg-profile,body.bp-tabbar #pg-company,
 body.bp-tabbar #pg-campaigns,body.bp-tabbar #pg-settings,
 body.bp-tabbar .pg-home-pad{
-  padding-bottom:calc(var(--bptab-h) + env(safe-area-inset-bottom,0px) + 24px)!important;
+  padding-bottom:calc(var(--bptab-h) + var(--bp-sab,env(safe-area-inset-bottom,0px)) + 24px)!important;
 }
 body.bp-tabbar #chatsSectionWrap,body.bp-tabbar #dealsSectionWrap,
 body.bp-tabbar #bloggerDealsSectionWrap,body.bp-tabbar #offersSectionWrap{
-  padding-bottom:calc(var(--bptab-h) + env(safe-area-inset-bottom,0px) + 24px)!important;
+  padding-bottom:calc(var(--bptab-h) + var(--bp-sab,env(safe-area-inset-bottom,0px)) + 24px)!important;
 }
 /* панель «Текущая кампания» — над полкой с тем же зазором */
 body.bp-tabbar #campBar{
-  padding-bottom:calc(var(--bptab-h) + env(safe-area-inset-bottom,0px) + 24px)!important;
+  padding-bottom:calc(var(--bptab-h) + var(--bp-sab,env(safe-area-inset-bottom,0px)) + 24px)!important;
 }
 </style>
 <style id="bp-cwn2-css">
@@ -66286,7 +66345,7 @@ html .bpad-t{min-width:0}
 html .bpad-t b{display:block;font-size:16px;font-weight:800;color:var(--t1);letter-spacing:-.3px}
 html .bpad-t span{display:block;font-size:10.5px;color:var(--t3);margin-top:1px}
 html .bpad-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
-  padding:14px 16px calc(20px + env(safe-area-inset-bottom,0px))}
+  padding:14px 16px calc(20px + var(--bp-sab,env(safe-area-inset-bottom,0px)))}
 html .bpad-act{display:flex;align-items:center;gap:11px;width:100%;box-sizing:border-box;
   background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:14px;
   padding:13px 14px;margin-bottom:9px;color:var(--t1);font:inherit;font-size:13.5px;font-weight:700;
@@ -70022,7 +70081,7 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
         + 'border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:12px;'
         + 'font-size:11px;line-height:1.5;color:var(--t2);font-family:ui-monospace,Menlo,monospace;'
         + 'resize:none;outline:none;box-sizing:border-box">' + esc(shown) + '</textarea>'
-        + '<div style="padding:12px 16px calc(16px + env(safe-area-inset-bottom));flex-shrink:0">'
+        + '<div style="padding:12px 16px calc(16px + var(--bp-sab,env(safe-area-inset-bottom)));flex-shrink:0">'
         + '<button type="button" onclick="bpDlCopy(this)" style="width:100%;'
         + 'background:#2f6ce0;border:0;border-radius:12px;padding:14px;font-size:14px;'
         + 'font-weight:800;color:#fff;font-family:inherit;cursor:pointer">Скопировать всё</button>'
@@ -71009,7 +71068,7 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
     }
     var ov = document.createElement('div'); ov.id = 'bpPayWait';
     ov.style.cssText = 'position:fixed;inset:0;z-index:620;background:rgba(13,16,21,.78);display:flex;align-items:flex-end;justify-content:center;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)';
-    ov.innerHTML = '<div style="width:100%;max-width:420px;box-sizing:border-box;background:var(--card,#191e28);border:1px solid rgba(255,255,255,.1);border-radius:22px 22px 0 0;padding:24px 18px calc(env(safe-area-inset-bottom,0px) + 20px);text-align:center;font-family:inherit">'
+    ov.innerHTML = '<div style="width:100%;max-width:420px;box-sizing:border-box;background:var(--card,#191e28);border:1px solid rgba(255,255,255,.1);border-radius:22px 22px 0 0;padding:24px 18px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 20px);text-align:center;font-family:inherit">'
       + '<div style="width:52px;height:52px;margin:0 auto 14px;border-radius:50%;border:3px solid rgba(91,147,245,.22);border-top-color:var(--acc2,#5b93f5);animation:bpPaySpin 1s linear infinite"></div>'
       + '<div style="font-size:16px;font-weight:800;color:var(--t1)">Ждём подтверждения оплаты</div>'
       + '<div style="font-size:12px;color:var(--t2);line-height:1.6;margin-top:8px">Страница оплаты на ' + rub(gross || amount) + (gross && gross > amount ? ' (на баланс ' + rub(amount) + ' + комиссия ' + rub(gross - amount) + ')' : '') + ' открыта. Оплатите и вернитесь сюда — деньги зачислятся на баланс автоматически.</div>'
@@ -71563,7 +71622,7 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
     var ov = document.createElement('div'); ov.id = 'bpVfyLink';
     ov.style.cssText = 'position:fixed;inset:0;z-index:640;background:rgba(13,16,21,.78);display:flex;align-items:flex-end;justify-content:center;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)';
     ov.onclick = function(e){ if(e.target === ov) ov.remove(); };
-    ov.innerHTML = '<div style="width:100%;max-width:420px;box-sizing:border-box;background:var(--card,#191e28);border:1px solid rgba(255,255,255,.1);border-radius:22px 22px 0 0;padding:22px 18px calc(env(safe-area-inset-bottom,0px) + 20px);text-align:center;font-family:inherit">'
+    ov.innerHTML = '<div style="width:100%;max-width:420px;box-sizing:border-box;background:var(--card,#191e28);border:1px solid rgba(255,255,255,.1);border-radius:22px 22px 0 0;padding:22px 18px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 20px);text-align:center;font-family:inherit">'
       + '<div style="font-size:16px;font-weight:800;color:var(--t1)">Браузер не открыл окно</div>'
       + '<div style="font-size:12px;color:var(--t2);line-height:1.6;margin:8px 0 14px">Нажмите кнопку ниже — откроется страница входа в ' + esc(name) + '.</div>'
       + '<a id="bpVfyLinkGo" target="_blank" rel="noopener" style="display:block;text-decoration:none;border-radius:14px;padding:15px;background:linear-gradient(180deg,#3573e6,#2b64d6);color:#fff;font-size:15px;font-weight:800">Открыть ' + esc(name) + '</a>'
@@ -71658,7 +71717,7 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
     var ov = document.createElement('div'); ov.id = 'bpVfyCode';
     ov.style.cssText = 'position:fixed;inset:0;z-index:640;background:rgba(13,16,21,.78);display:flex;align-items:flex-end;justify-content:center;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)';
     ov.onclick = function(e){ if(e.target === ov) close(); };
-    ov.innerHTML = '<div style="width:100%;max-width:420px;box-sizing:border-box;background:var(--card,#191e28);border:1px solid rgba(255,255,255,.1);border-radius:22px 22px 0 0;padding:22px 18px calc(env(safe-area-inset-bottom,0px) + 20px);font-family:inherit">'
+    ov.innerHTML = '<div style="width:100%;max-width:420px;box-sizing:border-box;background:var(--card,#191e28);border:1px solid rgba(255,255,255,.1);border-radius:22px 22px 0 0;padding:22px 18px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 20px);font-family:inherit">'
       + '<div style="font-size:16px;font-weight:800;color:var(--t1);text-align:center">Подключаем ' + esc(name) + '</div>'
       + '<div id="bpVfySub" style="font-size:12.5px;color:var(--t2);line-height:1.6;margin:8px 0 16px;text-align:center">'
       +   (opened ? 'Войдите в аккаунт в открывшемся окне — канал привяжется сам.'
@@ -72006,7 +72065,7 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
 }
 @keyframes bpivIn{ from{ opacity:0; transform:scale(.94) } to{ opacity:1; transform:none } }
 .bpiv-x{
-  position:absolute; top:calc(env(safe-area-inset-top,0px) + 10px); right:12px;
+  position:absolute; top:calc(var(--bp-sat,env(safe-area-inset-top,0px)) + 10px); right:12px;
   width:38px; height:38px; border-radius:12px; z-index:2; padding:0;
   background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.16);
   color:#fff; font-size:17px; line-height:1; cursor:pointer; font-family:inherit;
@@ -72014,7 +72073,7 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
 }
 .bpiv-cap{
   position:absolute; left:0; right:0;
-  bottom:calc(env(safe-area-inset-bottom,0px) + 14px);
+  bottom:calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 14px);
   text-align:center; font-size:11.5px; color:rgba(255,255,255,.62);
   padding:0 56px; pointer-events:none;
 }
@@ -72341,7 +72400,7 @@ setTimeout(promoSub, 700);
 /* ── шапка ── */
 #bpVpWrap .vp-hd{
   flex-shrink:0;display:flex;align-items:center;gap:12px;
-  padding:calc(env(safe-area-inset-top,0px) + 14px) 16px 12px;
+  padding:calc(var(--bp-sat,env(safe-area-inset-top,0px)) + 14px) 16px 12px;
 }
 #bpVpWrap .vp-back{
   width:38px;height:38px;border-radius:13px;flex-shrink:0;
@@ -72362,7 +72421,7 @@ setTimeout(promoSub, 700);
 }
 #bpVpWrap .vp-body{
   flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;
-  padding:8px 16px calc(env(safe-area-inset-bottom,0px) + 30px);
+  padding:8px 16px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 30px);
 }
 
 /* ── заголовки секций ── */
@@ -73216,7 +73275,7 @@ function scrSent(){
 .pwr-wrap.on{opacity:1}
 .pwr{width:100%;max-width:420px;background:var(--bg2);border:1px solid var(--brd);
   border-bottom:none;border-radius:22px 22px 0 0;
-  padding:12px 16px calc(20px + env(safe-area-inset-bottom));
+  padding:12px 16px calc(20px + var(--bp-sab,env(safe-area-inset-bottom)));
   box-shadow:var(--e3);transform:translateY(14px);
   transition:transform .28s var(--ease-out)}
 .pwr-wrap.on .pwr{transform:none}
@@ -74548,7 +74607,7 @@ if(typeof orig === 'function' && !orig.__bpVer){
 .wd2-wrap.on{opacity:1;visibility:visible}
 .wd2{width:100%;max-width:420px;background:var(--card,#191e28);
   border:1px solid rgba(255,255,255,.1);border-top:none;border-radius:22px 22px 0 0;
-  padding:20px 18px calc(env(safe-area-inset-bottom,0px) + 18px);
+  padding:20px 18px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 18px);
   transform:translateY(100%);transition:transform .28s cubic-bezier(.22,1,.36,1)}
 .wd2-wrap.on .wd2{transform:none}
 .wd2-grip{width:36px;height:4px;border-radius:2px;background:rgba(255,255,255,.16);margin:0 auto 16px}
@@ -75486,7 +75545,7 @@ setTimeout(fix, 600);
 .bpsa-ov.on{opacity:1;visibility:visible}
 .bpsa{width:100%;max-width:420px;box-sizing:border-box;background:var(--card,#191e28);
   border:1px solid rgba(255,255,255,.1);border-bottom:none;border-radius:24px 24px 0 0;
-  padding:20px 18px calc(env(safe-area-inset-bottom,0px) + 18px);
+  padding:20px 18px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 18px);
   transform:translateY(100%);transition:transform .3s cubic-bezier(.22,1,.36,1)}
 .bpsa-ov.on .bpsa{transform:none}
 .bpsa-grip{width:38px;height:4px;border-radius:2px;background:rgba(255,255,255,.16);margin:0 auto 16px}
@@ -78079,7 +78138,7 @@ html .pf2-ov{
 html .pf2-sheet{
   width:100%; max-width:420px; max-height:84dvh; box-sizing:border-box; display:flex; flex-direction:column;
   background:#161b23; border:1px solid var(--brd2); border-bottom:none; border-radius:22px 22px 0 0;
-  padding:10px 16px max(22px,env(safe-area-inset-bottom,0px)); animation:pf2Up .28s cubic-bezier(.22,1,.36,1) backwards;
+  padding:10px 16px max(22px,var(--bp-sab,env(safe-area-inset-bottom,0px))); animation:pf2Up .28s cubic-bezier(.22,1,.36,1) backwards;
 }
 html .pf2-sheet .h{ width:38px; height:4px; border-radius:2px; background:rgba(255,255,255,.16); margin:0 auto 12px; flex-shrink:0 }
 html .pf2-sheet .hd{ display:flex; align-items:flex-start; gap:10px; margin-bottom:10px; flex-shrink:0 }
@@ -80508,7 +80567,7 @@ html .glg-ov{
 html .glg-sheet{
   width:100%; max-width:420px; box-sizing:border-box;
   background:#161b23; border:1px solid var(--brd2,rgba(255,255,255,.15)); border-bottom:none;
-  border-radius:22px 22px 0 0; padding:10px 18px max(22px,env(safe-area-inset-bottom,0px));
+  border-radius:22px 22px 0 0; padding:10px 18px max(22px,var(--bp-sab,env(safe-area-inset-bottom,0px)));
 }
 html .glg-sheet .h{ width:38px; height:4px; border-radius:2px; background:rgba(255,255,255,.16); margin:0 auto 14px }
 html .glg-sheet b{ display:block; font-size:17px; font-weight:800; color:var(--t1,#f2f4f8); letter-spacing:-.4px }
@@ -81851,7 +81910,13 @@ function hook(){
 
 if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', hook);
 else hook();
-/* initApp уводит на экран входа сам; входим гостем сразу после него. */
+/* initApp уводит на экран входа сам; входим гостем сразу после него.
+   15.10.2026: гостем теперь входят все (bp-mv-guest) — и тем же событием
+   DOMContentLoaded, что у initApp (наш обработчик стоит ниже по файлу, значит
+   после него), то есть до первой отрисовки: иначе экран входа мелькал
+   0,7–2 с, а нажатое за это время «Войти» перебивалось входом гостем.
+   Таймеры — запасные (initApp позже, вход восстановили сетью и т. п.). */
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ try{ open(); }catch(e){ E(e); } });
 setTimeout(open, 700);
 setTimeout(open, 2000);
 })();
@@ -83232,7 +83297,7 @@ html #alkSheet{
 html #alkSheet .alk-box{
   width:100%; background:var(--card,#191e27); border-radius:22px 22px 0 0;
   border-top:1px solid var(--brd,rgba(255,255,255,.09));
-  padding:18px 16px calc(18px + env(safe-area-inset-bottom));
+  padding:18px 16px calc(18px + var(--bp-sab,env(safe-area-inset-bottom)));
   display:flex; flex-direction:column; gap:12px;
   animation:alkUp .26s cubic-bezier(.2,.8,.25,1);
 }
@@ -83590,7 +83655,7 @@ html #bpInst .bpi-box{
   width:100%; box-sizing:border-box;
   background:var(--card,#191e27); border-radius:24px 24px 0 0;
   border-top:1px solid var(--brd,rgba(255,255,255,.09));
-  padding:20px 18px calc(20px + env(safe-area-inset-bottom));
+  padding:20px 18px calc(20px + var(--bp-sab,env(safe-area-inset-bottom)));
   animation:bpInstUp .3s cubic-bezier(.2,.85,.25,1);
 }
 @keyframes bpInstUp{ from{ transform:translateY(30px) } to{ transform:none } }
@@ -83622,7 +83687,7 @@ html #bpInst .bpi-ios b{ color:var(--t1) }
 
 /* Полоска обновления — только когда перезагрузить прямо сейчас нельзя. */
 html #bpUpd{
-  position:fixed; left:12px; right:12px; bottom:calc(12px + env(safe-area-inset-bottom));
+  position:fixed; left:12px; right:12px; bottom:calc(12px + var(--bp-sab,env(safe-area-inset-bottom)));
   z-index:100045; display:flex; align-items:center; gap:10px;
   padding:11px 12px; border-radius:15px;
   background:rgba(34,40,54,.98); border:1px solid var(--brd2,rgba(255,255,255,.17));
@@ -85980,7 +86045,7 @@ button.a3-seg:active{ opacity:.55 }
 /* ── кнопка шага ───────────────────────────────────────────────────── */
 #a3-foot{
   position:fixed; left:0; right:0; bottom:0; z-index:60;
-  padding:12px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+  padding:12px 16px calc(14px + var(--bp-sab,env(safe-area-inset-bottom, 0px)));
   /* 15.09.2026 владелец: «на фоне кнопки чёрный блок — убрать, должна быть
      только кнопка». Полосы нет: кнопка висит над содержимым сама, её
      отделяет от текста собственная тень. */
@@ -88689,7 +88754,7 @@ html body:has(#pg-add-blogger-card.on) .auth-toast,
 html body:has(#pg-add-blogger-card.on) #bpToastWrap,
 html body:has(#campModalOverlay[style*="flex"]) .auth-toast,
 html body:has(#campModalOverlay[style*="flex"]) #bpToastWrap{
-  top:calc(env(safe-area-inset-top,0px) + 118px)!important;
+  top:calc(var(--bp-sat,env(safe-area-inset-top,0px)) + 118px)!important;
 }
 /* Видимый тост рисует не #authToast, а обёртка #bpToastWrap (слой
    уведомлений): #authToast остаётся спрятанным. Правило — на обоих. */
@@ -89701,19 +89766,19 @@ html body #pg-add-blogger-card .a5-ghost{ pointer-events:none }
    поэтому здесь !important — иначе правило не сработает. */
 html body #bpToastWrap{
   top:auto!important;
-  bottom:calc(env(safe-area-inset-bottom,0px) + 18px)!important;
+  bottom:calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 18px)!important;
   flex-direction:column-reverse!important;   /* новая карточка ближе к краю */
   justify-content:flex-end;
 }
 html body.bp-tabbar #bpToastWrap{
-  bottom:calc(env(safe-area-inset-bottom,0px) + 96px)!important;   /* над полкой */
+  bottom:calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 96px)!important;   /* над полкой */
 }
 /* У мастера карты и окна кампании действие живёт внизу — там тост
    поднимается наверх, под шапку шага (прежнее правило bp-ux1). */
 html body:has(#pg-add-blogger-card.on) #bpToastWrap,
 html body:has(#campModalOverlay[style*="flex"]) #bpToastWrap{
   bottom:auto!important;
-  top:calc(env(safe-area-inset-top,0px) + 118px)!important;
+  top:calc(var(--bp-sat,env(safe-area-inset-top,0px)) + 118px)!important;
 }
 /* Третья и дальше карточки не показываются: стопка в полэкрана — это уже
    не уведомление, а завал. Новая карточка встаёт ПЕРВОЙ в разметке
@@ -90414,7 +90479,7 @@ html body #kycSheet .kyc-stat-s{ font-size:13.5px; line-height:1.5; color:var(--
 .epc-card{
   width:100%; max-width:440px; box-sizing:border-box; max-height:88vh; overflow-y:auto;
   background:#151a22; border:1px solid rgba(255,255,255,.09); border-bottom:none; border-radius:24px 24px 0 0;
-  padding:10px 16px calc(env(safe-area-inset-bottom,0px) + 18px);
+  padding:10px 16px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 18px);
   transform:translateY(100%); transition:transform .3s cubic-bezier(.22,1,.36,1);
 }
 #epcSheet.on .epc-card{ transform:none }
@@ -91629,7 +91694,7 @@ function addMaterials(id){
 }
 #bpMk3.on{ transform:none; visibility:visible; transition:transform .32s cubic-bezier(.22,1,.36,1), visibility 0s }
 .mk3-head{
-  display:flex; align-items:center; gap:12px; padding:calc(env(safe-area-inset-top,0px) + 12px) 16px 12px;
+  display:flex; align-items:center; gap:12px; padding:calc(var(--bp-sat,env(safe-area-inset-top,0px)) + 12px) 16px 12px;
   border-bottom:1px solid var(--brd,rgba(255,255,255,.08)); flex-shrink:0;
 }
 .mk3-back{
@@ -91641,7 +91706,7 @@ function addMaterials(id){
 .mk3-t{ font-size:18px; font-weight:800; letter-spacing:-.4px; color:var(--t1,#fff); line-height:1.2 }
 .mk3-s{ font-size:12px; color:var(--t3,#8f97a5); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .mk3-body{ flex:1; overflow-y:auto; padding:14px 14px 20px; -webkit-overflow-scrolling:touch }
-.mk3-foot{ flex-shrink:0; padding:10px 14px calc(env(safe-area-inset-bottom,0px) + 14px); border-top:1px solid var(--brd,rgba(255,255,255,.08)); background:var(--bg,#0d1015) }
+.mk3-foot{ flex-shrink:0; padding:10px 14px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 14px); border-top:1px solid var(--brd,rgba(255,255,255,.08)); background:var(--bg,#0d1015) }
 .mk3-go{
   width:100%; min-height:54px; border:none; border-radius:16px; background:var(--acc,#2f6ce0); color:#fff;
   font:inherit; font-size:15.5px; font-weight:800; cursor:pointer; box-shadow:inset 0 1px 0 rgba(255,255,255,.14);
@@ -92369,7 +92434,7 @@ html body #bpTaskSheet .tk-sheet-hd .tk-x:active,html body #bpSubmitSheet .tk-sh
 html body #bpTaskSheet .tk-sheet,html body #bpSubmitSheet .tk-sheet{position:relative}
 html body #bpTaskSheet .tk-sheet-body,html body #bpSubmitSheet .tk-sheet-body{padding-bottom:100px}
 html body #bpTaskSheet .tk-sheet-foot,html body #bpSubmitSheet .tk-sheet-foot{
-  position:absolute;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));
+  position:absolute;left:12px;right:12px;bottom:calc(12px + var(--bp-sab,env(safe-area-inset-bottom,0px)));
   z-index:3;gap:8px;padding:8px!important;border-radius:24px;
   /* 06.10: «фон прозрачный настолько, чтобы было видно, что под ним
      текст, но не читался» — слабая вуаль и лёгкое размытие. Раньше в
@@ -92571,7 +92636,7 @@ if(typeof orig === 'function'){
    (см. bp-overlay-flicker), фон — плотный.
    Откат: удалить style#bp-ftop-css.                                  */
 html body #mainTopbar.topbar{
-  top:calc(env(safe-area-inset-top,0px) + 8px)!important;
+  top:calc(var(--bp-sat,env(safe-area-inset-top,0px)) + 8px)!important;
   margin:8px 10px 6px!important;
   padding:8px 9px 8px 9px!important;
   border-radius:22px!important;
@@ -92907,7 +92972,7 @@ html body #pg-profile .pf-edit{display:none!important}
   background:rgba(5,7,12,0);pointer-events:none;visibility:hidden;transition:background .24s ease,visibility 0s linear .3s}
 #bpfNicheSheet.on{background:rgba(5,7,12,.62);pointer-events:auto;visibility:visible;transition:background .24s ease,visibility 0s}
 #bpfNicheSheet .bpfn-card{
-  width:100%;max-width:520px;box-sizing:border-box;padding:10px 18px calc(18px + env(safe-area-inset-bottom,0px));
+  width:100%;max-width:520px;box-sizing:border-box;padding:10px 18px calc(18px + var(--bp-sab,env(safe-area-inset-bottom,0px)));
   background:#151a23;border-radius:24px 24px 0 0;border:1px solid rgba(255,255,255,.08);border-bottom:none;
   transform:translateY(105%);transition:transform .3s cubic-bezier(.22,1,.36,1);
 }
@@ -93396,7 +93461,7 @@ html body #pg-tasks .tk-card.hx .tk-mine::before,html body #pg-mytasks .tk-card.
   background:rgba(5,7,12,0);pointer-events:none;visibility:hidden;transition:background .22s ease,visibility 0s linear .26s}
 .vb-sheet.on{background:rgba(5,7,12,.66);pointer-events:auto;visibility:visible;transition:background .22s ease,visibility 0s}
 .vb-card{width:100%;max-width:520px;max-height:92dvh;overflow-y:auto;overscroll-behavior:contain;box-sizing:border-box;
-  padding:10px 18px calc(18px + env(safe-area-inset-bottom,0px));background:#151a23;border-radius:24px 24px 0 0;
+  padding:10px 18px calc(18px + var(--bp-sab,env(safe-area-inset-bottom,0px)));background:#151a23;border-radius:24px 24px 0 0;
   border:1px solid rgba(255,255,255,.08);border-bottom:none;transform:translateY(105%);transition:transform .26s cubic-bezier(.22,1,.36,1)}
 .vb-sheet.on .vb-card{transform:none}
 html body .vb-card:focus,html body .vb-card:focus-visible,html body .vb-dd-menu:focus,html body .vb-dd-menu:focus-visible{outline:none!important}
@@ -93642,7 +93707,7 @@ html body #bpTaskSheet.vb-fab .tk-sheet-foot{justify-content:center;pointer-even
 html body #bpTaskSheet.vb-fab .tk-sheet-foot .tk-btn-ghost{display:none!important}
 /* 09.10: липкие вкладки (z-index 4) наезжали на кнопку — кнопка выше всего в шторке */
 html body #bpTaskSheet .tk-sheet-foot{z-index:12!important}
-html body #bpTaskSheet.vb-fab .tk-sheet-foot::before{content:'';position:absolute;left:-12px;right:-12px;bottom:calc(-12px - env(safe-area-inset-bottom,0px));height:calc(80px + env(safe-area-inset-bottom,0px));
+html body #bpTaskSheet.vb-fab .tk-sheet-foot::before{content:'';position:absolute;left:-12px;right:-12px;bottom:calc(-12px - var(--bp-sab,env(safe-area-inset-bottom,0px)));height:calc(80px + var(--bp-sab,env(safe-area-inset-bottom,0px)));
   background:linear-gradient(180deg,rgba(18,22,30,0),var(--bg2,#12161e) 72%);pointer-events:none;z-index:-1}
 html body #bpTaskSheet.vb-fab .tk-sheet-foot .tk-btn-main.vb-up{pointer-events:auto;flex:0 1 auto;display:inline-flex;align-items:center;justify-content:center;gap:8px;
   min-height:52px;max-width:100%;padding:0 24px 0 18px!important;border-radius:999px!important;border:none!important;
@@ -93819,7 +93884,7 @@ html body #bpTaskSheet .tk-sheet-body > .vb-pane:not(.on){display:none!important
 .vb-tr + .vb-tr{margin-top:2px}
 .vb-tbl > .vb-tr:nth-child(even){background:rgba(255,255,255,.025)}
 .vb-tbl > .vb-tr.me{background:rgba(47,108,224,.13);box-shadow:inset 0 0 0 1px rgba(91,147,245,.42)}
-.vb-tbl > .vb-tr.pin{position:sticky;bottom:calc(74px - var(--vb-pb,100px) + env(safe-area-inset-bottom,0px));z-index:2;margin-top:10px;
+.vb-tbl > .vb-tr.pin{position:sticky;bottom:calc(74px - var(--vb-pb,100px) + var(--bp-sab,env(safe-area-inset-bottom,0px)));z-index:2;margin-top:10px;
   background:#1c2638;box-shadow:inset 0 0 0 1px rgba(91,147,245,.55),0 -8px 22px rgba(0,0,0,.35)}
 .vb-td-r{display:flex;justify-content:center}
 .vb-rk{position:relative;display:grid;place-items:center;width:30px;height:30px;font-size:13px;font-weight:800;color:#aab3c2;font-variant-numeric:tabular-nums}
@@ -93957,7 +94022,7 @@ html body #cdvBody .vb-acts button.bad,html body .vb-acts button.bad{background:
 html.vb-sheet-open body #bpToastWrap{
   z-index:760!important;
   bottom:auto!important;
-  top:calc(env(safe-area-inset-top,0px) + 14px)!important;
+  top:calc(var(--bp-sat,env(safe-area-inset-top,0px)) + 14px)!important;
   flex-direction:column!important;
 }
 /* идёт проверка — «Закрыть» уходит (закрыть можно крестиком), кнопка
@@ -96533,7 +96598,7 @@ document.addEventListener('visibilitychange', function(){ if(!document.hidden){ 
 html.bp-mv{ --bptab-h:74px }
 html.bp-mv body #bpTabbar{
   max-width:440px;
-  padding:0 12px calc(env(safe-area-inset-bottom,0px) + 10px);
+  padding:0 12px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 10px);
 }
 html.bp-mv body #bpTabbar .bptab-in{
   height:74px; box-sizing:border-box; align-items:stretch;
@@ -97734,8 +97799,8 @@ document.addEventListener('visibilitychange', function(){ if(!document.hidden) t
 
 /* ── 1 · Фокус не уходит под полку (74 + 10 + запас) и под шапку ── */
 html.bp-mv{
-  scroll-padding-top:calc(env(safe-area-inset-top,0px) + 84px);
-  scroll-padding-bottom:calc(74px + 10px + env(safe-area-inset-bottom,0px) + 16px);
+  scroll-padding-top:calc(var(--bp-sat,env(safe-area-inset-top,0px)) + 84px);
+  scroll-padding-bottom:calc(74px + 10px + var(--bp-sab,env(safe-area-inset-bottom,0px)) + 16px);
 }
 
 /* ── 2 · Шапка «Моих заданий» = шапка «Всех заданий» ── */
@@ -97851,7 +97916,7 @@ html.bp-mv #cwnNetList .cwn-row[data-id="tg"]{ display:none!important }
 #bpMvWho.on{ opacity:1 }
 #bpMvWho .mw-card{
   width:100%; max-width:440px; box-sizing:border-box;
-  padding:10px 20px calc(env(safe-area-inset-bottom,0px) + 20px);
+  padding:10px 20px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 20px);
   border-radius:32px 32px 0 0; background:#1d1e20; border:.8px solid rgba(255,255,255,.06); border-bottom:0;
   box-shadow:0 -10px 40px rgba(0,0,0,.4);
   transform:translateY(24px); transition:transform .28s cubic-bezier(.22,1,.36,1);
@@ -98477,8 +98542,8 @@ html.bp-mv body #bpTaskSheet.mvt.tk-ov.mvt-out .tk-sheet{ visibility:visible; an
    заголовок уехал под шапку; «Задание» и × остаются в разметке */
 html.bp-mv body #bpTaskSheet.mvt.tk-ov .tk-sheet-hd{
   position:relative; z-index:6; display:flex; align-items:center; justify-content:flex-start; gap:10px;
-  min-height:calc(56px + env(safe-area-inset-top,0px)); box-sizing:border-box;
-  padding:calc(env(safe-area-inset-top,0px) + 6px) 16px 6px; margin:0;
+  min-height:calc(56px + var(--bp-sat,env(safe-area-inset-top,0px))); box-sizing:border-box;
+  padding:calc(var(--bp-sat,env(safe-area-inset-top,0px)) + 6px) 16px 6px; margin:0;
   border:0!important; background:var(--mvt-bg); box-shadow:0 1px 0 transparent; transition:box-shadow .2s ease;
 }
 html.bp-mv body #bpTaskSheet.mvt.tk-ov.mvt-sc .tk-sheet-hd{ box-shadow:0 1px 0 var(--mvt-line) }
@@ -98504,7 +98569,7 @@ html.bp-mv body #bpTaskSheet.mvt.tk-ov.mvt-sc .mvt-ttl{ opacity:1; transform:non
 
 /* тело — прокрутка страницы */
 html.bp-mv body #bpTaskSheet.mvt.tk-ov .tk-sheet-body{
-  padding:4px 16px calc(112px + env(safe-area-inset-bottom,0px));
+  padding:4px 16px calc(112px + var(--bp-sab,env(safe-area-inset-bottom,0px)));
   background:var(--mvt-bg); color:var(--mvt-t1);
 }
 /* старая шапка шторки (сумма, полоса, чипы, плитки ставки, автор) —
@@ -98776,14 +98841,14 @@ html.bp-mv body #bpTaskSheet.mvt.tk-ov #bpTmTaskInfo .bptm-rules{ border-radius:
 
 /* ═══ 7 · Кнопка главного действия: плавающая таблетка-градиент ═══ */
 html.bp-mv body #bpTaskSheet.mvt.tk-ov .tk-sheet-foot{
-  left:16px; right:16px; bottom:calc(16px + env(safe-area-inset-bottom,0px));
+  left:16px; right:16px; bottom:calc(16px + var(--bp-sab,env(safe-area-inset-bottom,0px)));
   justify-content:center; gap:0; padding:0!important; pointer-events:none;
   background:none!important; background-image:none!important; border:0!important; box-shadow:none!important;
   -webkit-backdrop-filter:none!important; backdrop-filter:none!important; z-index:12!important;
 }
 html.bp-mv body #bpTaskSheet.mvt.tk-ov .tk-sheet-foot::before{
-  content:''; position:absolute; left:-16px; right:-16px; bottom:calc(-16px - env(safe-area-inset-bottom,0px));
-  height:calc(92px + env(safe-area-inset-bottom,0px)); z-index:-1; pointer-events:none;
+  content:''; position:absolute; left:-16px; right:-16px; bottom:calc(-16px - var(--bp-sab,env(safe-area-inset-bottom,0px)));
+  height:calc(92px + var(--bp-sab,env(safe-area-inset-bottom,0px))); z-index:-1; pointer-events:none;
   background:linear-gradient(180deg,rgba(20,20,21,0),rgba(20,20,21,.9) 55%,var(--mvt-bg));
 }
 html.bp-mv body #bpTaskSheet.mvt.tk-ov .tk-sheet-foot .tk-btn-ghost{ display:none!important }
@@ -98808,7 +98873,7 @@ html.bp-mv body #bpTaskSheet.mvt.tk-ov .tk-sheet-foot .tk-btn-main:disabled{
 html.bp-mv body #bpTaskSheet.mvt.tk-ov.mvt-guest .tk-sheet-foot,
 html.bp-mv body #bpTaskSheet.mvt.tk-ov.mvt-noroom .tk-sheet-foot{ display:none!important }
 html.bp-mv body #bpTaskSheet.mvt.tk-ov.mvt-guest .tk-sheet-body,
-html.bp-mv body #bpTaskSheet.mvt.tk-ov.mvt-noroom .tk-sheet-body{ padding-bottom:calc(32px + env(safe-area-inset-bottom,0px)) }
+html.bp-mv body #bpTaskSheet.mvt.tk-ov.mvt-noroom .tk-sheet-body{ padding-bottom:calc(32px + var(--bp-sab,env(safe-area-inset-bottom,0px))) }
 /* вторая синяя «Загрузить видео» в пустых списках — дубль плавающей */
 html.bp-mv body #bpTaskSheet.mvt.tk-ov.vb-fab .vb-nil .vb-mini.blue,
 html.bp-mv body #bpTaskSheet.mvt.tk-ov.mvt-noroom .vb-nil .vb-mini.blue{ display:none }
@@ -99730,7 +99795,7 @@ html.bp-mv body #campDetailOverlay.mvt-page #vbAdv > .vb-top{ display:none!impor
 /* ═══ 2 · Шапка: «‹» · название (когда уехало) · «Управление» ═══ */
 html.bp-mv body #campDetailOverlay.mvt-page .cdv-head{
   grid-template-columns:44px minmax(0,1fr) auto; gap:10px; align-items:center;
-  min-height:calc(56px + env(safe-area-inset-top,0px)); padding:calc(env(safe-area-inset-top,0px) + 6px) 16px 6px;
+  min-height:calc(56px + var(--bp-sat,env(safe-area-inset-top,0px))); padding:calc(var(--bp-sat,env(safe-area-inset-top,0px)) + 6px) 16px 6px;
   background:var(--mvt-bg); border:0; box-shadow:0 1px 0 transparent; transition:box-shadow .2s ease;
 }
 html.bp-mv body #campDetailOverlay.mvt-page.mvt-sc .cdv-head{ box-shadow:0 1px 0 var(--mvt-line) }
@@ -99764,7 +99829,7 @@ html.bp-mv body #campDetailOverlay.mvt-page #cdvHeadMenuBtn .mvt-mb svg{ width:1
 
 /* ═══ 3 · Тело страницы и шапка задания ═══ */
 html.bp-mv body #campDetailOverlay.mvt-page .cdv-body{
-  padding:0 16px calc(36px + env(safe-area-inset-bottom,0px)); background:var(--mvt-bg); color:var(--mvt-t1);
+  padding:0 16px calc(36px + var(--bp-sab,env(safe-area-inset-bottom,0px))); background:var(--mvt-bg); color:var(--mvt-t1);
 }
 html.bp-mv body #campDetailOverlay.mvt-page .mvt-top{ padding:4px 0 12px }
 html.bp-mv body #campDetailOverlay.mvt-page .mvt-cvw:empty{ display:none }
@@ -99946,7 +100011,7 @@ html.bp-mv body :is(#bpTmMoneySheet,#bpTmFinish,#bpTmFinishTask,#bpTmRejSheet,#b
 #bpMvtAct.on::before{ opacity:1 }
 #bpMvtAct .mta-card{
   position:relative; width:100%; max-width:440px; box-sizing:border-box; max-height:calc(100% - 40px); overflow-y:auto;
-  padding:10px 16px calc(env(safe-area-inset-bottom,0px) + 16px);
+  padding:10px 16px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 16px);
   border-radius:32px 32px 0 0; background:#1d1e20; border:.8px solid rgba(255,255,255,.06); border-bottom:0;
   box-shadow:0 -10px 40px rgba(0,0,0,.4);
   transform:translateY(24px); opacity:0; transition:transform .28s cubic-bezier(.22,1,.36,1), opacity .2s ease;
@@ -101282,7 +101347,7 @@ html.bp-mv .mx-ib:active{ color:#fff }
 html.bp-mv .mx-ib:focus-visible{ outline:2px solid var(--mx-focus)!important; outline-offset:0!important }
 html.bp-mv .mx-bd{ flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:16px; display:flex; flex-direction:column; gap:20px }
 @media (min-width:768px){ html.bp-mv .mx-bd{ padding:24px } }
-html.bp-mv .mx-ft{ flex:none; display:flex; justify-content:flex-end; gap:12px; padding:16px calc(16px) calc(16px + env(safe-area-inset-bottom,0px)); border-top:1px solid var(--mx-s1) }
+html.bp-mv .mx-ft{ flex:none; display:flex; justify-content:flex-end; gap:12px; padding:16px calc(16px) calc(16px + var(--bp-sab,env(safe-area-inset-bottom,0px))); border-top:1px solid var(--mx-s1) }
 html.bp-mv .mx-ft.c{ justify-content:center }
 html.bp-mv .mx-ft .mx-b.mx-bgrow{ flex:1 }
 html.bp-mv .mx-bd + .mx-ft{ margin-top:0 }
@@ -101304,8 +101369,8 @@ html.bp-mv .mx-scr.out{ pointer-events:none; animation:mxFadeOut .18s ease forwa
 @keyframes mxScrIn{ from{ opacity:0; transform:translateY(14px) } }
 html.bp-mv .mx-shd{
   position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:10px;
-  min-height:calc(56px + env(safe-area-inset-top,0px)); box-sizing:border-box;
-  padding:calc(env(safe-area-inset-top,0px) + 6px) 16px 6px; background:var(--mx-bg);
+  min-height:calc(56px + var(--bp-sat,env(safe-area-inset-top,0px))); box-sizing:border-box;
+  padding:calc(var(--bp-sat,env(safe-area-inset-top,0px)) + 6px) 16px 6px; background:var(--mx-bg);
   box-shadow:0 1px 0 transparent; transition:box-shadow .2s ease;
 }
 html.bp-mv .mx-scr.sc .mx-shd{ box-shadow:0 1px 0 rgba(255,255,255,.08) }
@@ -101318,14 +101383,14 @@ html.bp-mv .mx-back svg{ position:relative; width:22px; height:22px }
 html.bp-mv .mx-back:active::before{ background:#333436 }
 html.bp-mv .mx-back:focus-visible{ outline:2px solid var(--mx-focus)!important; outline-offset:0!important }
 html.bp-mv .mx-shd h1{ flex:1; min-width:0; margin:0; font-size:18px; line-height:24px; font-weight:600; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:0 }
-html.bp-mv .mx-sbd{ display:flex; flex-direction:column; gap:20px; padding:4px 16px calc(40px + env(safe-area-inset-bottom,0px)) }
+html.bp-mv .mx-sbd{ display:flex; flex-direction:column; gap:20px; padding:4px 16px calc(40px + var(--bp-sab,env(safe-area-inset-bottom,0px))) }
 
 /* ═══ 2 · вкладка «Профиль» (их /account) ═══ */
 /* прежние блоки прячем, только когда наша вкладка уже нарисована (гость, выход — прежнее) */
 html.bp-mv #pg-profile.mvh-on > :not(#mvHub){ display:none!important }
 html.bp-mv #pg-profile.mvh-on{ padding-bottom:0!important }
 html.bp-mv #pg-profile:not(.mvh-on) > #mvHub{ display:none }
-html.bp-mv #mvHub{ width:100%; max-width:430px; margin:0 auto; box-sizing:border-box; padding:18px 16px calc(120px + env(safe-area-inset-bottom,0px)); color:#fff }
+html.bp-mv #mvHub{ width:100%; max-width:430px; margin:0 auto; box-sizing:border-box; padding:18px 16px calc(120px + var(--bp-sab,env(safe-area-inset-bottom,0px))); color:#fff }
 html.bp-mv .mvh-hero{
   position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; box-sizing:border-box;
   min-height:260px; padding:28px 20px 24px; border-radius:20px; border:1px solid var(--mx-line); background:var(--mx-s1); text-align:center;
@@ -101499,7 +101564,7 @@ html.bp-mv .mve-ava{ display:flex; flex-direction:column; align-items:center; ga
 html.bp-mv .mve-ava .mx-ava{ width:128px; height:128px; border:0; font-size:40px }
 html.bp-mv .mve-ava h3{ margin:0; font-size:18px; line-height:24px; font-weight:600; color:#fff }
 html.bp-mv .mve-fix{
-  position:sticky; bottom:0; z-index:4; margin:0 -16px; padding:24px 16px calc(16px + env(safe-area-inset-bottom,0px));
+  position:sticky; bottom:0; z-index:4; margin:0 -16px; padding:24px 16px calc(16px + var(--bp-sab,env(safe-area-inset-bottom,0px)));
   display:flex; justify-content:center; background:linear-gradient(to top,var(--mx-bg) 55%,rgba(20,20,21,0));
 }
 html.bp-mv .mve-fix .mx-b{ padding-left:32px; padding-right:32px; min-width:180px }
@@ -101664,7 +101729,7 @@ html.bp-mv .mvp-hm{ font-size:14px; line-height:20px }
 /* ═══ 1 · страница «Кошелёк» ═══ */
 html.bp-mv #pg-balance.mvw-on > :not(#mvWal){ display:none!important }
 html.bp-mv #pg-balance:not(.mvw-on) > #mvWal{ display:none }
-html.bp-mv #mvWal{ width:100%; max-width:520px; margin:0 auto; box-sizing:border-box; padding:14px 16px calc(110px + env(safe-area-inset-bottom,0px)); color:#fff }
+html.bp-mv #mvWal{ width:100%; max-width:520px; margin:0 auto; box-sizing:border-box; padding:14px 16px calc(110px + var(--bp-sab,env(safe-area-inset-bottom,0px))); color:#fff }
 html.bp-mv .mvw-top{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 0 8px }
 html.bp-mv .mvw-top h1{ margin:0; min-width:0; font-size:28px; line-height:1.2; font-weight:800; letter-spacing:-.6px; color:#fff }
 html.bp-mv .mvw-acts{ display:flex; gap:8px; flex:none }
@@ -102033,7 +102098,7 @@ html.bp-mv #pg-topup .bw2-note svg, html.bp-mv #pg-withdraw .bw2-note svg{ width
 html.bp-mv #pg-topup .bw2-note b, html.bp-mv #pg-withdraw .bw2-note b{ font-size:16px!important; line-height:22px!important; font-weight:600!important; margin-bottom:4px!important }
 /* закреплённая кнопка — градиент-таблетка */
 html.bp-mv #bw2TuCta, html.bp-mv #bw2WdCta{
-  max-width:520px!important; padding:24px 16px calc(env(safe-area-inset-bottom,0px) + 16px)!important;
+  max-width:520px!important; padding:24px 16px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 16px)!important;
   background:linear-gradient(180deg,rgba(20,20,21,0),var(--mx-bg) 42%)!important;
 }
 html.bp-mv #bw2TuCta .bw2-go, html.bp-mv #bw2WdCta .bw2-go{
@@ -102052,7 +102117,7 @@ html.bp-mv #bw2TuCta .bw2-go:active, html.bp-mv #bw2WdCta .bw2-go:active{ transf
 
 /* ═══ 5 · шторки: успех, проверка личности, реквизиты, код из письма ═══ */
 html.bp-mv #bw2Sheet{ background:rgba(0,0,0,.8)!important; -webkit-backdrop-filter:none!important; backdrop-filter:none!important }
-html.bp-mv #bw2Sheet .bw2-sheet{ max-width:520px; background:var(--mx-bg)!important; border:1px solid var(--mx-s1)!important; border-bottom:0!important; border-radius:24px 24px 0 0!important; padding:10px 16px calc(16px + env(safe-area-inset-bottom,0px))!important }
+html.bp-mv #bw2Sheet .bw2-sheet{ max-width:520px; background:var(--mx-bg)!important; border:1px solid var(--mx-s1)!important; border-bottom:0!important; border-radius:24px 24px 0 0!important; padding:10px 16px calc(16px + var(--bp-sab,env(safe-area-inset-bottom,0px)))!important }
 html.bp-mv #bw2Sheet .bw2-grip{ background:var(--mx-s2)!important }
 html.bp-mv #bw2Sheet .bw2-ok-i{ width:72px!important; height:72px!important; background:rgba(53,214,112,.14)!important; color:var(--mx-green)!important; box-shadow:none!important }
 html.bp-mv #bw2Sheet .bw2-ok-i.wait{ background:rgba(15,179,250,.12)!important; color:var(--mx-info)!important }
@@ -102068,7 +102133,7 @@ html.bp-mv #bw2Sheet .bw2-b2{ min-height:52px; border-radius:9999px!important; b
 html.bp-mv #kycSheet{ background:rgba(0,0,0,.8)!important }
 html.bp-mv #kycSheet .kyc-card{
   max-width:520px; background:var(--mx-bg)!important; border:1px solid var(--mx-s1)!important; border-bottom:0!important;
-  border-radius:24px 24px 0 0!important; padding:8px 16px calc(env(safe-area-inset-bottom,0px) + 20px)!important;
+  border-radius:24px 24px 0 0!important; padding:8px 16px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 20px)!important;
 }
 html.bp-mv #kycSheet .kyc-grab{ background:var(--mx-s2)!important }
 html.bp-mv #kycSheet .kyc-hero{ align-items:center!important; text-align:center }
@@ -102120,7 +102185,7 @@ html.bp-mv #kycSheet .pay2-ok-i{ background:rgba(53,214,112,.14)!important; colo
 
 /* код из письма при выводе (bp-wd2fa) */
 html.bp-mv .wd2-wrap{ background:rgba(0,0,0,.8)!important }
-html.bp-mv .wd2{ max-width:520px!important; background:var(--mx-bg)!important; border:1px solid var(--mx-s1)!important; border-bottom:0!important; border-radius:24px 24px 0 0!important; padding:12px 16px calc(env(safe-area-inset-bottom,0px) + 16px)!important }
+html.bp-mv .wd2{ max-width:520px!important; background:var(--mx-bg)!important; border:1px solid var(--mx-s1)!important; border-bottom:0!important; border-radius:24px 24px 0 0!important; padding:12px 16px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 16px)!important }
 html.bp-mv .wd2-grip{ background:var(--mx-s2)!important }
 html.bp-mv .wd2-ttl{ font-size:20px!important; line-height:26px!important; font-weight:600!important }
 html.bp-mv .wd2-sub{ font-size:14px!important; line-height:20px!important; color:var(--mx-t3)!important }
@@ -102781,10 +102846,12 @@ function openConnect(pre){
   var tg = !!tgApp();
   function body(cfg){
     var rows = ACC.rows || [];
-    return '<div class="mx-pl blue">Подключение YouTube, TikTok и Instagram проходит через официальную авторизацию площадок. Мы не получаем ваш пароль и не храним данные для входа. Подключение нужно, чтобы проверять статистику и видео в заданиях.</div>'
+    return '<div class="mx-pl blue">' + (cfg && cfg.youtube && cfg.youtube.code
+        ? 'TikTok и Instagram подключаются через официальную авторизацию площадок, YouTube — коротким кодом в описании канала, без входа в Google.'
+        : 'Подключение YouTube, TikTok и Instagram проходит через официальную авторизацию площадок.') + ' Мы не получаем ваш пароль и не храним данные для входа. Подключение нужно, чтобы проверять статистику и видео в заданиях.</div>'
       + '<p class="mx-txt">Выберите платформу для подключения аккаунта</p>'
       + '<div class="mvc-pls" role="radiogroup" aria-label="Платформа">' + ORDER.map(function(p){
-        var on = cfg && cfg[p] && cfg[p].configured === false;
+        var on = cfg && cfg[p] && cfg[p].configured === false && !cfg[p].code;
         var has = rows.some(function(r){ return r.platform === p; });
         return '<button type="button" class="mvc-pl' + (sel === p ? ' on' : '') + '" role="radio" aria-checked="' + (sel === p) + '" data-cp="' + p + '"' + (on ? ' disabled' : '') + '>'
           + '<span class="mvc-ic">' + GLY[p] + '</span><span class="mvc-tx"><span><b>' + PNAME[p] + '</b>'
@@ -102832,6 +102899,13 @@ function mvConnect(p, btn){
       return;
     }
     toast('Сначала войдите в аккаунт — подключение привязывается к нему', 'err'); return;
+  }
+  /* YouTube — кодом в описании канала, без входа в Google (bp-mv-ytc,
+     15.10.2026): у входа через Google с youtube.readonly экран «приложение
+     не проверено». Сервер без YT_API_KEY — прежний вход. */
+  if(p === 'youtube' && !_busy && typeof window.bpMvYtCode === 'function' && window.bpMvYtCode(CFG.v)){
+    try{ if(CONN) CONN.close(true); }catch(e){}
+    return;
   }
   if(_busy) return;
   _busy = true;
@@ -103299,11 +103373,22 @@ window.bpMvKycInfo = kycInfo;
 
 /* ══════════ «Верификация» ══════════ */
 var VF = null, _vfKey = '', _vfT = null;
+/* 15.10.2026 (владелец: «не вписывается в стиль сайта»): вместо номера —
+   плитка со значком шага (телефон · паспорт · карта) и отметкой состояния в
+   углу, над заголовком — ярлык («Шаг 1 из 3», «Готово», «На проверке»…);
+   главная кнопка текущего шага — во всю ширину под текстом (класс wide),
+   а не сбоку: заголовки больше не ломаются в три строки. Вид — bp-mv-kyc2-css. */
+var STEP_IC = { 1:'phone', 2:'passport', 3:'card' };
+var STEP_CHIP = { done:'Готово', wait:'На проверке', bad:'Нужно исправить', lock:'Позже' };
 function stepRow(n, cls, title, desc, act, extra){
-  var mark = cls === 'done' ? I.check : cls === 'wait' ? I.clock : cls === 'bad' ? I.alert : String(n);
-  return '<div class="mvv-row"><div class="mvv-num' + (cls && cls !== 'now' ? ' ' + cls : '') + '">' + mark + '</div>'
-    + '<div><h3>' + esc(title) + '</h3>' + (desc ? '<p>' + desc + '</p>' : '') + (extra || '') + '</div>'
-    + '<div class="mvv-act">' + (act || '') + '</div></div>';
+  var st = cls || 'now', II = window.bpMvIco || {};
+  var mark = II[STEP_IC[n]] || String(n);
+  var bdg = st === 'done' ? I.check : st === 'wait' ? I.clock : st === 'bad' ? I.alert : st === 'lock' ? I.lock : '';
+  var chip = STEP_CHIP[st] || ('Шаг ' + n + NB + 'из' + NB + '3');
+  var wide = !!act && /class="mvv-bp"/.test(act);
+  return '<div class="mvv-row s-' + st + '"><div class="mvv-num' + (cls && cls !== 'now' ? ' ' + cls : '') + '">' + mark + (bdg ? '<i class="mvv-bdg">' + bdg + '</i>' : '') + '</div>'
+    + '<div class="mvv-tx"><span class="mvv-chip">' + chip + '</span><h3>' + esc(title) + '</h3>' + (desc ? '<p>' + desc + '</p>' : '') + (extra || '') + '</div>'
+    + '<div class="mvv-act' + (wide ? ' wide' : '') + '">' + (act || '') + '</div></div>';
 }
 function btnP(k, t){ return '<button type="button" class="mvv-bp" data-vf="' + k + '">' + esc(t) + '</button>'; }
 function btnS(k, t){ return '<button type="button" class="mvv-bs" data-vf="' + k + '">' + esc(t) + '</button>'; }
@@ -103318,7 +103403,17 @@ function vfHtml(){
   else if(st === 'verified' && p && !pay){ hero = ['Почти готово!', 'Личность подтверждена. Остался последний шаг — укажите, куда выводить деньги.']; badge = 'step'; }
   else if(p){ hero = ['Отличная работа!', 'Вы подтвердили номер телефона. Осталось загрузить документы и указать реквизиты.']; badge = 'step'; }
   else hero = ['Пройдите верификацию', 'Чтобы выводить средства с платформы, нужно подтвердить телефон и личность. Это займёт несколько минут.'];
-  var h = '<section class="mvv-hero"><div class="mvv-shield' + (shieldCls ? ' ' + shieldCls : '') + '">' + I.shield(badge) + '</div><h2>' + esc(hero[0]) + '</h2><p>' + esc(nbsp(hero[1])) + '</p></section>';
+  /* шапка как у «Профиля»: свет, кольцо (как у аватара) с двухтон-значком
+     и полоса «пройдено N из 3» (15.10.2026; вид — bp-mv-kyc2-css) */
+  var II = window.bpMvIco || {};
+  var hic = shieldCls === 'green' ? II.shield : shieldCls === 'amber' ? II.shieldClock : shieldCls === 'red' ? II.warn : II.shieldUser;
+  var nDone = (p ? 1 : 0) + (st === 'verified' ? 1 : 0) + (pay ? 1 : 0);
+  var segs = [p ? 'on' : '', st === 'verified' ? 'on' : (st === 'pending' && sent ? 'wait' : ''), pay ? 'on' : ''];
+  var prog = sv === 'none' ? '' : '<div class="mvv-prog" aria-hidden="true">' + segs.map(function(c){ return '<i' + (c ? ' class="' + c + '"' : '') + '></i>'; }).join('') + '</div>'
+    + '<div class="mvv-pc">' + (nDone === 3 ? 'Все шаги пройдены' : 'Пройдено ' + nDone + NB + 'из' + NB + '3') + '</div>';
+  var h = '<section class="mvv-hero' + (shieldCls ? ' ' + shieldCls : '') + '"><span class="mvv-glow" aria-hidden="true"></span>'
+    + '<div class="mvv-shield' + (shieldCls ? ' ' + shieldCls : '') + '">' + (hic ? '<span class="mvv-core">' + hic + '</span>' : I.shield(badge)) + '</div>'
+    + '<h2>' + esc(hero[0]) + '</h2><p>' + esc(nbsp(hero[1])) + '</p>' + prog + '</section>';
   if(sv === 'none') return h;
   var rows = '';
   /* 1 · телефон */
@@ -103355,10 +103450,10 @@ function vfHtml(){
   else rows += stepRow(3, 'lock', 'Реквизиты для выплат', 'Откроются после проверки личности.', BTN_L);
   h += '<section class="mvv-steps" aria-label="Шаги верификации">' + rows + '</section>';
   if(k.all){
-    h += '<section class="mvv-info ok">' + I.star + '<div><h3>Верификация пройдена полностью</h3><p>Спасибо! Вывод открыт: от 1' + NB + '000' + NB + '₽, без комиссии.</p></div></section>'
+    h += '<section class="mvv-info ok">' + ((window.bpMvIco || {}).checkC || I.star) + '<div><h3>Верификация пройдена полностью</h3><p>Спасибо! Вывод открыт: от 1' + NB + '000' + NB + '₽, без комиссии.</p></div></section>'
       + '<button type="button" class="mx-b mx-bp mx-bfull" data-vf="withdraw">Перейти к выводу</button>';
   } else {
-    h += '<section class="mvv-info">' + I.info + '<div><h3>Зачем это нужно?</h3><p>' + esc(nbsp('Деньги выводятся только на ваш счёт — так они не уйдут чужому человеку. Документы видит только оператор выплат.')) + ' <button type="button" class="mvv-lnk in" data-vf="privacy">Политика конфиденциальности</button></p></div></section>';
+    h += '<section class="mvv-info">' + ((window.bpMvIco || {}).info || I.info) + '<div><h3>Зачем это нужно?</h3><p>' + esc(nbsp('Деньги выводятся только на ваш счёт — так они не уйдут чужому человеку. Документы видит только оператор выплат.')) + ' <button type="button" class="mvv-lnk in" data-vf="privacy">Политика конфиденциальности</button></p></div></section>';
   }
   return h;
 }
@@ -103888,8 +103983,12 @@ function decorateWithdraw(){
   var av = $('bw2Avail');
   if(av && who.nextElementSibling !== av) body.insertBefore(who, av);
   else if(!who.parentNode) body.insertBefore(who, body.firstChild);
-  var html = '<div><b>' + esc(String((po && po.holder) || u.name || 'Пользователь')) + '</b><span>Телефон: <em>' + esc(ph || '—') + '</em></span>'
-    + (po ? '<span>Вывод: <em>' + esc(po.label) + '</em></span>' : '') + '</div>'
+  /* 15.10.2026: карточка с плиткой — куда (карта / СБП) крупно, ниже кто и
+     телефон (вид — bp-mv-kyc2-css) */
+  var WI = window.bpMvIco || {};
+  var html = '<span class="mvm-who-ic' + (po ? '' : ' none') + '">' + ((po && po.kind === 'sbp' ? WI.phone : WI.card) || '') + '</span>'
+    + '<div><b>' + esc(po ? po.label : 'Реквизиты не указаны') + '</b><span>' + esc(String((po && po.holder) || u.name || 'Пользователь')) + '</span>'
+    + '<span>Телефон: <em>' + esc(ph || '—') + '</em></span></div>'
     + (po ? '<button type="button" class="mx-b mx-bg mx-bs" onclick="bw2EditPayout()">Изменить</button>' : '');
   if(who.innerHTML !== html) who.innerHTML = html;
   var note = document.querySelector('#pg-withdraw .bw2 > .bw2-note > div');
@@ -104042,7 +104141,7 @@ html.bp-mv #kycSheet .kyc-card.mvk-pay{
   border:1px solid rgba(255,255,255,.07)!important; border-bottom:0!important; border-radius:28px 28px 0 0!important;
   box-shadow:0 -20px 60px rgba(0,0,0,.5)!important; outline:none;
 }
-html.bp-mv #kycSheet .kyc-card.mvk-pay{ padding-bottom:calc(env(safe-area-inset-bottom,0px) + 20px)!important }
+html.bp-mv #kycSheet .kyc-card.mvk-pay{ padding-bottom:calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 20px)!important }
 html.bp-mv #kycSheet .kyc-card.mvk::before{
   content:''; position:absolute; left:0; right:0; top:0; height:160px; pointer-events:none; border-radius:28px 28px 0 0;
   background:radial-gradient(120% 90% at 50% -30%, rgba(80,138,255,.16), rgba(139,92,246,.06) 45%, transparent 70%);
@@ -104205,10 +104304,10 @@ html.bp-mv .mvk-ring b{ position:absolute; inset:0; display:grid; place-items:ce
 /* низ: липкие кнопки */
 html.bp-mv .mvk-ft{
   position:sticky; bottom:0; z-index:3; display:flex; flex-direction:column; gap:10px; margin:14px -16px 0;
-  padding:12px 16px calc(env(safe-area-inset-bottom,0px) + 16px);
+  padding:12px 16px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 16px);
   background:linear-gradient(180deg,rgba(20,20,21,0) 0,var(--mx-bg) 16px);
 }
-html.bp-mv .mvk-bd:last-child{ padding-bottom:calc(env(safe-area-inset-bottom,0px) + 20px) }
+html.bp-mv .mvk-bd:last-child{ padding-bottom:calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 20px) }
 html.bp-mv .mvk-b{
   position:relative; display:flex; align-items:center; justify-content:center; gap:8px; width:100%; min-height:54px; padding:0 20px; margin:0;
   border:0; border-radius:9999px; font:inherit; font-size:16px; line-height:20px; font-weight:600; color:#fff; cursor:pointer;
@@ -105287,7 +105386,7 @@ html.bp-mv .mvz-pv-note svg{ flex:none; width:16px; height:16px; margin-top:1px 
 /* низ */
 html.bp-mv .mvz-gen{ margin:0 16px 4px; padding:12px 14px; border-radius:14px; border:1px solid #fb2c36; background:rgba(251,44,54,.1); color:#ff8a8f; font-size:14px; line-height:20px }
 html.bp-mv .mvz-ft{
-  position:sticky; bottom:0; z-index:4; display:flex; gap:10px; padding:12px 16px calc(env(safe-area-inset-bottom,0px) + 14px);
+  position:sticky; bottom:0; z-index:4; display:flex; gap:10px; padding:12px 16px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 14px);
   background:linear-gradient(180deg,rgba(20,20,21,0),var(--mx-bg) 16px);
 }
 html.bp-mv .mvz-b{ min-height:52px; font-size:16px!important; font-weight:600!important }
@@ -106462,7 +106561,7 @@ html.bp-mv body #mainTopbar .tb-mvw svg{ display:block; width:24px; height:24px 
 html.bp-mv body #bpn2{ background:#101319!important }
 html.bp-mv body #bpn2 .bpn2-hd{
   gap:10px!important; min-height:62px; box-sizing:border-box;
-  margin:calc(env(safe-area-inset-top,0px) + 8px) 10px 0; padding:9px!important;
+  margin:calc(var(--bp-sat,env(safe-area-inset-top,0px)) + 8px) 10px 0; padding:9px!important;
   border:1px solid rgba(255,255,255,.09)!important; border-radius:22px;
   background:
     linear-gradient(180deg,rgba(255,255,255,.07) 0%,rgba(255,255,255,.018) 48%,rgba(255,255,255,0) 66%,rgba(255,255,255,.03) 100%),
@@ -106489,7 +106588,7 @@ html.bp-mv body #bpn2 .bpn2-chip-n{
   min-width:20px; height:20px; border-radius:10px; font-size:12px!important; font-weight:700!important;
   background:linear-gradient(180deg,#92a1ff 0%,#3d55ed 52%,#6176ff 100%)!important; color:#fff!important;
 }
-html.bp-mv body #bpn2 .bpn2-list{ padding:8px 14px calc(env(safe-area-inset-bottom,0px) + 28px)!important }
+html.bp-mv body #bpn2 .bpn2-list{ padding:8px 14px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 28px)!important }
 html.bp-mv body #bpn2 .bpn2-day{
   margin:16px 6px 8px!important; font-size:13px!important; font-weight:600!important;
   letter-spacing:0!important; text-transform:none!important; color:rgba(255,255,255,.45)!important;
@@ -107006,7 +107105,7 @@ html.bp-mv body #pg-chats > .mvch-hd .mvch-cnt{
   font-size:14px; font-weight:600; font-variant-numeric:tabular-nums;
 }
 html.bp-mv body #pg-chats #chatsSectionWrap{
-  padding:0 0 calc(var(--bptab-h,74px) + env(safe-area-inset-bottom,0px) + 28px)!important; overflow:visible!important;
+  padding:0 0 calc(var(--bptab-h,74px) + var(--bp-sab,env(safe-area-inset-bottom,0px)) + 28px)!important; overflow:visible!important;
 }
 /* поиск — как на «Всех заданиях» */
 html.bp-mv body #pg-chats #chatsSearchRow{ display:block!important; padding:0!important }
@@ -107172,7 +107271,7 @@ html.bp-mv body #pg-chats .mvch-empty span{ display:block; max-width:270px; font
 html.bp-mv body #pg-chat-dialog{ background:#101319!important }
 html.bp-mv body #pg-chat-dialog .cd-header{
   flex-shrink:0; gap:12px!important; min-height:62px; box-sizing:border-box;
-  margin:calc(env(safe-area-inset-top,0px) + 8px) 10px 0!important; padding:9px 14px 9px 9px!important;
+  margin:calc(var(--bp-sat,env(safe-area-inset-top,0px)) + 8px) 10px 0!important; padding:9px 14px 9px 9px!important;
   border:1px solid rgba(255,255,255,.09)!important; border-radius:22px!important;
   background:
     linear-gradient(180deg,rgba(255,255,255,.07) 0%,rgba(255,255,255,.018) 48%,rgba(255,255,255,0) 66%,rgba(255,255,255,.03) 100%),
@@ -107261,7 +107360,7 @@ html.bp-mv body #pg-chat-dialog .mvch-qr button:active{ transform:scale(.95); bo
 /* поле ввода — стеклянная таблетка над затуханием ленты */
 html.bp-mv body #pg-chat-dialog .cd-input-area{
   background:transparent!important; border:0!important; box-shadow:none!important;
-  padding:6px 10px calc(env(safe-area-inset-bottom,0px) + 10px)!important;
+  padding:6px 10px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 10px)!important;
   -webkit-backdrop-filter:none!important; backdrop-filter:none!important;
 }
 html.bp-mv body #pg-chat-dialog .cd-input-area::before{
@@ -107310,7 +107409,7 @@ html.bp-mv body #pg-chat-dialog .cd-edit-bar{
 html.bp-mv body #cdAttachMenu{
   background:#1d1e20!important; background-image:none!important;
   border-top:1px solid rgba(255,255,255,.07)!important; border-radius:28px 28px 0 0!important;
-  padding:10px 16px calc(env(safe-area-inset-bottom,0px) + 22px)!important;
+  padding:10px 16px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 22px)!important;
   box-shadow:0 -14px 40px rgba(0,0,0,.5)!important;
 }
 html.bp-mv body #cdAttachMenu > div:first-child{ display:none!important }
@@ -107850,7 +107949,7 @@ html.bp-mv #pg-auth{
   --mva-grad:linear-gradient(135deg,#6a98ff 0%,#3d6df6 52%,#7b5cff 100%);
   --mva-ease:cubic-bezier(.2,.8,.2,1);
   background:var(--mva-bg)!important;
-  padding:max(14px, env(safe-area-inset-top, 0px)) 20px calc(22px + env(safe-area-inset-bottom, 0px))!important;
+  padding:max(14px, var(--bp-sat,env(safe-area-inset-top, 0px))) 20px calc(22px + var(--bp-sab,env(safe-area-inset-bottom, 0px)))!important;
   justify-content:flex-start!important; isolation:isolate;
 }
 /* прежние иллюстрация, три пятна, вкладки и подзаголовок — их роль берут свои блоки */
@@ -108846,7 +108945,7 @@ if(document.readyState === 'loading') document.addEventListener('DOMContentLoade
 html.bp-mv .vb-sheet.on{ background:rgba(0,0,0,.72) }
 html.bp-mv .vb-sheet .vb-card{
   background:#1d1e20; color:#fff; border:1px solid rgba(255,255,255,.06); border-bottom:0; border-radius:28px 28px 0 0;
-  padding:8px 16px calc(20px + env(safe-area-inset-bottom,0px)); box-shadow:0 -16px 48px rgba(0,0,0,.45);
+  padding:8px 16px calc(20px + var(--bp-sab,env(safe-area-inset-bottom,0px))); box-shadow:0 -16px 48px rgba(0,0,0,.45);
 }
 html.bp-mv .vb-sheet .vb-grab{ width:40px; background:rgba(255,255,255,.16); margin:0 auto 14px }
 html.bp-mv .vb-sheet .vb-hd{ margin:0 0 18px }
@@ -108994,7 +109093,7 @@ try{
 html.bp-mv #pg-settings.mvs-on > :not(#mvSet){ display:none!important }
 html.bp-mv #pg-settings.mvs-on{ padding-bottom:0!important }
 html.bp-mv #pg-settings:not(.mvs-on) > #mvSet, html:not(.bp-mv) #mvSet{ display:none!important }
-html.bp-mv #mvSet{ width:100%; max-width:430px; margin:0 auto; box-sizing:border-box; padding:8px 16px calc(120px + env(safe-area-inset-bottom,0px)); color:#fff }
+html.bp-mv #mvSet{ width:100%; max-width:430px; margin:0 auto; box-sizing:border-box; padding:8px 16px calc(120px + var(--bp-sab,env(safe-area-inset-bottom,0px))); color:#fff }
 html.bp-mv .mvs-hd{ display:flex; align-items:center; gap:10px; min-height:48px; margin:0 0 14px }
 html.bp-mv .mvs-hd h1{ flex:1; min-width:0; margin:0; font-size:22px; line-height:28px; font-weight:700; letter-spacing:-.01em; color:#fff }
 
@@ -109990,7 +110089,7 @@ html.bp-mv body #pg-chat-dialog .bp2-new::before, html.bp-mv body #pg-chat-dialo
 
 /* ── кнопка «вниз» ── */
 html.bp-mv body #bp2Down{
-  position:fixed; right:16px; bottom:calc(env(safe-area-inset-bottom,0px) + 86px); z-index:520; display:grid; place-items:center;
+  position:fixed; right:16px; bottom:calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 86px); z-index:520; display:grid; place-items:center;
   width:44px; height:44px; margin:0; padding:0; border-radius:50%; border:1px solid rgba(255,255,255,.1);
   background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.02)),rgba(30,31,35,.96); color:#fff;
   box-shadow:0 10px 26px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.12); cursor:pointer; -webkit-tap-highlight-color:transparent;
@@ -110898,6 +110997,1067 @@ if(document.readyState === 'loading') document.addEventListener('DOMContentLoade
 else { later(install, 0); later(resetOnline, 400); }
 [1600, 4200].forEach(function(ms){ later(install, ms); });
 later(resetOnline, 2600);
+})();
+</script>
+<style id="bp-mv-guest-css">
+/* ══ БЕЗ ВХОДА «КАК У САЙТА» · вид (bp-mv-guest, 15.10.2026) ═══════════
+   Владелец 15.10: «сайт можно смотреть без входа; регистрация и вход — только
+   если человек сам нажмёт в профиле или там, где нужны данные, и просьба
+   войти — в стиле сайта». Здесь: окно «Войдите» (вместо шторки bp-guest-mode),
+   гостевой «Профиль», «Мои задания» и «Чаты» с приглашением войти, кнопка
+   «назад» на экране входа. Полосы «Вы смотрите без аккаунта» больше нет.
+   Только под html.bp-mv. Откат: удалить style#bp-mv-guest-css и
+   script#bp-mv-guest.                                                  */
+html.bp-mv #bpGuestBar{ display:none!important }
+
+/* разделы, которые без входа пусты: свои блоки скрыты, вместо них — приглашение.
+   Два id в селекторе (:is(#…) и :not(#mvgu-x)) — у части блоков свои правила
+   с id и !important (например #pfStatsTitle «Статистика блогера», bp-onb). */
+html.bp-mv :is(#pg-profile,#pg-mytasks,#pg-chats).mvgu-on > :not(.mvgu):not(#mvgu-x){ display:none!important }
+html.bp-mv .pg:not(.mvgu-on) > .mvgu, html:not(.bp-mv) .mvgu{ display:none!important }
+html.bp-mv .pg.mvgu-on{ padding-bottom:0!important }
+html.bp-mv .mvgu{
+  width:100%; max-width:430px; margin:0 auto; box-sizing:border-box;
+  padding:18px 16px calc(120px + var(--bp-sab, env(safe-area-inset-bottom,0px))); color:#fff;
+}
+html.bp-mv .mvgu-h{ margin:6px 4px 16px; font-size:30px; line-height:36px; font-weight:800; letter-spacing:-.02em; color:#fff }
+
+/* карточка-приглашение */
+html.bp-mv .mvgu-card{
+  position:relative; isolation:isolate; overflow:hidden; display:flex; flex-direction:column; align-items:center; text-align:center;
+  box-sizing:border-box; padding:30px 20px 22px; border-radius:26px; border:1px solid rgba(255,255,255,.07); background:#1d1e20;
+}
+html.bp-mv .mvgu-card::before{
+  content:''; position:absolute; inset:0; z-index:-1; pointer-events:none;
+  background:radial-gradient(90% 70% at 50% 0%, rgba(80,138,255,.20), transparent 70%), radial-gradient(70% 60% at 100% 100%, rgba(139,92,246,.14), transparent 70%);
+}
+html.bp-mv .mvgu-ic{
+  display:grid; place-items:center; width:76px; height:76px; margin:0 0 18px; border-radius:50%;
+  background:radial-gradient(circle at 50% 30%, rgba(146,161,255,.30), rgba(61,85,237,.12) 70%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14), 0 0 0 9px rgba(97,118,255,.06); color:#c3cbff;
+}
+html.bp-mv .mvgu-ic svg{ width:34px; height:34px }
+html.bp-mv .mvgu-card > b{ display:block; max-width:300px; font-size:20px; line-height:26px; font-weight:700; letter-spacing:-.01em; color:#fff }
+html.bp-mv .mvgu-card > p{ max-width:310px; margin:8px 0 0; font-size:14.5px; line-height:21px; color:rgba(255,255,255,.62); text-wrap:pretty }
+html.bp-mv .mvgu-btns{ display:flex; flex-direction:column; gap:10px; width:100%; max-width:340px; margin:22px 0 0 }
+html.bp-mv .mvgu-btns .mx-b{ width:100%; min-height:50px }
+html.bp-mv .mvgu-link{
+  margin:14px 0 0; padding:8px 12px; border:0; background:none; font:inherit; font-size:14px; font-weight:600;
+  color:#8fb2ff; cursor:pointer; -webkit-tap-highlight-color:transparent;
+}
+html.bp-mv .mvgu-link:focus-visible{ outline:2px solid #b7c1ff; outline-offset:2px; border-radius:10px }
+html.bp-mv .mvgu-perks{ display:flex; flex-direction:column; gap:10px; width:100%; max-width:340px; margin:20px 0 0; padding:0; list-style:none; text-align:left }
+html.bp-mv .mvgu-perks li{ display:flex; align-items:center; gap:12px; font-size:14px; line-height:19px; color:rgba(255,255,255,.82) }
+html.bp-mv .mvgu-perks li i{ flex:none; display:grid; place-items:center; width:30px; height:30px; border-radius:10px; background:rgba(60,103,246,.16); color:#8fb2ff; font-style:normal }
+html.bp-mv .mvgu-perks li i svg{ width:17px; height:17px }
+
+/* гостевой «Профиль»: та же шапка, что у вошедшего, и строки .mvh-row */
+html.bp-mv .mvgu-hero{ padding-bottom:24px }
+html.bp-mv .mvgu-hero .mx-ava svg{ width:42px; height:42px; color:rgba(255,255,255,.72) }
+html.bp-mv .mvgu-sub{ max-width:320px; margin:8px auto 0; text-align:center; font-size:14.5px; line-height:21px; color:rgba(255,255,255,.62); text-wrap:pretty }
+html.bp-mv .mvgu-hero .mvgu-btns{ margin:20px auto 0 }
+html.bp-mv .mvgu-foot{ margin:24px 0 0; text-align:center; font-size:12.5px; line-height:18px; color:rgba(255,255,255,.4) }
+/* длинные названия документов — в две строки, как в «Настройках» (#mvSet), без «…» */
+html.bp-mv .mvgu .mvh-tx > b{ white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:anywhere }
+
+/* окно «Войдите» */
+html.bp-mv .mvgu-gate{ display:flex; flex-direction:column; align-items:center; text-align:center; padding:4px 0 0 }
+html.bp-mv .mvgu-gate .mvgu-ic{ width:68px; height:68px; margin-bottom:16px }
+html.bp-mv .mvgu-gate .mvgu-ic svg{ width:30px; height:30px }
+html.bp-mv .mvgu-gate b{ font-size:19px; line-height:25px; font-weight:700; color:#fff }
+html.bp-mv .mvgu-gate p{ max-width:320px; margin:8px 0 0; font-size:14.5px; line-height:21px; color:rgba(255,255,255,.66); text-wrap:pretty }
+html.bp-mv .mvgu-gate .mvgu-btns{ margin-top:20px }
+
+/* экран входа: «назад» к просмотру без входа */
+html.bp-mv #pg-auth > .mvgu-back{
+  order:-1; align-self:flex-start; flex:none; width:42px; height:42px; margin:0 0 6px; padding:0; border-radius:14px;
+  border:1px solid rgba(255,255,255,.07); background:#1b1c1f; color:#fff; display:inline-flex; align-items:center; justify-content:center;
+  cursor:pointer; -webkit-tap-highlight-color:transparent; max-width:none!important;
+}
+html.bp-mv #pg-auth > .mvgu-back svg{ width:20px; height:20px }
+html.bp-mv #pg-auth > .mvgu-back:focus-visible{ outline:2px solid #b7c1ff; outline-offset:2px }
+html.bp-mv #pg-auth.mva-s2 > .mvgu-back{ display:none }
+/* прежняя «‹» (bp-auth3, у гостя тоже: он вошёл через enterApp) — одна кнопка, наша;
+   у вошедшего она остаётся, но тем же квадратом, а не полосой во всю ширину */
+html.bp-mv #pg-auth > .mvgu-back ~ .auth-back{ display:none!important }
+html.bp-mv #pg-auth.bpa-canback > .auth-back{
+  align-self:flex-start; box-sizing:border-box; width:42px!important; height:42px!important; min-height:0!important; margin:0 0 6px!important; padding:0!important;
+  justify-content:center; align-items:center; border-radius:14px!important; border:1px solid rgba(255,255,255,.07)!important; background:#1b1c1f!important; color:#fff!important;
+}
+html.bp-mv #pg-auth.bpa-canback > .auth-back svg{ width:20px; height:20px }
+@media (max-width:360px){ html.bp-mv .mvgu{ padding-left:12px; padding-right:12px } html.bp-mv .mvgu-h{ font-size:26px; line-height:32px } }
+</style>
+<script id="bp-mv-guest">
+/* ══ БЕЗ ВХОДА «КАК У САЙТА» · поведение (bp-mv-guest, 15.10.2026) ══════
+   Вид — style#bp-mv-guest-css. Что здесь:
+   · Смотреть без входа — всегда (MV): кто не вошёл, тот гость. Раньше гостем
+     становился только нажавший «Начать» в знакомстве (localStorage bp_guest),
+     остальных (и всех после выхода) встречал экран входа. Теперь метку ставим
+     сами при запуске — кроме возвратов со входа (Google, Телеграм, площадки),
+     явного #/auth и ссылки восстановления пароля. После «Выйти» — снова
+     просмотр без входа.
+   · Вход и регистрация — только по нажатию: в «Профиле» гостя, в «Моих
+     заданиях», «Чатах» и там, где нужен аккаунт (вступить, кошелёк,
+     уведомления…) — окно «Войдите» в стиле сайта (bpMvModal) вместо шторки
+     bp-guest-mode. «Профиль», «Мои задания» и «Чаты» гость открывает: вместо
+     пустых блоков — приглашение войти (шлюз bp-guest2 их не пускал —
+     пропускаем, пока bpIsGuest на время перехода отвечает «нет»).
+   · Экран входа: «‹» — назад к просмотру. После входа — туда, где просили
+     войти (то же задание или раздел), если это было в последние 30 минут.
+   Без класса bp-mv обёртки сразу зовут прежнее.
+   Наружу: bpMvGuestPaint(), bpMvAskLogin(почему).
+   Откат: удалить script#bp-mv-guest и style#bp-mv-guest-css.          */
+(function(){
+'use strict';
+if(window.__bpMvGuest) return; window.__bpMvGuest = 1;
+var de = document.documentElement;
+function mv(){ return de.classList.contains('bp-mv'); }
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'bp-mv-guest'); }catch(_){} }
+function $(id){ return document.getElementById(id); }
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+function logged(){ try{ return typeof currentUser !== 'undefined' && !!currentUser; }catch(e){ return false; } }
+function later(fn, ms){ return setTimeout(function(){ try{ fn(); }catch(e){ E(e); } }, ms || 0); }
+function onPage(id){ var p = $(id); return !!(p && p.classList.contains('on')); }
+function inChain(fn, flag){ for(var i = 0; fn && i < 40; i++){ if(fn[flag]) return true; fn = fn.__orig; } return false; }
+function keepFlags(o, w){ try{ Object.keys(o).forEach(function(k){ if(/^__bp/.test(k) && !(k in w)) w[k] = o[k]; }); }catch(e){} }
+var NB = ' ';
+function nbsp(s){ return String(s).replace(/(^|[\s«(])(в|во|с|со|к|о|об|у|и|а|не|на|по|за|из|от|до|без|для)\s/gi, '$1$2' + NB); }
+
+/* ══ 1 · без входа — сразу смотреть ══
+   bp-guest2 входит гостем (через 0,7 и 2 с после загрузки), если стоит метка
+   bp_guest и открыт экран входа. Возврат со входа (Google, Телеграм,
+   площадки), явный #/auth и ссылка восстановления пароля (#/recover?…) —
+   метку СНИМАЕМ: иначе прежняя метка увела бы с экрана входа. «‹» на нём
+   ставит её обратно. Адрес — исходный (__bpHash0 из head): к этому месту
+   bp-mailback и роутер его уже переписали. */
+var Q = String(location.search || ''), H = String(window.__bpHash0 != null ? window.__bpHash0 : (location.hash || ''));
+var RETURN = /[?&](vfy|claim|code|state|glogin|tglogin|tt_state|yt_state)=/i.test(Q);
+var ASK_AUTH = /^#\/?(auth|login|register|recover)\b/i.test(H);
+function setGuestFlag(){ try{ localStorage.setItem('bp_guest', '1'); }catch(e){} }
+if(mv()){
+  if(RETURN || ASK_AUTH){ try{ localStorage.removeItem('bp_guest'); }catch(e){} }
+  else setGuestFlag();
+}
+
+/* ══ 2 · пропуск для своих разделов ══ */
+var TABS = { mytasks:1, chats:1, profile:1 };
+var PASS = false;
+(function(){
+  try{
+    var d = Object.getOwnPropertyDescriptor(window, 'bpIsGuest'), og = d && d.get;
+    if(!og) return;
+    Object.defineProperty(window, 'bpIsGuest', { configurable:true, get:function(){ return PASS ? false : !!og.call(window); } });
+  }catch(e){ E(e); }
+})();
+function guest(){ return mv() && !logged() && !!window.bpIsGuest; }
+
+/* ══ 3 · куда вернуться после входа ══ */
+var LAST = { task:'', at:0 };
+var BACK_KEY = 'bpMvAfterLogin';
+function remember(){
+  try{
+    var cur = document.querySelector('.pg.on'), page = cur ? String(cur.id || '').replace(/^pg-/, '') : 'tasks';
+    if(!page || page === 'auth') page = 'tasks';
+    var task = ($('bpTaskSheet') && LAST.task && Date.now() - LAST.at < 30 * 60000) ? LAST.task : '';
+    sessionStorage.setItem(BACK_KEY, JSON.stringify({ page:page, task:task, at:Date.now() }));
+  }catch(e){}
+}
+function restore(){
+  var r = null;
+  try{ r = JSON.parse(sessionStorage.getItem(BACK_KEY) || 'null'); sessionStorage.removeItem(BACK_KEY); }catch(e){ r = null; }
+  if(!r || !r.at || Date.now() - r.at > 30 * 60000) return;
+  later(function(){
+    if(!logged()) return;
+    if(r.page && r.page !== 'tasks' && typeof window.goTo === 'function') window.goTo(r.page);
+    if(r.task && typeof window.bpTaskOpen === 'function') later(function(){ window.bpTaskOpen(r.task); }, 300);
+  }, 700);
+}
+function toAuth(tab){
+  remember();
+  try{ if(typeof window.bpLeaveGuest === 'function'){ window.bpLeaveGuest(tab === 'login' ? 'login' : 'register'); return; } }catch(e){ E(e); }
+  try{ if(typeof window.goTo === 'function') window.goTo('auth'); if(typeof switchTab === 'function') switchTab(tab === 'login' ? 'login' : 'register'); }catch(e){ E(e); }
+}
+
+/* ══ 4 · значки ══ */
+function sv(body){ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + body + '</svg>'; }
+var F = ' fill="currentColor" fill-opacity=".16" stroke="none"';
+var IC = {
+  user: sv('<circle cx="12" cy="8.4" r="3.9"' + F + '/><circle cx="12" cy="8.4" r="3.9"/><path d="M4.6 20.2c.9-3.9 3.8-6.2 7.4-6.2s6.5 2.3 7.4 6.2"/>'),
+  key: sv('<circle cx="8" cy="15.2" r="4.2"' + F + '/><circle cx="8" cy="15.2" r="4.2"/><path d="m11 12.2 8.4-8.4M16.4 6.8l2.4 2.4M14.2 9l1.8 1.8"/>'),
+  task: sv('<rect x="4" y="5.5" width="16" height="14.5" rx="3"' + F + '/><rect x="4" y="5.5" width="16" height="14.5" rx="3"/><path d="M9 5.5V4.4A1.4 1.4 0 0 1 10.4 3h3.2A1.4 1.4 0 0 1 15 4.4v1.1M8.5 12.6l2.4 2.4 4.6-4.8"/>'),
+  chat: sv('<path d="M4.2 6.8a2.8 2.8 0 0 1 2.8-2.8h10a2.8 2.8 0 0 1 2.8 2.8v6.6a2.8 2.8 0 0 1-2.8 2.8h-5.4l-4.4 3.5v-3.5H7a2.8 2.8 0 0 1-2.8-2.8z"' + F + '/><path d="M4.2 6.8a2.8 2.8 0 0 1 2.8-2.8h10a2.8 2.8 0 0 1 2.8 2.8v6.6a2.8 2.8 0 0 1-2.8 2.8h-5.4l-4.4 3.5v-3.5H7a2.8 2.8 0 0 1-2.8-2.8z"/><path d="M8.6 9.4h6.8M8.6 12.4h4.2"/>'),
+  coin: sv('<circle cx="12" cy="12" r="8.6"' + F + '/><circle cx="12" cy="12" r="8.6"/><path d="M10 8h3a2.3 2.3 0 0 1 0 4.6h-3V8zM10 12.6V16M8.8 14.3h4.6"/>'),
+  video: sv('<rect x="3" y="5.5" width="13" height="13" rx="3"' + F + '/><rect x="3" y="5.5" width="13" height="13" rx="3"/><path d="m16 10.2 5-2.7v9l-5-2.7"/>'),
+  help: sv('<path d="M4 5h16v11.2H9.4L4 20.2z"/><path d="M9.5 9.2a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1.9-1.1 1.6"/><path d="M12 15.1h.01" stroke-width="2.6"/>'),
+  doc: sv('<path d="M7 3h7.2L19 7.8V21H7z"/><path d="M14 3v5h5M10 12.5h6M10 16.5h6"/>'),
+  lock: sv('<rect x="4.5" y="10.5" width="15" height="10" rx="2.6"/><path d="M8 10.5V7.6a4 4 0 0 1 8 0v2.9"/>'),
+  info: sv('<circle cx="12" cy="12" r="8.6"/><path d="M12 11v5.2M12 7.8h.01" stroke-width="2.4"/>'),
+  back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14.5 5.5L8 12l6.5 6.5"/></svg>',
+  chev: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9.5 6l6 6-6 6"/></svg>'
+};
+function btns(){
+  return '<div class="mvgu-btns"><button type="button" class="mx-b mx-bp" data-mg="login">Войти</button>'
+    + '<button type="button" class="mx-b mx-bg" data-mg="reg">Создать аккаунт</button></div>';
+}
+
+/* ══ 5 · окно «Войдите» — вместо шторки «Нужен аккаунт» ══ */
+function askLogin(why){
+  if(typeof window.bpMvModal !== 'function') return false;
+  var w = String(why == null ? '' : why).trim().slice(0, 80);
+  var text = w ? 'Чтобы ' + w + ', войдите или создайте аккаунт — это займёт минуту.' : 'Войдите или создайте аккаунт — это займёт минуту.';
+  var m = window.bpMvModal('mvGate', { mid:true, title:'Нужен аккаунт',
+    body:'<div class="mvgu-gate"><span class="mvgu-ic">' + IC.key + '</span><b>Войдите в BloggerPay</b><p>' + esc(nbsp(text)) + '</p>' + btns()
+      + '<button type="button" class="mvgu-link" data-mx="x">Смотреть дальше без входа</button></div>' });
+  if(!m) return false;
+  m.el.addEventListener('click', function(e){
+    var b = e.target.closest ? e.target.closest('[data-mg]') : null; if(!b) return;
+    var k = b.getAttribute('data-mg');
+    m.close(true);
+    toAuth(k === 'login' ? 'login' : 'register');
+  });
+  return true;
+}
+window.bpMvAskLogin = askLogin;
+function wrapGate(){
+  var o = window.bpGuestGate;
+  if(typeof o !== 'function' || inChain(o, '__bpMvGuest')) return;
+  var w = function(why){
+    if(mv()){ try{ if(askLogin(why)) return; }catch(e){ E(e); } }
+    return o.apply(this, arguments);
+  };
+  keepFlags(o, w); w.__bpMvGuest = 1; w.__orig = o;
+  window.bpGuestGate = w;
+}
+
+/* ══ 6 · свои разделы гостя ══ */
+var CARDS = {
+  mytasks: { h:'Мои задания', ic:IC.task, b:'Здесь будут ваши задания',
+    p:'Войдите — и вступайте в задания, загружайте ролики и следите за начислениями.',
+    perks:[[IC.video, 'Ролики из TikTok, YouTube и Instagram'], [IC.coin, 'Деньги за просмотры — на баланс']] },
+  chats: { h:'Чаты', ic:IC.chat, b:'Здесь будут ваши чаты',
+    p:'Войдите, чтобы переписываться с рекламодателями и блогерами по заданиям.', perks:null }
+};
+function pageCard(k){
+  var c = CARDS[k];
+  return '<h1 class="mvgu-h">' + esc(c.h) + '</h1><div class="mvgu-card"><span class="mvgu-ic">' + c.ic + '</span><b>' + esc(c.b) + '</b><p>' + esc(nbsp(c.p)) + '</p>'
+    + (c.perks ? '<ul class="mvgu-perks">' + c.perks.map(function(x){ return '<li><i>' + x[0] + '</i><span>' + esc(nbsp(x[1])) + '</span></li>'; }).join('') + '</ul>' : '')
+    + btns() + '<button type="button" class="mvgu-link" data-mg="tasks">Смотреть все задания</button></div>';
+}
+function hubRow(act, tone, ic, title, sub){
+  return '<button type="button" class="mvh-row" data-mg="' + act + '"><span class="mvh-ic ' + tone + '">' + ic + '</span>'
+    + '<span class="mvh-tx"><b>' + esc(title) + '</b>' + (sub ? '<i>' + esc(nbsp(sub)) + '</i>' : '') + '</span><span class="mvh-tr">' + IC.chev + '</span></button>';
+}
+function hubHtml(){
+  return '<section class="mvh-hero mvgu-hero"><span class="mvh-glow" aria-hidden="true"></span>'
+    + '<span class="mvh-ring"><span class="mx-ava ini" aria-hidden="true" style="--mx-ava:linear-gradient(145deg,#3a3c42,#26272b)">' + IC.user + '</span></span>'
+    + '<h1 class="mvh-name">Вы не вошли</h1>'
+    + '<p class="mvgu-sub">' + esc(nbsp('Войдите или создайте аккаунт — чтобы вступать в задания, загружать видео и получать выплаты или запускать свои задания.')) + '</p>'
+    + btns() + '</section>'
+    + '<h2 class="mvh-st">Поддержка</h2><div class="mvh-card">'
+    + hubRow('help', 'orange', IC.help, 'Помощь и поддержка', 'Частые вопросы и связь с нами')
+    + hubRow('terms', 'gray', IC.doc, 'Пользовательское соглашение', '')
+    + hubRow('privacy', 'gray', IC.lock, 'Политика конфиденциальности', '')
+    + hubRow('about', 'gray', IC.info, 'О приложении', 'BloggerPay — задания для блогеров')
+    + '</div>';
+}
+function host(pg, html){
+  var h = pg.querySelector(':scope > .mvgu');
+  if(!h){
+    h = document.createElement('div'); h.className = 'mvgu';
+    h.addEventListener('click', onClick);
+    pg.appendChild(h);
+  } else if(h !== pg.lastElementChild && h.parentNode === pg){ /* остаётся на месте — порядок не важен: другие дети скрыты */ }
+  if(h.__k !== html){ h.__k = html; h.innerHTML = html; }
+  return h;
+}
+function tog(el, cls, on){ if(el && el.classList.contains(cls) !== on) el.classList.toggle(cls, on); }
+function paint(){
+  if(!mv()) return;
+  var g = guest() && !onPage('pg-auth');
+  [['mytasks', function(){ return pageCard('mytasks'); }], ['chats', function(){ return pageCard('chats'); }], ['profile', hubHtml]].forEach(function(x){
+    var pg = $('pg-' + x[0]); if(!pg) return;
+    if(g){ host(pg, x[1]()); tog(pg, 'mvgu-on', true); }
+    else tog(pg, 'mvgu-on', false);
+  });
+  authBack();
+}
+window.bpMvGuestPaint = paint;
+function onClick(e){
+  var b = e.target.closest ? e.target.closest('[data-mg]') : null; if(!b) return;
+  var k = b.getAttribute('data-mg');
+  if(k === 'login' || k === 'reg') toAuth(k === 'login' ? 'login' : 'register');
+  else if(k === 'tasks'){ try{ window.goTo('tasks'); }catch(err){ E(err); } }
+  else if(k === 'help'){ try{ if(typeof window.bpMvFaqOpen === 'function') window.bpMvFaqOpen(); else if(typeof openHelpSheet === 'function') openHelpSheet(); }catch(err){ E(err); } }
+  else if(k === 'terms' || k === 'privacy'){ try{ if(typeof openLegal === 'function') openLegal(k); }catch(err){ E(err); } }
+  else if(k === 'about'){ try{ if(typeof openAboutSheet === 'function') openAboutSheet(); }catch(err){ E(err); } }
+}
+
+/* ══ 7 · экран входа: «‹» — назад к просмотру без входа ══ */
+function authBack(){
+  var pg = $('pg-auth'); if(!pg) return;
+  var b = pg.querySelector(':scope > .mvgu-back');
+  var want = mv() && !logged();
+  if(!want){ if(b) b.remove(); return; }
+  if(b) return;
+  b = document.createElement('button');
+  b.type = 'button'; b.className = 'mvgu-back'; b.setAttribute('aria-label', 'Назад — смотреть задания без входа');
+  b.innerHTML = IC.back;
+  b.addEventListener('click', function(){
+    setGuestFlag();
+    try{ sessionStorage.removeItem(BACK_KEY); }catch(e){}
+    /* уже внутри (вход открыли из приложения) — просто назад к заданиям;
+       сразу после запуска — входим гостем, как bp-guest2 */
+    if(!de.classList.contains('bp-guest')){
+      /* экран входа открылся сам при запуске (#/auth, возврат со входа) —
+         чистый запуск гостем: витрину заданий подтянет bp-guest2 */
+      try{ history.replaceState(null, '', location.pathname + '#/tasks'); }catch(e){}
+      try{ location.reload(); }catch(e){ E(e); }
+      return;
+    }
+    try{ window.goTo('tasks'); }catch(e){ E(e); }
+    later(paint, 60);
+  });
+  pg.insertBefore(b, pg.firstChild);
+}
+
+/* ══ 8 · обёртки ══ */
+function wrapGo(){
+  var og = window.goTo;
+  if(typeof og !== 'function') return;
+  /* стоим ВЫШЕ шлюза bp-guest2 (у него нет __orig — по цепочке ниже не видно) */
+  for(var f = og, i = 0; f && i < 40; i++, f = f.__orig){ if(f.__bpMvGuestGo) return; if(f.__bpGuest) break; }
+  var w = function(id){
+    var p = String(id == null ? '' : id), r;
+    if(mv() && TABS[p] && guest()){
+      PASS = true;
+      try{ r = og.apply(this, arguments); } finally { PASS = false; }
+    } else r = og.apply(this, arguments);
+    if(mv()) later(paint, 0);
+    return r;
+  };
+  keepFlags(og, w); w.__bpMvGuestGo = 1; w.__orig = og;
+  window.goTo = w;
+}
+function wrapTaskOpen(){
+  var o = window.bpTaskOpen;
+  if(typeof o !== 'function' || inChain(o, '__bpMvGuestT')) return;
+  var w = function(id){ if(id != null && id !== '') LAST = { task:String(id), at:Date.now() }; return o.apply(this, arguments); };
+  keepFlags(o, w); w.__bpMvGuestT = 1; w.__orig = o;
+  window.bpTaskOpen = w;
+}
+/* уведомления — тоже про свой аккаунт */
+function wrapBell(){
+  var o = window.bpOpenNotifications;
+  if(typeof o !== 'function' || inChain(o, '__bpMvGuest')) return;
+  var w = function(){ if(guest()){ askLogin('видеть уведомления о заданиях и выплатах'); return; } return o.apply(this, arguments); };
+  keepFlags(o, w); w.__bpMvGuest = 1; w.__orig = o;
+  window.bpOpenNotifications = w;
+}
+/* вошёл — туда, где просили войти; вышел — снова просмотр без входа */
+function wrapEnter(){
+  var o = window.enterApp;
+  if(typeof o !== 'function' || inChain(o, '__bpMvGuest')) return;
+  var w = function(){
+    var r = o.apply(this, arguments);
+    if(mv()){ later(paint, 0); if(logged()) restore(); }
+    return r;
+  };
+  keepFlags(o, w); w.__bpMvGuest = 1; w.__orig = o;
+  window.enterApp = w;
+}
+function wrapLogout(){
+  var o = window.doLogout;
+  if(typeof o !== 'function' || inChain(o, '__bpMvGuest')) return;
+  var w = function(){
+    var r = o.apply(this, arguments);
+    if(mv()){
+      setGuestFlag();
+      /* чистый запуск гостем: в памяти не остаётся ничего от прежнего аккаунта */
+      later(function(){
+        try{ history.replaceState(null, '', location.pathname + location.search + '#/tasks'); }catch(e){}
+        try{ location.reload(); }catch(e){ E(e); }
+      }, 500);
+    }
+    return r;
+  };
+  keepFlags(o, w); w.__bpMvGuest = 1; w.__orig = o;
+  window.doLogout = w;
+}
+function wrapLeave(){
+  var o = window.bpLeaveGuest;
+  if(typeof o !== 'function' || inChain(o, '__bpMvGuest')) return;
+  var w = function(){ if(mv() && !logged()) remember(); return o.apply(this, arguments); };
+  keepFlags(o, w); w.__bpMvGuest = 1; w.__orig = o;
+  window.bpLeaveGuest = w;
+}
+function install(){
+  try{ wrapLeave(); }catch(e){ E(e); }
+  try{ wrapGate(); }catch(e){ E(e); }
+  try{ wrapGo(); }catch(e){ E(e); }
+  try{ wrapTaskOpen(); }catch(e){ E(e); }
+  try{ wrapBell(); }catch(e){ E(e); }
+  try{ wrapEnter(); }catch(e){ E(e); }
+  try{ wrapLogout(); }catch(e){ E(e); }
+  later(paint, 0);
+}
+/* шлюз bp-guest2 ставится на DOMContentLoaded — наши обёртки после него */
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install);
+else install();
+[900, 2400, 4500].forEach(function(ms){ later(install, ms); });
+(function(){
+  var pg = $('pg-auth');
+  if(pg && typeof MutationObserver !== 'undefined'){
+    new MutationObserver(function(){ later(paint, 0); }).observe(pg, { attributes:true, attributeFilter:['class'] });
+  }
+})();
+})();
+</script>
+<style id="bp-tg-fs-css">
+/* ══ ТЕЛЕГРАМ: МИНИ-ПРИЛОЖЕНИЕ НА ВЕСЬ ЭКРАН · вид (bp-tg-fs, 15.10.2026) ═
+   В полноэкранном режиме Телеграм рисует свои маленькие кнопки «Закрыть» и
+   «⋯» поверх приложения, а системная полоса — над ними. Все отступы от края
+   в файле заданы как var(--bp-sat, env(safe-area-inset-top)) /
+   var(--bp-sab, env(safe-area-inset-bottom)): вне Телеграма переменных нет и
+   работает env(), в полноэкранном мини-приложении — отступы Телеграма
+   (--tg-safe-area-inset-*, --tg-content-safe-area-inset-* ставит его скрипт).
+   Откат: удалить style#bp-tg-fs-css и script#bp-tg-fs.               */
+html.bp-tgfs{
+  --bp-sat:calc(var(--tg-safe-area-inset-top,0px) + var(--tg-content-safe-area-inset-top,0px));
+  --bp-sab:var(--tg-safe-area-inset-bottom,0px);
+}
+/* шапка «прилипает» с top = отступ + 8 px, а в потоке стоит с margin 8 px —
+   на весь экран её сдвигало вниз поверх заголовка раздела: в потоке тот же отступ */
+html.bp-tgfs body #mainTopbar.topbar{ margin-top:calc(var(--bp-sat) + 8px)!important }
+</style>
+<script id="bp-tg-fs">
+/* ══ ТЕЛЕГРАМ: МИНИ-ПРИЛОЖЕНИЕ НА ВЕСЬ ЭКРАН (bp-tg-fs, 15.10.2026) ══════
+   Владелец: «сразу показывается блок, где закрыть и три точки, — мне так не
+   надо». Это была полоса встроенного браузера Телеграма у обычной ссылки.
+   Теперь кнопка бота открывает мини-приложение (bot.js, web_app), его скрипт
+   грузит bp-tg-boot в <head> только внутри Телеграма, а здесь — весь экран
+   (requestFullscreen, Bot API 8.0+): полосы с названием и адресом нет; свои
+   две маленькие кнопки Телеграм оставляет всегда. Старые версии Телеграма
+   (до 8.0) и компьютер — просто развёрнутое окно (expand, его зовёт bp-nav).
+   Класс html.bp-tgfs — пока приложение на весь экран: по нему CSS берёт
+   отступы Телеграма вместо env().                                     */
+(function(){
+'use strict';
+if(window.__bpTgFs) return; window.__bpTgFs = 1;
+var de = document.documentElement;
+function tgApp(){ try{ var t = window.Telegram && window.Telegram.WebApp; return (t && t.initData) ? t : null; }catch(e){ return null; } }
+function sync(){
+  var t = tgApp(); if(!t) return;
+  var on = !!t.isFullscreen;
+  if(de.classList.contains('bp-tgfs') !== on) de.classList.toggle('bp-tgfs', on);
+}
+/* «Назад» Телеграма bp-nav обновляет на переходах (goTo, popstate); шторки и
+   окна открываются без перехода — догоняем после нажатий и смены слоёв */
+var kickT = 0;
+function kick(){
+  clearTimeout(kickT);
+  kickT = setTimeout(function(){ try{ if(typeof window.bpUpdateBack === 'function') window.bpUpdateBack(); }catch(e){} }, 450);
+}
+function boot(){
+  var t = tgApp(); if(!t) return;
+  try{ t.ready(); }catch(e){}
+  try{ t.expand(); }catch(e){}
+  try{ if(typeof t.disableVerticalSwipes === 'function') t.disableVerticalSwipes(); }catch(e){}
+  try{ if(typeof t.setHeaderColor === 'function') t.setHeaderColor('#101319'); }catch(e){}
+  try{ if(typeof t.setBackgroundColor === 'function') t.setBackgroundColor('#101319'); }catch(e){}
+  try{ if(typeof t.setBottomBarColor === 'function') t.setBottomBarColor('#101319'); }catch(e){}
+  try{ if(typeof t.onEvent === 'function'){ t.onEvent('fullscreenChanged', sync); t.onEvent('fullscreenFailed', sync); } }catch(e){}
+  var can = false; try{ can = typeof t.requestFullscreen === 'function' && (!t.isVersionAtLeast || t.isVersionAtLeast('8.0')); }catch(e){}
+  var mobile = /^(android|ios)$/i.test(String(t.platform || ''));
+  if(can && mobile && !t.isFullscreen){ try{ t.requestFullscreen(); }catch(e){} }
+  sync();
+  setTimeout(sync, 400); setTimeout(sync, 1500);
+  /* Скрипт Телеграма подключён с defer — кто спрашивал «мы в Телеграме?» ещё
+     при разборе файла, его не застал. Их отметки ставим сами: html.bp-in-tg
+     (bp-glogin-ui) и #formLogin.bp-tg-in (bp-auth-socials: кнопка «Telegram»
+     на экране входа). */
+  try{ if(!de.classList.contains('bp-in-tg')) de.classList.add('bp-in-tg'); }catch(e){}
+  try{ var f = document.getElementById('formLogin'); if(f && !f.classList.contains('bp-tg-in')) f.classList.add('bp-tg-in'); }catch(e){}
+  try{ document.addEventListener('click', kick, true); }catch(e){}
+  try{ new MutationObserver(kick).observe(document.body, { childList:true }); }catch(e){}
+  kick();
+}
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+})();
+</script>
+<style id="bp-mv-lg2-css">
+/* ══ ЖИДКОЕ СТЕКЛО v2 · шапка и полка с настоящим размытием (bp-mv-lg2, 15.10.2026) ══
+   Владелец 15.10: «верхний и нижний блок — как жидкое стекло, как на фото, а
+   не то, что сейчас». Было (bp-mv-glass): плотная тёмная таблетка (.9 / .78)
+   с бликами — того, что под ней, не видно. Стало — стекло: содержимое под
+   шапкой и полкой видно размытым (backdrop-filter), заливка прозрачнее,
+   светлая кромка ярче сверху, блик; капля полки — светлая линза.
+   Размытие здесь можно, хотя bp-overlay-flicker его запрещал: моргали
+   ПОЛНОЭКРАННЫЕ слои и sticky-шапки ВНУТРИ прокручиваемых шторок — снимок
+   под ними пересобирался на каждом кадре. Шапка и полка — небольшие
+   площади над прокруткой самого документа; размытие считает композитор,
+   прозрачность у них никто не анимирует. И шапка теперь правда «висит» над
+   содержимым при прокрутке (overflow-x:clip, ниже) — как задумывал bp-ftop.
+   Без поддержки backdrop-filter — прежний плотный вид (правила внутри
+   @supports). Только под html.bp-mv. Откат: удалить style#bp-mv-lg2-css. */
+@supports ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){
+  html.bp-mv body #mainTopbar.topbar,
+  html.bp-mv body #bpTabbar #bpTabbarIn.bptab-in{
+    background:
+      linear-gradient(180deg,rgba(255,255,255,.13) 0%,rgba(255,255,255,.04) 40%,rgba(255,255,255,0) 58%,rgba(255,255,255,.055) 100%),
+      rgba(23,24,28,.4)!important;
+    -webkit-backdrop-filter:blur(22px) saturate(185%)!important;
+    backdrop-filter:blur(22px) saturate(185%)!important;
+    border:1px solid rgba(255,255,255,.1)!important;
+    box-shadow:
+      0 18px 40px rgba(0,0,0,.38), 0 2px 10px rgba(0,0,0,.2),
+      inset 0 1px 0 rgba(255,255,255,.24), inset 0 -1px 0 rgba(255,255,255,.07),
+      inset 0 0 28px rgba(255,255,255,.04)!important;
+  }
+  /* слабый телефон (bp-lite) — то же стекло, размытие чуть меньше: дешевле на кадр */
+  html.bp-mv.bp-lite body #mainTopbar.topbar,
+  html.bp-mv.bp-lite body #bpTabbar #bpTabbarIn.bptab-in{
+    -webkit-backdrop-filter:blur(16px) saturate(170%)!important;
+    backdrop-filter:blur(16px) saturate(170%)!important;
+  }
+  /* светлая кромка шапки — как у полки: ярче сверху, гаснет к бокам */
+  html.bp-mv body #mainTopbar.topbar::after{
+    content:''; position:absolute; inset:-1px; z-index:3; border-radius:inherit; pointer-events:none;
+    padding:1px; box-sizing:border-box;
+    background:linear-gradient(180deg,rgba(255,255,255,.34) 0%,rgba(255,255,255,.09) 36%,rgba(255,255,255,.03) 70%,rgba(255,255,255,.13) 100%);
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor; mask-composite:exclude;
+  }
+  html.bp-mv body #bpTabbar #bpTabbarIn.bptab-in::after{
+    background:linear-gradient(180deg,rgba(255,255,255,.36) 0%,rgba(255,255,255,.1) 36%,rgba(255,255,255,.035) 70%,rgba(255,255,255,.14) 100%);
+  }
+  /* блик стекла сверху слева */
+  html.bp-mv body #bpTabbar #bpTabbarIn.bptab-in::before{
+    background:radial-gradient(120% 130% at 22% -38%,rgba(255,255,255,.16),rgba(255,255,255,0) 56%);
+  }
+  /* капля — светлая линза поверх стекла */
+  html.bp-mv body #bpTabbar .bptab-lg{
+    background:
+      radial-gradient(90% 75% at 50% -12%,rgba(255,255,255,.26),rgba(255,255,255,0) 70%),
+      radial-gradient(75% 60% at 50% 122%,rgba(146,161,255,.2),rgba(146,161,255,0) 72%),
+      linear-gradient(180deg,rgba(255,255,255,.16),rgba(255,255,255,.06));
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.4), inset 0 -1px 0 rgba(255,255,255,.09),
+      inset 0 0 0 1px rgba(255,255,255,.09), inset 0 0 16px rgba(255,255,255,.05),
+      0 6px 18px rgba(0,0,0,.24);
+  }
+  /* затухание под полкой слабее: сквозь стекло должно быть видно содержимое */
+  html.bp-mv body #bpTabbar::before{
+    height:calc(100% + 18px);
+    background:linear-gradient(0deg,rgba(16,19,25,.6) 0%,rgba(16,19,25,.3) 34%,rgba(16,19,25,.1) 66%,rgba(16,19,25,0) 100%);
+  }
+  /* старые правила гасят размытие с !important (.topbar — bp-overlay-flicker,
+     #bpTabbar .bptab-in — bp-fix25), поэтому и здесь !important */
+  /* счётчик колокольчика вырезан цветом фона — на стекле фон свой, берём темнее */
+  html.bp-mv body #mainTopbar .tb-bell-n{ border-color:rgba(22,23,27,.92) }
+}
+/* Шапка «прилипает», только если у html/body/.app нет overflow-x:hidden: он
+   делал их прокручиваемыми (overflow-y → auto), sticky считался от них — и
+   шапка уезжала вместе с содержимым, стеклу было нечего размывать. clip режет
+   по горизонтали так же, но прокрутки не создаёт. Других sticky в разделах нет
+   (проверено по всем разделам обеих ролей). Замки прокрутки (overflow:hidden у
+   body) работают как раньше: при hidden по вертикали clip считается hidden. */
+@supports (overflow-x:clip){
+  html.bp-mv, html.bp-mv body, html.bp-mv body .app{ overflow-x:clip!important }
+}
+/* «меньше прозрачности» в системе — плотный прежний вид, без размытия */
+@media (prefers-reduced-transparency:reduce){
+  html.bp-mv body #mainTopbar.topbar,
+  html.bp-mv body #bpTabbar #bpTabbarIn.bptab-in{ background-color:rgba(30,31,35,.94)!important; -webkit-backdrop-filter:none!important; backdrop-filter:none!important }
+}
+</style>
+<style id="bp-mv-kyc2-css">
+/* ══ ВЕРИФИКАЦИЯ И РЕКВИЗИТЫ — в стиле сайта (bp-mv-kyc2, 15.10.2026) ══════
+   Владелец 15.10: «проверка личности, реквизиты — номер, паспорт и реквизиты
+   немного не вписываются в стиль сайта, прям хорошо поработай».
+   Было: «Верификация» — тонкий фиолетовый щит, номера 1·2·3 с пунктиром и
+   кнопки сбоку (заголовки шагов ломались в 2–3 строки); «Реквизиты» —
+   поля с двойной рамкой (обёртка .kyc-inpwrap со своей рамкой + рамка поля),
+   белая контурная иконка, подписи с отрицательными отступами; блок «кто и
+   куда» на выводе — голый текст.
+   Стало — тот же язык, что «Профиль» и «Кошелёк»: свет в шапке, кольцо
+   (как у аватара) с двухтон-значком bpMvIco, полоса «пройдено N из 3»;
+   шаги — строки с плитками-значками (телефон · паспорт · карта) и
+   отметкой состояния, у текущего шага одна большая кнопка; поля — одна
+   рамка и голубое кольцо при фокусе, как в «Подтвердите номер»; кнопки —
+   фирменный градиент; блок «куда выводим» — карточка с плиткой.
+   Разметку шагов и шапки строит bp-mv-wal (stepRow / vfHtml), значок
+   реквизитов подменяет script#bp-mv-kyc2. Только под html.bp-mv.
+   Откат: удалить style#bp-mv-kyc2-css и script#bp-mv-kyc2 (разметка
+   bp-mv-wal без этих стилей остаётся читаемой).                        */
+
+/* ═══ 1 · «Верификация»: шапка ═══ */
+html.bp-mv #mvVf .mvv-hero{
+  position:relative; isolation:isolate; overflow:hidden; min-height:0; margin-top:8px; padding:30px 20px 22px;
+  border-radius:28px; border:1px solid rgba(255,255,255,.06); background-color:#1d1e20;
+  background-image:radial-gradient(120% 75% at 0% 0%,rgba(80,138,255,.22),transparent 62%),radial-gradient(95% 70% at 100% 0%,rgba(139,92,246,.2),transparent 60%);
+}
+html.bp-mv #mvVf .mvv-hero.green{ background-image:radial-gradient(120% 75% at 0% 0%,rgba(53,214,112,.17),transparent 62%),radial-gradient(95% 70% at 100% 0%,rgba(80,138,255,.16),transparent 60%) }
+html.bp-mv #mvVf .mvv-hero.amber{ background-image:radial-gradient(120% 75% at 0% 0%,rgba(245,165,36,.17),transparent 62%),radial-gradient(95% 70% at 100% 0%,rgba(139,92,246,.14),transparent 60%) }
+html.bp-mv #mvVf .mvv-hero.red{ background-image:radial-gradient(120% 75% at 0% 0%,rgba(255,107,107,.17),transparent 62%),radial-gradient(95% 70% at 100% 0%,rgba(139,92,246,.12),transparent 60%) }
+html.bp-mv #mvVf .mvv-glow{ position:absolute; left:50%; top:-110px; z-index:-1; width:300px; height:300px; margin-left:-150px; border-radius:50%; background:radial-gradient(circle,rgba(80,138,255,.2),transparent 66%); pointer-events:none }
+/* кольцо — как вокруг аватара в «Профиле» */
+html.bp-mv #mvVf .mvv-shield{
+  position:relative; display:grid; grid-template:100% / 100%; width:96px; height:96px; margin:0 0 18px; padding:3px; box-sizing:border-box;
+  border-radius:50%; color:#c3cbff; background:conic-gradient(from 210deg,#508aff,#8b5cf6,#0fb3fa,#508aff); box-shadow:0 10px 30px rgba(55,101,246,.25);
+}
+html.bp-mv #mvVf .mvv-shield.green{ color:#62e39c; background:conic-gradient(from 210deg,#35d670,#0fb3fa,#508aff,#35d670); box-shadow:0 10px 30px rgba(53,214,112,.2) }
+html.bp-mv #mvVf .mvv-shield.amber{ color:#ffc069; background:conic-gradient(from 210deg,#f5a524,#ff801f,#8b5cf6,#f5a524); box-shadow:0 10px 30px rgba(245,165,36,.18) }
+html.bp-mv #mvVf .mvv-shield.red{ color:#ff8a8f; background:conic-gradient(from 210deg,#ff6b6b,#f0435f,#8b5cf6,#ff6b6b); box-shadow:0 10px 30px rgba(255,107,107,.18) }
+html.bp-mv #mvVf .mvv-core{
+  display:grid; place-items:center; width:100%; height:100%; box-sizing:border-box; border-radius:50%; border:3px solid #1d1e20;
+  background:radial-gradient(circle at 50% 30%,#2b2d33,#1d1e20 70%);
+}
+html.bp-mv #mvVf .mvv-shield svg, html.bp-mv #mvVf .mvv-core svg{ width:42px; height:42px }
+html.bp-mv #mvVf .mvv-hero h2{ font-size:22px; line-height:28px; font-weight:700; letter-spacing:-.01em; text-wrap:balance }
+html.bp-mv #mvVf .mvv-hero p{ max-width:330px; margin-top:8px; font-size:14.5px; line-height:21px; color:rgba(255,255,255,.62) }
+/* полоса «пройдено N из 3» */
+html.bp-mv #mvVf .mvv-prog{ display:grid; grid-template-columns:repeat(3,1fr); gap:6px; width:100%; max-width:240px; margin:18px auto 0 }
+html.bp-mv #mvVf .mvv-prog i{ display:block; height:6px; border-radius:9999px; background:rgba(255,255,255,.1) }
+html.bp-mv #mvVf .mvv-prog i.on{ background:linear-gradient(90deg,#508aff,#8b5cf6); box-shadow:0 0 10px rgba(80,138,255,.35) }
+html.bp-mv #mvVf .mvv-hero.green .mvv-prog i.on{ background:linear-gradient(90deg,#35d670,#0fb3fa); box-shadow:0 0 10px rgba(53,214,112,.3) }
+html.bp-mv #mvVf .mvv-prog i.wait{ background:repeating-linear-gradient(-45deg,rgba(245,165,36,.9) 0 5px,rgba(245,165,36,.35) 5px 10px) }
+html.bp-mv #mvVf .mvv-pc{ margin-top:9px; font-size:12.5px; line-height:16px; font-weight:600; color:rgba(255,255,255,.55) }
+
+/* ═══ 2 · «Верификация»: шаги — строки с плитками ═══ */
+html.bp-mv #mvVf .mvv-steps{ margin-top:14px; padding:4px 0; border-radius:24px; border:1px solid rgba(255,255,255,.06); background:#1d1e20 }
+html.bp-mv #mvVf .mvv-row{ grid-template-columns:48px minmax(0,1fr); column-gap:14px; align-items:start; padding:16px }
+html.bp-mv #mvVf .mvv-row + .mvv-row{ margin-top:0; border-top:1px solid rgba(255,255,255,.06) }
+html.bp-mv #mvVf .mvv-row::after{ display:none!important }
+html.bp-mv #mvVf .mvv-num{
+  position:relative; width:48px; height:48px; border-radius:16px; font-size:16px; font-weight:700;
+  color:#93b5ff; background:linear-gradient(160deg,rgba(80,138,255,.26),rgba(55,101,246,.08)); box-shadow:inset 0 0 0 1px rgba(80,138,255,.3);
+}
+html.bp-mv #mvVf .mvv-num svg{ width:24px; height:24px }
+html.bp-mv #mvVf .mvv-num.done{ color:#62e39c; background:linear-gradient(160deg,rgba(53,214,112,.22),rgba(53,214,112,.05)); box-shadow:inset 0 0 0 1px rgba(53,214,112,.28) }
+html.bp-mv #mvVf .mvv-num.wait{ color:#ffc069; background:linear-gradient(160deg,rgba(245,165,36,.22),rgba(245,165,36,.05)); box-shadow:inset 0 0 0 1px rgba(245,165,36,.28) }
+html.bp-mv #mvVf .mvv-num.bad{ color:#ff8a8f; background:linear-gradient(160deg,rgba(255,107,107,.22),rgba(255,107,107,.05)); box-shadow:inset 0 0 0 1px rgba(255,107,107,.3) }
+html.bp-mv #mvVf .mvv-num.lock{ color:rgba(255,255,255,.4); background:rgba(255,255,255,.05); box-shadow:inset 0 0 0 1px rgba(255,255,255,.06) }
+/* отметка состояния в углу плитки */
+html.bp-mv #mvVf .mvv-bdg{
+  position:absolute; right:-5px; bottom:-5px; display:grid; place-items:center; width:20px; height:20px; box-sizing:border-box;
+  border-radius:50%; border:2px solid #1d1e20; font-style:normal; color:#fff; background:#3765f6;
+}
+html.bp-mv #mvVf .mvv-bdg svg{ width:11px; height:11px }
+html.bp-mv #mvVf .mvv-num.done .mvv-bdg{ background:#35d670; color:#06210f }
+html.bp-mv #mvVf .mvv-num.wait .mvv-bdg{ background:#f5a524; color:#141415 }
+html.bp-mv #mvVf .mvv-num.bad .mvv-bdg{ background:#ff6b6b; color:#141415 }
+html.bp-mv #mvVf .mvv-num.lock .mvv-bdg{ background:#3a3b40; color:rgba(255,255,255,.75) }
+/* текст шага */
+html.bp-mv #mvVf .mvv-chip{
+  display:inline-flex; align-items:center; gap:5px; height:22px; margin:0 0 6px; padding:0 9px; box-sizing:border-box;
+  border-radius:9999px; font-size:11.5px; line-height:1; font-weight:700; letter-spacing:.01em; white-space:nowrap;
+  color:#93b5ff; background:rgba(60,103,246,.18);
+}
+html.bp-mv #mvVf .mvv-row.s-done .mvv-chip{ color:#62e39c; background:rgba(53,214,112,.14) }
+html.bp-mv #mvVf .mvv-row.s-wait .mvv-chip{ color:#ffc069; background:rgba(245,165,36,.14) }
+html.bp-mv #mvVf .mvv-row.s-wait .mvv-chip::before{ content:''; width:6px; height:6px; border-radius:50%; background:currentColor; animation:mvkBlink 1.6s ease-in-out infinite }
+html.bp-mv #mvVf .mvv-row.s-bad .mvv-chip{ color:#ff8a8f; background:rgba(255,107,107,.14) }
+html.bp-mv #mvVf .mvv-row.s-lock .mvv-chip{ color:rgba(255,255,255,.5); background:rgba(255,255,255,.06) }
+html.bp-mv #mvVf .mvv-row h3{ margin:0; font-size:16px; line-height:21px; font-weight:600; color:#fff; text-wrap:pretty }
+html.bp-mv #mvVf .mvv-row p{ margin:4px 0 0; font-size:13.5px; line-height:19px; color:rgba(255,255,255,.55) }
+html.bp-mv #mvVf .mvv-row.s-lock h3{ color:rgba(255,255,255,.72) }
+html.bp-mv #mvVf .mvv-row .mvv-lnk{ margin-top:8px }
+/* действие — под текстом (заголовок не делит строку с кнопкой); у текущего
+   шага — большая кнопка во всю ширину, у остальных («Обновить», «Изменить») —
+   небольшая таблетка */
+html.bp-mv #mvVf .mvv-act{ grid-column:2; justify-self:start; margin-top:12px }
+html.bp-mv #mvVf .mvv-act:empty{ display:none }
+html.bp-mv #mvVf .mvv-row.s-lock .mvv-act{ display:none }
+html.bp-mv #mvVf .mvv-act.wide{ justify-self:stretch; margin-top:14px }
+html.bp-mv #mvVf .mvv-act.wide .mvv-bp{
+  display:flex; align-items:center; justify-content:center; width:100%; height:48px; min-width:0; padding:0 18px;
+  background:linear-gradient(180deg,#508aff 0%,#3765f6 50%,#7185ff 100%); box-shadow:0 6px 18px rgba(55,101,246,.3),inset 0 1px 0 rgba(255,255,255,.2);
+  font-size:15px; font-weight:600;
+}
+html.bp-mv #mvVf .mvv-bs{ height:36px; padding:0 14px; font-size:13.5px; font-weight:600; background:rgba(255,255,255,.07); border-color:rgba(255,255,255,.08) }
+/* «Зачем это нужно?» и «пройдена полностью» */
+html.bp-mv #mvVf .mvv-info{ align-items:flex-start; gap:14px; padding:16px; border-radius:24px; border:1px solid rgba(255,255,255,.06); background:#1d1e20 }
+html.bp-mv #mvVf .mvv-info > svg{
+  flex:none; width:44px; height:44px; padding:11px; box-sizing:border-box; border-radius:14px;
+  color:#8fb2ff; background:rgba(80,138,255,.14);
+}
+html.bp-mv #mvVf .mvv-info.ok > svg{ color:#62e39c; background:rgba(53,214,112,.14) }
+html.bp-mv #mvVf .mvv-info h3{ font-size:15.5px; line-height:21px }
+html.bp-mv #mvVf .mvv-info p{ font-size:13.5px; line-height:19px; color:rgba(255,255,255,.58) }
+@media (max-width:360px){
+  html.bp-mv #mvVf .mvv-row{ grid-template-columns:44px minmax(0,1fr); column-gap:12px; padding:14px 12px }
+  html.bp-mv #mvVf .mvv-num{ width:44px; height:44px; border-radius:14px }
+}
+
+/* ═══ 3 · «Реквизиты» (bp-payout2 в шторке #kycSheet) ═══ */
+/* поле: одна рамка (у поля), обёртка — без своей; фокус — голубое кольцо */
+html.bp-mv #kycSheet .kyc-card.mvk-pay .kyc-inpwrap{ border:0!important; background:none!important; box-shadow:none!important; border-radius:16px!important; padding:0!important }
+html.bp-mv #kycSheet .kyc-card.mvk-pay .kyc-inp{
+  height:54px; min-height:54px; border:1px solid rgba(255,255,255,.07)!important; background:#1d1e20!important; border-radius:16px!important;
+  transition:border-color .15s ease, box-shadow .15s ease;
+}
+html.bp-mv #kycSheet .kyc-card.mvk-pay .kyc-inp:focus{ border-color:rgba(80,138,255,.75)!important; box-shadow:0 0 0 3px rgba(60,103,246,.18)!important }
+html.bp-mv #kycSheet .kyc-card.mvk-pay .kyc-inpwrap:focus-within .kyc-inp-ic{ color:#508aff!important }
+html.bp-mv #kycSheet .kyc-card.mvk-pay .kyc-inp.pay2-inp-bad,
+html.bp-mv #kycSheet .kyc-card.mvk-pay .kyc-inp.pay2-inp-bad:focus{ border-color:#fb2c36!important; box-shadow:0 0 0 3px rgba(251,44,54,.14)!important }
+html.bp-mv #kycSheet .kyc-card.mvk-pay .kyc-inp-ic svg{ width:20px; height:20px }
+html.bp-mv #kycSheet .kyc-card.mvk-pay .kyc-lbl{ margin:18px 2px 8px!important }
+html.bp-mv #kycSheet .kyc-card.mvk-pay .pay2-hint,
+html.bp-mv #kycSheet .kyc-card.mvk-pay .pay2-err,
+html.bp-mv #kycSheet .kyc-card.mvk-pay .pay2-warn{ margin:8px 2px 0!important; font-size:13px!important; line-height:18px!important }
+html.bp-mv #kycSheet .kyc-card.mvk-pay .pay2-hint:empty,
+html.bp-mv #kycSheet .kyc-card.mvk-pay .pay2-err:empty,
+html.bp-mv #kycSheet .kyc-card.mvk-pay .pay2-warn:empty{ display:none }
+/* шапка: заголовок и подпись как у «Подтвердите номер» */
+html.bp-mv #kycSheet .kyc-card.mvk-pay .kyc-hero{ padding:2px 6px 18px!important; margin:0!important }
+html.bp-mv #kycSheet .kyc-card.mvk-pay .kyc-h1{ margin:0!important; font-size:22px!important; line-height:28px!important; font-weight:700!important; letter-spacing:-.01em!important; text-wrap:balance }
+html.bp-mv #kycSheet .kyc-card.mvk-pay .kyc-h2{ max-width:350px; margin:8px auto 0!important; font-size:14px!important; line-height:20px!important; color:rgba(255,255,255,.6)!important; text-wrap:pretty }
+html.bp-mv #kycSheet .kyc-card.mvk-pay .kyc-hero-ic.mvk-hi svg *{ stroke:currentColor }
+/* карта-превью */
+html.bp-mv #kycSheet .kyc-card.mvk-pay .pay2-plastic{
+  border-radius:22px!important; padding:18px 18px 16px!important; margin-bottom:16px!important;
+  background:linear-gradient(150deg,#5b8cff 0%,#3765f6 52%,#6f7fff 100%)!important;
+  box-shadow:0 14px 34px rgba(55,101,246,.32),inset 0 1px 0 rgba(255,255,255,.26)!important;
+}
+html.bp-mv #kycSheet .kyc-card.mvk-pay .pay2-plastic::after{ background:radial-gradient(circle,rgba(255,255,255,.18),transparent 68%)!important }
+html.bp-mv #kycSheet .kyc-card.mvk-pay .pay2-p-logo{ font-size:12px; font-weight:800; letter-spacing:.02em; color:rgba(255,255,255,.85) }
+html.bp-mv #kycSheet .kyc-card.mvk-pay .pay2-p-num{ font-size:19px; letter-spacing:1.6px }
+html.bp-mv #kycSheet .kyc-card.mvk-pay .pay2-p-num .dim{ color:rgba(255,255,255,.45); letter-spacing:-.12em; margin-right:.5em }
+html.bp-mv #kycSheet .kyc-card.mvk-pay .pay2-p-cap{ font-size:9.5px; letter-spacing:.08em; color:rgba(255,255,255,.62) }
+html.bp-mv #kycSheet .kyc-card.mvk-pay .pay2-p-val{ font-size:14px; max-width:210px }
+/* «На карту / По номеру, СБП» — переключатель как на сайте */
+html.bp-mv #kycSheet .kyc-card.mvk-pay .kyc-seg{ display:grid!important; grid-template-columns:1fr 1fr; margin:0 0 2px!important; background:#1d1e20!important; border:1px solid rgba(255,255,255,.06)!important }
+html.bp-mv #kycSheet .kyc-card.mvk-pay .kyc-seg-b{ display:grid!important; place-items:center; min-height:44px; font-size:15px!important; font-weight:600!important; color:rgba(255,255,255,.5)!important }
+html.bp-mv #kycSheet .kyc-card.mvk-pay .kyc-seg-b.on{ background:#2c2d31!important; color:#fff!important; box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),0 4px 12px rgba(0,0,0,.25)!important }
+/* кнопка — фирменный градиент и в «готовом», и в ожидании */
+html.bp-mv #kycSheet .kyc-card.mvk-pay .kyc-go{
+  display:flex!important; align-items:center; justify-content:center; gap:8px; width:100%; min-height:54px; margin:22px 0 0!important;
+  border-radius:9999px!important; border:0!important; color:#fff!important; font-size:16px!important; font-weight:600!important;
+  background:linear-gradient(180deg,#508aff 0%,#3765f6 50%,#7185ff 100%)!important; box-shadow:0 6px 18px rgba(55,101,246,.32),inset 0 1px 0 rgba(255,255,255,.2)!important;
+}
+html.bp-mv #kycSheet .kyc-card.mvk-pay .kyc-go:disabled,
+html.bp-mv #kycSheet .kyc-card.mvk-pay .kyc-go[disabled]{ opacity:.45!important; box-shadow:none!important }
+html.bp-mv #kycSheet .kyc-card.mvk-pay .kyc-go svg{ width:18px; height:18px }
+/* «где хранится номер» — тихая строка с замком, как в «Проверке личности» */
+html.bp-mv #kycSheet .kyc-card.mvk-pay .kyc-note{
+  display:flex!important; align-items:flex-start; gap:10px; margin:14px 4px 2px!important; padding:0!important;
+  border:0!important; background:none!important; font-size:12.5px!important; line-height:17px!important; color:rgba(255,255,255,.45)!important;
+}
+html.bp-mv #kycSheet .kyc-card.mvk-pay .kyc-note svg{ flex:none; width:16px; height:16px; margin-top:1px }
+/* «Реквизиты сохранены» */
+html.bp-mv #kycSheet .kyc-card.mvk-pay .pay2-ok{ padding:8px 6px 4px!important }
+html.bp-mv #kycSheet .kyc-card.mvk-pay .pay2-ok-t{ font-size:22px!important; line-height:28px!important; font-weight:700!important; letter-spacing:-.01em!important }
+html.bp-mv #kycSheet .kyc-card.mvk-pay .pay2-ok-s{ max-width:330px; font-size:14px!important; line-height:20px!important; color:rgba(255,255,255,.6)!important }
+
+/* ═══ 4 · страница вывода: «куда выводим» — карточка с плиткой ═══ */
+html.bp-mv #pg-withdraw #mvWdWho{
+  display:flex; align-items:center; gap:14px; padding:14px 14px 14px 16px; border-radius:20px;
+  border:1px solid rgba(255,255,255,.06); background:#1d1e20;
+}
+html.bp-mv #mvWdWho .mvm-who-ic{
+  flex:none; display:grid; place-items:center; width:48px; height:48px; border-radius:16px;
+  color:#93b5ff; background:linear-gradient(160deg,rgba(80,138,255,.26),rgba(55,101,246,.08)); box-shadow:inset 0 0 0 1px rgba(80,138,255,.3);
+}
+html.bp-mv #mvWdWho .mvm-who-ic svg{ width:24px; height:24px }
+html.bp-mv #mvWdWho .mvm-who-ic.none{ color:rgba(255,255,255,.45); background:rgba(255,255,255,.05); box-shadow:inset 0 0 0 1px rgba(255,255,255,.06) }
+html.bp-mv #mvWdWho > div{ flex:1; gap:2px }
+html.bp-mv #mvWdWho b{ font-size:16px; line-height:21px; font-weight:600 }
+html.bp-mv #mvWdWho span{ font-size:13.5px; line-height:19px; color:rgba(255,255,255,.55) }
+html.bp-mv #mvWdWho span em{ font-weight:500; color:rgba(255,255,255,.82) }
+html.bp-mv #mvWdWho .mx-b{ height:36px; min-height:36px; padding:0 14px; font-size:13.5px; font-weight:600 }
+</style>
+<script id="bp-mv-kyc2">
+/* ══ ВЕРИФИКАЦИЯ И РЕКВИЗИТЫ — в стиле сайта · поведение (bp-mv-kyc2, 15.10.2026) ══
+   Вид — style#bp-mv-kyc2-css. Здесь только значки шторки «Реквизиты»
+   (bp-payout2 рисует белый контурный): в шапке — двухтон «карта» из
+   bpMvIco, после «Сохранить» — «готово». Шторку bp-payout2 перерисовывает
+   целиком (innerHTML) — следим за #kycSheet; свою замену помечаем, чтобы
+   наблюдатель не крутился. Только под html.bp-mv.
+   Откат: удалить script#bp-mv-kyc2 и style#bp-mv-kyc2-css.            */
+(function(){
+'use strict';
+if(window.__bpMvKyc2) return; window.__bpMvKyc2 = 1;
+function mv(){ return document.documentElement.classList.contains('bp-mv'); }
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'bp-mv-kyc2'); }catch(_){} }
+function ico(k){ var I = window.bpMvIco || {}; return I[k] || ''; }
+function paint(){
+  if(!mv()) return;
+  var card = document.querySelector('#kycSheet .kyc-card.mvk-pay'); if(!card) return;
+  try{
+    var hi = card.querySelector('.kyc-hero-ic');
+    if(hi && !hi.__mvk2 && ico('card')){ hi.__mvk2 = 1; hi.innerHTML = ico('card'); }
+    var ok = card.querySelector('.pay2-ok-i');
+    if(ok && !ok.__mvk2 && ico('checkC')){ ok.__mvk2 = 1; ok.innerHTML = ico('checkC'); }
+  }catch(e){ E(e); }
+}
+var pend = 0;
+function kick(){ if(pend) return; pend = 1; (window.requestAnimationFrame || setTimeout)(function(){ pend = 0; paint(); }); }
+function boot(){
+  var s = document.getElementById('kycSheet');
+  if(!s || s.__mvk2o || typeof MutationObserver === 'undefined') return;
+  s.__mvk2o = 1;
+  new MutationObserver(kick).observe(s, { childList:true, subtree:true });
+  kick();
+}
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+setTimeout(boot, 1500);
+})();
+</script>
+<style id="bp-mv-ytc-css">
+/* ══ YOUTUBE БЕЗ ВХОДА В GOOGLE · вид (bp-mv-ytc, 15.10.2026) ══════════════
+   Владелец 15.10: «нажимаю „добавить аккаунт" YouTube — от YouTube жирное
+   предупреждение, что лучше не давать доступ к аккаунту этого сайта».
+   Окно #mvYtc: ссылка на канал → код → «Проверить». Язык — тот же, что у
+   шторок проверки (.mvk-*) и окон .mx-*. Только под html.bp-mv.
+   Откат: удалить style#bp-mv-ytc-css и script#bp-mv-ytc.               */
+html.bp-mv #mvYtc .mvy-hero{ display:flex; flex-direction:column; align-items:center; text-align:center; padding:2px 4px 6px }
+html.bp-mv #mvYtc .mvy-logo{
+  display:grid; place-items:center; width:68px; height:68px; margin:0 0 14px; border-radius:22px;
+  background:linear-gradient(160deg,rgba(255,0,0,.2),rgba(255,0,0,.05)); box-shadow:inset 0 0 0 1px rgba(255,80,80,.28),0 10px 30px rgba(255,0,0,.12);
+}
+html.bp-mv #mvYtc .mvy-logo svg{ width:36px; height:36px }
+html.bp-mv #mvYtc .mvy-hero h3{ margin:0; font-size:19px; line-height:25px; font-weight:700; color:#fff; text-wrap:balance }
+html.bp-mv #mvYtc .mvy-hero p{ max-width:330px; margin:8px 0 0; font-size:14px; line-height:20px; color:rgba(255,255,255,.62); text-wrap:pretty }
+html.bp-mv #mvYtc .mvk-lbl{ margin-top:18px }
+html.bp-mv #mvYtc .mvk-err[hidden], html.bp-mv #mvYtc .mvk-hint[hidden]{ display:none }
+/* канал */
+html.bp-mv #mvYtc .mvy-ch{
+  display:flex; align-items:center; gap:12px; padding:12px 12px 12px 14px; border-radius:18px;
+  background:#1d1e20; border:1px solid rgba(255,255,255,.06);
+}
+html.bp-mv #mvYtc .mvy-ava{ flex:none; width:44px; height:44px; border-radius:50%; overflow:hidden; display:grid; place-items:center; background:#2c2d31; color:#fff; font-weight:700 }
+html.bp-mv #mvYtc .mvy-ava img{ width:100%; height:100%; object-fit:cover; display:block }
+html.bp-mv #mvYtc .mvy-ch > div{ flex:1; min-width:0; display:flex; flex-direction:column; gap:2px }
+html.bp-mv #mvYtc .mvy-ch b{ font-size:15.5px; line-height:20px; font-weight:600; color:#fff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+html.bp-mv #mvYtc .mvy-ch span{ font-size:13px; line-height:18px; color:rgba(255,255,255,.55); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+html.bp-mv #mvYtc .mvy-ch .mvk-lnk{ flex:none; font-size:14px }
+/* код */
+html.bp-mv #mvYtc .mvy-code{
+  position:relative; display:flex; align-items:center; gap:12px; margin:12px 0 0; padding:14px 12px 14px 16px; border-radius:18px;
+  background:linear-gradient(160deg,rgba(80,138,255,.16),rgba(55,101,246,.05)); border:1px dashed rgba(80,138,255,.55);
+}
+html.bp-mv #mvYtc .mvy-code > div{ flex:1; min-width:0 }
+html.bp-mv #mvYtc .mvy-code small{ display:block; font-size:12px; line-height:16px; font-weight:600; color:rgba(255,255,255,.55) }
+html.bp-mv #mvYtc .mvy-code b{ display:block; margin-top:2px; font-size:24px; line-height:30px; font-weight:800; letter-spacing:.08em; color:#fff; font-variant-numeric:tabular-nums; -webkit-user-select:all; user-select:all }
+html.bp-mv #mvYtc .mvy-code .mx-b{ flex:none; height:40px; min-height:40px; padding:0 14px; gap:6px; font-size:14px; font-weight:600 }
+html.bp-mv #mvYtc .mvy-code .mx-b svg{ width:16px; height:16px }
+html.bp-mv #mvYtc .mvy-code.ok{ border-style:solid; border-color:rgba(53,214,112,.55) }
+/* шаги */
+html.bp-mv #mvYtc .mvy-steps{ list-style:none; margin:14px 0 0; padding:14px; display:grid; gap:12px; border-radius:18px; background:#1d1e20; border:1px solid rgba(255,255,255,.06) }
+html.bp-mv #mvYtc .mvy-steps li{ display:flex; align-items:flex-start; gap:12px; font-size:13.5px; line-height:19px; color:rgba(255,255,255,.78) }
+html.bp-mv #mvYtc .mvy-steps li > i{
+  flex:none; display:grid; place-items:center; width:24px; height:24px; border-radius:50%; font-style:normal; font-size:12px; font-weight:700;
+  color:#93b5ff; background:rgba(60,103,246,.2);
+}
+html.bp-mv #mvYtc .mvy-steps b{ color:#fff; font-weight:600 }
+html.bp-mv #mvYtc .mvy-studio{ display:flex; align-items:center; justify-content:center; gap:8px; width:100%; margin:12px 0 0; text-decoration:none; box-sizing:border-box }
+html.bp-mv #mvYtc .mvy-studio svg{ width:18px; height:18px }
+html.bp-mv #mvYtc .mvy-note{ margin:12px 2px 0; font-size:12.5px; line-height:17px; color:rgba(255,255,255,.45); text-align:center }
+/* готово */
+html.bp-mv #mvYtc .mvy-ok{ display:flex; flex-direction:column; align-items:center; text-align:center; padding:6px 4px 4px }
+html.bp-mv #mvYtc .mvy-ok .mvk-hi{ margin-bottom:16px }
+html.bp-mv #mvYtc .mvy-ok h3{ margin:0; font-size:20px; line-height:26px; font-weight:700; color:#fff }
+html.bp-mv #mvYtc .mvy-ok p{ max-width:320px; margin:8px 0 0; font-size:14px; line-height:20px; color:rgba(255,255,255,.62); text-wrap:pretty }
+html.bp-mv #mvYtc .mx-ft .mx-b[disabled]{ opacity:.5 }
+html.bp-mv #mvYtc .mx-b.busy{ pointer-events:none; opacity:.75 }
+</style>
+<script id="bp-mv-ytc">
+/* ══ YOUTUBE БЕЗ ВХОДА В GOOGLE · поведение (bp-mv-ytc, 15.10.2026) ═══════
+   Вход через Google с областью youtube.readonly показывает «приложение не
+   проверено» (проверку Google проходит только приложение со своим доменом).
+   Здесь — подключение кодом в описании канала: ссылка на канал →
+   POST /api/verify/youtube/code (канал и код BP-XXXXXX) → человек вставляет
+   код в описание в YouTube Studio → POST /api/verify/youtube/check →
+   канал записан на него. Дальше — как после входа через площадку:
+   window.bpAbcAfterVerify('youtube') (список аккаунтов, «Мой профиль» с
+   плашкой, окно «Загрузка видео» возвращается само по bpvbResume).
+   Если на сервере нет YT_API_KEY (/api/verify/config → youtube.code false),
+   окно не открывается — прежний вход через Google.
+   Наружу: bpMvYtCode(cfg) — открыть окно, true если открыто.
+   Только под html.bp-mv. Откат: удалить script#bp-mv-ytc и style.       */
+(function(){
+'use strict';
+if(window.__bpMvYtc) return; window.__bpMvYtc = 1;
+function mv(){ return document.documentElement.classList.contains('bp-mv'); }
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'bp-mv-ytc'); }catch(_){} }
+function $(id){ return document.getElementById(id); }
+function srv(){ return window.bpSrv; }
+function online(){ try{ var s = srv(); return !!(s && s.configured && s.configured() && typeof s.raw === 'function'); }catch(e){ return false; } }
+function token(){ try{ return srv().token() || ''; }catch(e){ return ''; } }
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+var NB = ' ';
+function nb(s){ return String(s).replace(/(^|[\s«(])(в|во|с|со|к|о|об|у|и|а|не|на|по|за|из|от|до|без|для)\s/gi, '$1$2' + NB); }
+function toast(m, k){ try{ if(typeof showAuthToast === 'function') showAuthToast(m, k || 'ok'); }catch(e){} }
+function ico(k){ var I = window.bpMvIco || {}; return I[k] || ''; }
+function tgApp(){ try{ var t = window.Telegram && window.Telegram.WebApp; return (t && t.initData && typeof t.openLink === 'function') ? t : null; }catch(e){ return null; } }
+function subsTxt(n){
+  n = Number(n) || 0;
+  var w = function(x){ var m = x % 10, h = x % 100; return (h >= 11 && h <= 14) ? 'подписчиков' : m === 1 ? 'подписчик' : (m >= 2 && m <= 4) ? 'подписчика' : 'подписчиков'; };
+  if(n >= 1e6) return (Math.round(n / 1e5) / 10).toString().replace('.', ',') + NB + 'млн подписчиков';
+  if(n >= 1e4) return (Math.round(n / 100) / 10).toString().replace('.', ',') + NB + 'тыс. подписчиков';
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, NB) + NB + w(n);
+}
+var SV = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"';
+var IC = {
+  link:'<svg ' + SV + '><path d="M10.4 13.6a3.7 3.7 0 0 0 5.2 0l2.9-2.9a3.7 3.7 0 0 0-5.2-5.2l-1 1"/><path d="M13.6 10.4a3.7 3.7 0 0 0-5.2 0l-2.9 2.9a3.7 3.7 0 0 0 5.2 5.2l1-1"/></svg>',
+  copy:'<svg ' + SV + '><rect x="8.5" y="8.5" width="11" height="11" rx="2.4"/><path d="M15.5 8.5V6.9a2.4 2.4 0 0 0-2.4-2.4H6.9a2.4 2.4 0 0 0-2.4 2.4v6.2a2.4 2.4 0 0 0 2.4 2.4h1.6"/></svg>',
+  ext:'<svg ' + SV + '><path d="M14 4.5h5.5V10M19.5 4.5 11 13"/><path d="M18 14v3.6a2 2 0 0 1-2 2H6.4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2H10"/></svg>',
+  check:'<svg ' + SV + ' stroke-width="2.4"><path d="m5.4 12.6 4.2 4.2 9-9.6"/></svg>'
+};
+function brand(){ try{ return typeof window.bpBrandSvg === 'function' ? window.bpBrandSvg('youtube') : (window.bpBrandIco && window.bpBrandIco.youtube) || ''; }catch(e){ return ''; } }
+
+/* настройки площадок: можно ли кодом (на сервере есть YT_API_KEY) */
+var CFG = { v:null, at:0, p:null };
+function pullCfg(){
+  if(!online()) return Promise.resolve(null);
+  if(CFG.v && Date.now() - CFG.at < 300000) return Promise.resolve(CFG.v);
+  if(CFG.p) return CFG.p;
+  CFG.p = srv().raw('GET', '/api/verify/config').then(function(j){ CFG.p = null; CFG.at = Date.now(); CFG.v = (j && j.platforms) || null; return CFG.v; }, function(){ CFG.p = null; return null; });
+  return CFG.p;
+}
+function codeOn(cfg){ var c = cfg || CFG.v; return !!(c && c.youtube && c.youtube.code); }
+
+var M = null, S = null;
+function close(now){ try{ if(M) M.close(now); }catch(e){ E(e); } M = null; }
+function setErr(t){ var e = M && M.el.querySelector('#mvyErr'); if(!e) return; e.textContent = t || ''; e.hidden = !t; }
+function busy(btn, on, label){
+  if(!btn) return;
+  if(on){ btn.__t = btn.textContent; btn.classList.add('busy'); btn.disabled = true; if(label) btn.textContent = label; }
+  else { btn.classList.remove('busy'); btn.disabled = false; if(btn.__t != null) btn.textContent = btn.__t; }
+}
+function errText(e, fb){
+  var st = e && e.status, m = String((e && e.message) || '');
+  if(st === 409) return 'Код пока не виден в описании. Проверьте, что нажали «Опубликовать», и подождите минуту — YouTube обновляет описание не сразу.';
+  if(st === 410) return 'Код устарел — получите новый.';
+  if(st === 429) return m || 'Слишком часто — подождите минуту.';
+  if(st === 502 || /не ответил|Failed to fetch|network/i.test(m)) return 'YouTube не ответил — попробуйте ещё раз.';
+  return m || fb || 'Не получилось — попробуйте ещё раз.';
+}
+function studioUrl(id){ return 'https://studio.youtube.com/channel/' + encodeURIComponent(id) + '/editing/details'; }
+
+function step1(){
+  M.title('Подключить YouTube');
+  M.bd.innerHTML = '<div class="mvy-hero"><span class="mvy-logo">' + brand() + '</span><h3>' + esc(nb('Подключите канал без входа в Google')) + '</h3>'
+    + '<p>' + esc(nb('Вставите короткий код в описание канала — так мы убедимся, что канал ваш. Пароль и доступ к аккаунту не нужны.')) + '</p></div>'
+    + '<label class="mvk-lbl" for="mvyUrl">Ссылка на канал или @имя</label>'
+    + '<div class="mvk-in"><span class="mvk-ii">' + IC.link + '</span><input id="mvyUrl" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="300" placeholder="youtube.com/@вашканал" value="' + esc(S.url || '') + '"></div>'
+    + '<p class="mvk-hint">' + esc(nb('В YouTube откройте свой канал → «Поделиться» → «Копировать ссылку».')) + '</p>'
+    + '<p class="mvk-err" id="mvyErr" hidden></p>';
+  M.ft.innerHTML = '<button type="button" class="mx-b mx-bg" data-my="x">Отмена</button><button type="button" class="mx-b mx-bp" data-my="find">Дальше</button>';
+  setTimeout(function(){ var i = $('mvyUrl'); try{ if(i && !('ontouchstart' in window)) i.focus({ preventScroll:true }); }catch(e){} }, 80);
+}
+function step2(){
+  var c = S.ch || {};
+  M.title('Подключить YouTube');
+  var av = c.avatar ? '<img src="' + esc(c.avatar) + '" alt="" referrerpolicy="no-referrer">' : esc(String(c.title || '?').trim().charAt(0).toUpperCase());
+  M.bd.innerHTML = '<div class="mvy-ch"><span class="mvy-ava">' + av + '</span><div><b>' + esc(c.title || 'Канал') + '</b><span>' + esc(subsTxt(c.subs) + (c.username ? ' · ' + c.username : '')) + '</span></div>'
+    + '<button type="button" class="mvk-lnk" data-my="change">Изменить</button></div>'
+    + '<div class="mvy-code" id="mvyCodeBox"><div><small>Ваш код</small><b id="mvyCode">' + esc(S.code) + '</b></div>'
+    + '<button type="button" class="mx-b mx-bg" data-my="copy">' + IC.copy + '<span>Скопировать</span></button></div>'
+    + '<ol class="mvy-steps">'
+    + '<li><i>1</i><span>' + nb('Откройте <b>YouTube Studio</b> → «Настройка канала» → «Основные сведения».') + '</span></li>'
+    + '<li><i>2</i><span>' + nb('Вставьте код в «Описание» — в любое место — и нажмите <b>«Опубликовать»</b>.') + '</span></li>'
+    + '<li><i>3</i><span>' + nb('Вернитесь сюда и нажмите <b>«Проверить»</b>.') + '</span></li></ol>'
+    + '<a class="mx-b mx-bg mvy-studio" data-my="studio" href="' + esc(studioUrl(c.id)) + '" target="_blank" rel="noopener noreferrer">' + IC.ext + '<span>Открыть YouTube Studio</span></a>'
+    + '<p class="mvk-err" id="mvyErr" hidden></p>'
+    + '<p class="mvy-note">' + esc(nb('Код действует 30 минут. После подключения его можно убрать из описания.')) + '</p>';
+  M.ft.innerHTML = '<button type="button" class="mx-b mx-bp" data-my="check">Проверить</button>';
+}
+function step3(){
+  var c = S.ch || {};
+  M.title('Готово');
+  M.bd.innerHTML = '<div class="mvy-ok"><span class="mvk-hi green pop">' + (ico('checkC') || IC.check) + '</span><h3>Канал подключён</h3>'
+    + '<p>' + esc(nb('«' + (c.title || 'Канал') + '» теперь в ваших аккаунтах — с него можно загружать видео в задания. Код из описания можно удалить.')) + '</p></div>';
+  M.ft.innerHTML = '<button type="button" class="mx-b mx-bp" data-my="done">Готово</button>';
+}
+
+function find(btn){
+  var i = $('mvyUrl'), v = i ? String(i.value || '').trim() : '';
+  S.url = v;
+  if(!v){ setErr('Вставьте ссылку на канал или @имя'); try{ i.focus(); }catch(e){} return; }
+  setErr(''); busy(btn, true, 'Ищем канал…');
+  srv().raw('POST', '/api/verify/youtube/code', { channel:v }).then(function(j){
+    if(!M) return;
+    if(!j || !j.code || !j.channel) throw new Error('YouTube не ответил');
+    S.ch = j.channel; S.code = j.code; S.at = Date.now();
+    step2();
+  }).catch(function(e){ if(!M) return; busy(btn, false); setErr(errText(e, 'Канал не найден — проверьте ссылку')); });
+}
+function check(btn){
+  setErr(''); busy(btn, true, 'Проверяем…');
+  srv().raw('POST', '/api/verify/youtube/check', {}).then(function(j){
+    if(!M) return;
+    if(!j || !j.ok) throw new Error('Не получилось — попробуйте ещё раз');
+    if(j.title) S.ch = Object.assign({}, S.ch || {}, { title:j.title });
+    S.done = true;
+    step3();
+  }).catch(function(e){
+    if(!M) return;
+    busy(btn, false);
+    if(e && e.status === 410){ S.code = ''; step1(); setErr(errText(e)); return; }
+    setErr(errText(e));
+    var b = $('mvyCodeBox'); if(b && e && e.status === 409){ b.classList.remove('ok'); }
+  });
+}
+function copy(btn){
+  var code = S.code || '';
+  function ok(){ var b = $('mvyCodeBox'); if(b) b.classList.add('ok'); if(btn){ var sp = btn.querySelector('span'); if(sp) sp.textContent = 'Скопировано'; } toast('Код скопирован', 'ok'); }
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(code).then(ok, function(){ fallback(); }); return; }
+  }catch(e){}
+  fallback();
+  function fallback(){
+    try{
+      var t = document.createElement('textarea'); t.value = code; t.setAttribute('readonly', ''); t.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+      document.body.appendChild(t); t.select(); var r = document.execCommand && document.execCommand('copy'); t.remove();
+      if(r) ok(); else toast('Выделите код и скопируйте вручную', 'err');
+    }catch(e){ toast('Выделите код и скопируйте вручную', 'err'); }
+  }
+}
+function done(){
+  var resume = null; try{ resume = sessionStorage.getItem('bpvbResume'); }catch(e){}
+  /* как после входа через площадку: «Мой профиль» с плашкой «подключён»
+     (bp-mv-me смотрит метку bpMvVfyBack); из «Загрузки видео» — само окно */
+  if(!resume){ try{ sessionStorage.setItem('bpMvVfyBack', JSON.stringify({ p:'youtube', at:Date.now() })); }catch(e){} }
+  close(true);
+  try{ if(typeof window.bpAbcAfterVerify === 'function') window.bpAbcAfterVerify('youtube'); }catch(e){ E(e); }
+}
+function onClick(e){
+  var b = e.target.closest ? e.target.closest('[data-my]') : null; if(!b || !M || !M.el.contains(b)) return;
+  var k = b.getAttribute('data-my');
+  if(k === 'x'){ close(); return; }
+  if(k === 'find'){ find(b); return; }
+  if(k === 'check'){ check(b); return; }
+  if(k === 'copy'){ copy(b); return; }
+  if(k === 'change'){ S.code = ''; S.ch = null; step1(); return; }
+  if(k === 'done'){ done(); return; }
+  if(k === 'studio'){
+    var tg = tgApp();
+    if(tg){ e.preventDefault(); try{ tg.openLink(b.href); }catch(err){ E(err); } }
+  }
+}
+function onKey(e){
+  if(e.key === 'Enter' && e.target && e.target.id === 'mvyUrl'){ e.preventDefault(); var b = M && M.el.querySelector('[data-my=find]'); if(b) find(b); }
+}
+/* true — окно открыто (кодом можно); false — пусть будет прежний вход через Google */
+function open(cfg){
+  if(!mv() || window.bpIsGuest || !online() || !token()) return false;
+  if(!codeOn(cfg)) { pullCfg(); return false; }
+  if(typeof window.bpMvModal !== 'function') return false;
+  S = { url:'', ch:null, code:'', at:0, done:false };
+  M = window.bpMvModal('mvYtc', { title:'Подключить YouTube', mid:true, body:'', foot:' ', onClose:function(){ M = null; } });
+  if(!M) return false;
+  M.el.addEventListener('click', onClick);
+  M.el.addEventListener('keydown', onKey);
+  step1();
+  return true;
+}
+window.bpMvYtCode = open;
+window.bpMvYtCodeOn = function(){ return codeOn(); };
+/* настройки — заранее: к нажатию «Подключить» ответ уже есть */
+function boot(){ later(function(){ pullCfg(); }, 1500); }
+function later(fn, ms){ return setTimeout(function(){ try{ fn(); }catch(e){ E(e); } }, ms || 0); }
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
 </script>
 </body>

@@ -5114,6 +5114,67 @@ const routes = {
     };
   },
 
+  /* ── YouTube: подключение кодом в описании канала (15.10.2026) ────────
+     Владелец: «нажимаю „добавить аккаунт" YouTube — от Google жирное
+     предупреждение, что этому сайту лучше не давать доступ». Это экран
+     «приложение не проверено»: область youtube.readonly — «чувствительная»,
+     а проверку Google проходит только приложение со своим доменом (у нас
+     адрес хостинга). Здесь вход в Google не нужен: человек вписывает
+     короткий код в описание своего канала, сервер читает описание открытым
+     ключом (YT_API_KEY) и, если код там, записывает канал на того, кто
+     начинал. Код — на 30 минут, проверок — до 30. Просмотры роликов сервер
+     и так берёт этим ключом (ytVideos); доступ к аккаунту не нужен. После
+     подключения код из описания можно удалить. */
+  'POST /api/verify/youtube/code': async (req, body) => {
+    const u = auth(req);
+    if (!u) return { status: 401, body: { error: 'Нужен вход' } };
+    if (!rateLimit(req, 'ytcode', 10, 60000)) return tooOften;
+    if (!YT_API_KEY) return { status: 503, body: { error: 'Подключение YouTube кодом ещё не настроено: на сервере нет YT_API_KEY' } };
+    const ref = ytChannelRef(body && body.channel);
+    if (!ref) return { status: 400, body: { error: 'Вставьте ссылку на канал — youtube.com/@имя — или @имя' } };
+    let ch;
+    try { ch = await ytChannelGet(ref); }
+    catch (e) { return { status: 502, body: { error: 'YouTube не ответил — попробуйте ещё раз' } }; }
+    if (!ch) return { status: 404, body: { error: 'Канал не найден — проверьте ссылку' } };
+    ytCodeSweep();
+    const prev = ytCode.get(u.id);
+    const keep = prev && prev.channel.id === ch.id && Date.now() - prev.at < YT_CODE_TTL;
+    const rec = { channel: ch, code: keep ? prev.code : ytNewCode(), at: keep ? prev.at : Date.now(), tries: 0 };
+    ytCode.set(u.id, rec);
+    return { status: 200, body: {
+      code: rec.code, left: Math.max(0, Math.round((rec.at + YT_CODE_TTL - Date.now()) / 1000)),
+      channel: { id: ch.id, title: ch.title, url: ch.url, avatar: ch.avatar, subs: ch.subs, username: ch.username },
+    } };
+  },
+
+  'POST /api/verify/youtube/check': async (req) => {
+    const u = auth(req);
+    if (!u) return { status: 401, body: { error: 'Нужен вход' } };
+    if (!rateLimit(req, 'ytcheck', 20, 60000)) return tooOften;
+    if (!YT_API_KEY) return { status: 503, body: { error: 'Подключение YouTube кодом ещё не настроено: на сервере нет YT_API_KEY' } };
+    const rec = ytCode.get(u.id);
+    if (!rec || Date.now() - rec.at > YT_CODE_TTL) {
+      ytCode.delete(u.id);
+      return { status: 410, body: { error: 'Код устарел — получите новый' } };
+    }
+    if (++rec.tries > 30) { ytCode.delete(u.id); return { status: 429, body: { error: 'Слишком много проверок — получите новый код' } }; }
+    let ch;
+    try { ch = await ytChannelGet({ id: rec.channel.id }); }
+    catch (e) { return { status: 502, body: { error: 'YouTube не ответил — попробуйте ещё раз' } }; }
+    if (!ch) return { status: 404, body: { error: 'Канал не найден' } };
+    if (!ytHasCode(ch.description, rec.code)) {
+      return { status: 409, body: { error: 'Код пока не виден в описании канала', code: rec.code } };
+    }
+    /* как и при входе через площадку (/api/verify/confirm): канал — тому,
+       кто доказал, что управляет им сейчас; повтор в том же аккаунте
+       просто обновляет строку */
+    q.upsertChannel.run(u.id, 'youtube', ch.id, ch.title, ch.url, ch.subs, ch.avatar || null);
+    try { q.chanNums.run(ch.username || null, 0, null, null, ch.videosTotal == null ? null : ch.videosTotal, u.id, 'youtube', ch.id); }
+    catch (e) { /* колонки могли не появиться на старой базе */ }
+    ytCode.delete(u.id);
+    return { status: 200, body: { ok: true, platform: 'youtube', id: ch.id, title: ch.title, subs: ch.subs } };
+  },
+
   'GET /api/verify/config': async (req) => {
     if (!rateLimit(req, 'vfycfg', 60, 60000)) return tooOften;
     const platforms = {};
@@ -5124,6 +5185,9 @@ const routes = {
         redirect: OAUTH_BASE + '/api/verify/callback/' + p,
       };
     }
+    /* YouTube можно подключить и без входа в Google — кодом в описании
+       канала (нужен только открытый ключ YT_API_KEY) */
+    if (platforms.youtube) platforms.youtube.code = !!YT_API_KEY;
     return { status: 200, body: { platforms } };
   },
 
@@ -7080,6 +7144,50 @@ async function ytVideos(ids, how) {
       + (j && j.error && j.error.message ? ' — ' + String(j.error.message).slice(0, 160) : ''));
   }
   throw ttErr('youtube', 'YouTube не ответил: ' + ((last && last.message) || 'нет связи'));
+}
+/* ── YouTube: подключение кодом в описании канала (15.10.2026) ──────────
+   Ссылка на канал → { id } или { handle }. Принимаем youtube.com/@имя,
+   youtube.com/channel/UC…, m./www., просто @имя или UC-номер. */
+const YT_CODE_TTL = 30 * 60 * 1000;
+const ytCode = new Map();               /* id человека → { channel, code, at, tries } */
+function ytCodeSweep() { const now = Date.now(); for (const [k, v] of ytCode) if (now - v.at > YT_CODE_TTL) ytCode.delete(k); }
+function ytNewCode() {
+  const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let c = '';
+  for (let i = 0; i < 6; i++) c += A[crypto.randomInt(A.length)];
+  return 'BP-' + c;
+}
+function ytHasCode(desc, code) {
+  const flat = (x) => String(x || '').toUpperCase().replace(/[\s\u00a0\u200b]+/g, '');
+  return !!code && flat(desc).includes(flat(code));
+}
+function ytChannelRef(raw) {
+  const s = String(raw == null ? '' : raw).trim().slice(0, 300);
+  if (!s) return null;
+  let m = /(?:^|\/)channel\/(UC[\w-]{22})(?:[/?#]|$)/.exec(s) || /^(UC[\w-]{22})$/.exec(s);
+  if (m) return { id: m[1] };
+  m = /(?:^|youtube\.com\/|youtu\.be\/)@([\p{L}\p{N}_.\-]{3,100})/iu.exec(s) || /^@([\p{L}\p{N}_.\-]{3,100})$/u.exec(s);
+  if (m) return { handle: '@' + m[1] };
+  if (/^[\p{L}\p{N}_\-]{3,100}$/u.test(s)) return { handle: '@' + s };
+  return null;
+}
+/* канал открытым ключом: имя, счётчики, аватар и ОПИСАНИЕ (в нём код) */
+async function ytChannelGet(ref) {
+  const qs = new URLSearchParams({ part: 'snippet,statistics', key: YT_API_KEY });
+  if (ref.id) qs.set('id', ref.id); else qs.set('forHandle', ref.handle);
+  ytUnitsNow().n++;
+  const r = await fetch(YT_API_BASE + '/youtube/v3/channels?' + qs.toString(), { signal: AbortSignal.timeout(12000) });
+  const j = await r.json().catch(() => null);
+  if (!r.ok) throw new Error('YouTube: HTTP ' + r.status);
+  const it = j && Array.isArray(j.items) ? j.items[0] : null;
+  if (!it || !it.id) return null;
+  const sn = it.snippet || {}, st = it.statistics || {}, th = sn.thumbnails || {};
+  return {
+    id: String(it.id), title: String(sn.title || '').slice(0, 200), url: 'https://youtube.com/channel/' + it.id,
+    subs: Number(st.subscriberCount) || 0, avatar: String((th.medium || th.default || {}).url || ''),
+    username: String(sn.customUrl || '').slice(0, 120), videosTotal: Number(st.videoCount) || 0,
+    description: String(sn.description || ''),
+  };
 }
 /* Свежий доступ к YouTube-каналу. Google живёт часом, дальше меняем по
    refresh (его даёт access_type=offline при подтверждении канала).

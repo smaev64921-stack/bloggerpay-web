@@ -94,19 +94,19 @@ ok(!!boot && String(boot.chat_id) === '424242',
 const first = sent.filter((s) => s.text && s.reply_markup)[0];
 ok(!!first, 'на /start бот ответил сообщением');
 const kb = first && first.reply_markup && first.reply_markup.inline_keyboard;
-ok(!!kb && kb[0] && kb[0][0].url, 'в ответе — кнопка-ССЫЛКА на сайт', kb && kb[0]);
-ok(!!kb && !kb[0][0].web_app,
-   'это не мини-апп: сайт открывается в браузере, а не внутри Телеграма', kb && kb[0][0]);
+/* 15.10.2026: мини-приложение (на весь экран, без полосы встроенного
+   браузера «✕ · адрес · ⋮») — для https; на http осталась бы ссылка */
+ok(!!kb && kb[0] && kb[0][0].web_app && !kb[0][0].url, 'в ответе — кнопка мини-приложения (web_app), не ссылка во встроенный браузер', kb && kb[0]);
 ok(!!kb && /Открыть/.test(kb[0][0].text), 'на кнопке написано «Открыть…»', kb && kb[0][0].text);
 /* Метка from=tg говорит сайту, что человек пришёл из Телеграма. */
-ok(!!kb && kb[0][0].url === APP + '?from=tg', 'кнопка ведёт на сайт с меткой from=tg', kb && kb[0][0].url);
+ok(!!kb && kb[0][0].web_app.url === APP + '?from=tg', 'кнопка ведёт на сайт с меткой from=tg', kb && kb[0][0].web_app);
 ok(/BloggerPay/.test(first.text) && first.parse_mode === 'HTML', 'приветствие с разметкой');
 
 /* /start с приглашением — метка должна доехать до приложения */
 pushUpdate('/start r_12345');
 await wait(1500);
 const ref = sent.filter((s) => s.text && s.reply_markup).pop();
-const refUrl = ref && ref.reply_markup.inline_keyboard[0][0].url;
+const refUrl = ref && (ref.reply_markup.inline_keyboard[0][0].web_app || {}).url;
 ok(refUrl === APP + '?from=tg&startapp=r_12345', 'приглашение передаётся приложению через адрес', refUrl);
 
 /* произвольное сообщение — бот не молчит */
@@ -122,7 +122,7 @@ ok(!!adminMenu && adminMenu.menu_button.type === 'web_app' && adminMenu.menu_but
    'владельцу — кнопка «Админка» у поля ввода (мини-приложение /admin)', adminMenu);
 const adminCmds = sent.filter((s) => s._cfg === 'setMyCommands' && s.scope && String(s.scope.chat_id) === '424242')[0];
 ok(!!adminCmds && adminCmds.commands.some((c) => c.command === 'admin'), 'у владельца есть команда /admin', adminCmds);
-ok(!!kb && !kb.some((row) => row.some((b) => b.web_app)), 'у обычного человека кнопки админки нет', kb);
+ok(!!kb && !kb.some((row) => row.some((b) => (b.web_app && b.web_app.url === ADMIN_URL) || b.url === ADMIN_URL || /Админ/.test(b.text))), 'у обычного человека кнопки админки нет', kb);
 pushFrom(424242, '/start');
 await wait(1500);
 const aStart = sent.filter((s) => s.text && s.reply_markup && String(s.chat_id) === '424242').pop();
@@ -136,7 +136,7 @@ ok(!!aCmd && /Админ-панель/.test(aCmd.text) && !!aCmd.reply_markup.in
 pushUpdate('/admin');
 await wait(1500);
 const nCmd = sent.filter((s) => s.text && String(s.chat_id) === '555').pop();
-ok(!!nCmd && !/Админ-панель/.test(nCmd.text) && !JSON.stringify(nCmd.reply_markup || {}).includes('web_app'), 'у остальных /admin админку не открывает', nCmd && nCmd.text);
+ok(!!nCmd && !/Админ-панель/.test(nCmd.text) && !JSON.stringify(nCmd.reply_markup || {}).includes(ADMIN_URL), 'у остальных /admin админку не открывает', nCmd && nCmd.text);
 
 
 /* «уже опрашивают» и плохой токен — понятные сообщения */
