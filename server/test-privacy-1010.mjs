@@ -191,6 +191,11 @@ try {
   const camp = 'pvcamp' + t;
   const cp = await api('POST', '/api/sync/put', { kind: 'camp', rid: camp, data: { id: camp, name: 'Тест', status: 'active' } }, { token: adv.token });
   ok(cp.status === 200, 'задание заведено', cp.body);
+  /* вступить можно только в задание с замороженным бюджетом (аудит 16.10.2026);
+     бюджет задания + 7% комиссии сверху (14.10.2026) — в пополнение 5 000 */
+  await api('POST', '/api/topup', { amount: 5000, opKey: randomUUID() }, { token: adv.token });
+  const hd = await api('POST', '/api/deals/hold', { dealId: 'camp:' + camp, amount: 4000, opKey: randomUUID() }, { token: adv.token });
+  ok(hd.status === 200, 'бюджет задания заморожен', hd.body);
   for (const u of [b1, b2]) {
     const j = await api('POST', '/api/tasks/join', { campId: camp }, { token: u.token });
     ok(j.status === 200, 'вступил ' + u.id, j.body);
@@ -221,9 +226,7 @@ try {
 
   console.log('\nОбщий рейтинг: имена как на доске задания');
   const tgName = await reg('tg' + t, 'blogger', 'Пользователь 7654321');
-  await api('POST', '/api/topup', { amount: 5000, opKey: randomUUID() }, { token: adv.token });
-  /* бюджет задания + 7% комиссии сверху (14.10.2026) — в пополнение 5 000 */
-  await api('POST', '/api/deals/hold', { dealId: 'camp:' + camp, amount: 4000, opKey: randomUUID() }, { token: adv.token });
+  /* бюджет задания заморожен выше, до вступления */
   const rel = await api('POST', '/api/deals/release', { dealId: 'camp:' + camp, toUserId: tgName.id, amount: 2000, opKey: randomUUID() }, { token: adv.token });
   ok(rel.status === 200, 'выплата блогеру с именем по умолчанию', rel.body);
   const lb = await api('GET', '/api/leaderboard');

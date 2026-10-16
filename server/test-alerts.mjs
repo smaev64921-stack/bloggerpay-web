@@ -85,7 +85,7 @@ ok(r1.status === 200 && r1.body.taken === 1, 'ошибка принята сер
 ok(sent.length === 1, 'админу ушло ровно одно сообщение', { got: sent.length });
 const m1 = sent[0] || {};
 ok(String(m1.chat_id) === '424242', 'сообщение адресовано чату из ADMIN_CHAT_ID', m1);
-ok(/Сломалась кнопка вывода/.test(m1.text || '') && /app\.js:10/.test(m1.text || ''),
+ok(/Сломалась кнопка вывода/.test(m1.text || '') && /app[.․]js:10/.test(m1.text || ''),
   'в сообщении есть текст ошибки и место', m1.text);
 ok(/гость/.test(m1.text || ''), 'видно, что ошибка у невошедшего', m1.text);
 
@@ -119,6 +119,24 @@ const r6 = await report(BASE, [{ message: 'Ошибка после потолк�
 await sleep(500);
 ok(r6.body.taken === 1 && sent.length === 16, 'после потолка база пишется, чат молчит', { sent: sent.length });
 
+/* 6б. Гости — свой кошелёк тревог (аудит 16.10.2026): потоп от невошедших
+   не глушит ошибки вошедших; ссылки и @имена в тексте обезврежены */
+const regU = await fetch(BASE + '/api/register', {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email: 'al' + Date.now() + '@t.ru', name: 'U', password: 'Passw0rd!x', role: 'blogger' }),
+}).then((r) => r.json());
+const before6b = sent.length;
+await fetch(BASE + '/api/errors', {
+  method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + regU.token },
+  body: JSON.stringify({ errors: [{ message: 'Касса отключена, войдите https://evil.example/x или @evilbot', where: 'u.js:1' }] }),
+});
+await sleep(600);
+const m6 = sent[sent.length - 1] || {};
+ok(sent.length === before6b + 1 && /Касса отключена/.test(m6.text || ''),
+  'после «молчу» про гостей ошибка вошедшего доходит', { sent: sent.length - before6b });
+ok(!/:\/\//.test(m6.text || '') && !/evil\.example/.test(m6.text || '') && !/@evilbot/.test(m6.text || ''),
+  'ссылки и @имена в тексте ошибки не кликабельны', m6.text);
+
 /* 7. Тело «null» — валидный JSON, но не объект: раньше это давало
    ложный 500 и тревогу; теперь тихо приводится к пустому телу */
 const rNull = await fetch(BASE + '/api/errors', {
@@ -132,7 +150,7 @@ const rNullReg = await fetch(BASE + '/api/register', {
 });
 ok(rNullReg.status === 400, 'тело null на регистрации — честный 400, а не 500', { status: rNullReg.status });
 await sleep(400);
-ok(sent.length === 16, 'ложных тревог о 500 из-за null не появилось', { sent: sent.length });
+ok(sent.length === before6b + 1, 'ложных тревог о 500 из-за null не появилось', { sent: sent.length });
 
 srv.kill();
 

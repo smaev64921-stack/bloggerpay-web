@@ -446,6 +446,8 @@ const common = {
   TT_AUTH_BASE: TT, TT_API_BASE: TT, TT_WEB_BASE: TT,
   YT_CLIENT_ID: 'yt-client', YT_CLIENT_SECRET: 'yt-secret', YT_API_BASE: GG, YT_OAUTH_BASE: GG, YT_WEB_BASE: GG,
   TRUST_PROXY: '1', ADMIN_CHAT_ID: '', RESEND_API_KEY: '', VID_AUTO_ACCEPT_H: '', VID_TRACK_DAYS: '',
+  /* без раннего фонового круга: проверка сама «старит» строки и считает итоги круга */
+  VID_SYNC_FIRST_S: '0',
   TEST_TOPUP: '1', TEST_TOPUP_OPEN: '1', YOOKASSA_SHOP_ID: '', YOOKASSA_SECRET_KEY: '',
   /* механика начислений — без комиссий; комиссии 7% проверяет test-fees.mjs */
   TOPUP_FEE_PCT: '0', TASK_FEE_PCT: '0', PAYOUT_FEE_PCT: '0', WITHDRAW_FEE_PCT: '0',
@@ -481,8 +483,13 @@ const setRow = (id, sets) => {
   dbx().prepare('UPDATE task_videos SET ' + keys.map((k) => k + ' = ?').join(', ') + ' WHERE id = ?')
     .run(...keys.map((k) => sets[k]), id);
 };
-/* «Прошли сутки»: последний замер и последняя попытка — 21 час назад. */
-const ageRow = (id) => setRow(id, { stats_at: Date.now() - 21 * 3600e3, last_try_at: Date.now() - 21 * 3600e3 });
+/* «Прошли сутки»: последний замер и последняя попытка — 21 час назад
+   (и промах, если он был: он не моложе последней попытки). */
+const ageRow = (id) => {
+  const r = row(id), d = 21 * 3600e3;
+  setRow(id, Object.assign({ stats_at: Date.now() - d, last_try_at: Date.now() - d },
+    r && r.last_miss_at ? { last_miss_at: Math.min(r.last_miss_at, Date.now()) - d } : {}));
+};
 /* Сколько раз проведена операция с этим ключом (выплата прибавки). */
 const opsOf = (key) => Number(dbx().prepare('SELECT COUNT(*) AS n FROM ops WHERE op_key = ?').get(key).n);
 function stop() {
@@ -1148,6 +1155,13 @@ try {
   ok(r2.status === 200, 'второй круг прошёл', r2.body);
   const kA4 = (await getVid(vA4.id, A.token)).body.video;
   ok(kA4.status === 'review' && row(vA4.id).miss === 1, 'K: второй промах через полчаса не считается', kA4);
+  /* #32: ролик на проверке после промаха обычный круг не опрашивает до
+     VID_MISS_GAP_MS от промаха (раньше — каждые полчаса, квота YouTube). */
+  setRow(vA4.id, { stats_at: Date.now() - 21 * 3600e3, last_try_at: Date.now() - 21 * 3600e3 });
+  const qa4 = fakeLog.length;
+  await syncDay();
+  ok(!fakeLog.slice(qa4).some((l) => l.startsWith('Q ') && l.includes(ID.A4)) && row(vA4.id).miss === 1,
+    'K: после промаха ролик на проверке не опрашивается каждый круг', fakeLog.slice(qa4));
   setRow(vA4.id, { last_miss_at: Date.now() - 21 * 3600e3 });
   await sync();
   const gA4 = (await getVid(vA4.id, A.token)).body.video;
@@ -1457,6 +1471,17 @@ try {
   for (let i = 0; i < 3; i++) { setRow(vE5.id, { last_try_at: Date.now() - 4 * 3600e3 }); await sync(); }
   ok(row(vE5.id).status === 'active' && row(vE5.id).paid === 0 && (await bal(E)).available === eBal2,
     'три круга подряд — всё ещё не начислено', row(vE5.id));
+  /* #30: «Обновить» у рекламодателя при паузе «нет доступа» — карточка и
+     текст для него; просьба «переподключите» — только блогеру. */
+  setRow(vE5.id, { last_try_at: Date.now() - 4 * 3600e3, stats_at: Date.now() - 4 * 3600e3 });
+  const rfO5 = await refresh(vE5.id, ADV);
+  ok(rfO5.status === 200 && rfO5.body.ok && rfO5.body.wait === 'access' && rfO5.body.video
+    && rfO5.body.video.holdKind === 'access' && /Блогер потерял доступ к аккаунту TikTok/.test(rfO5.body.note || ''),
+  'рекламодатель жмёт «Обновить» на паузе доступа — 200, карточка и «блогер потерял доступ», не «переподключите»', rfO5.body);
+  setRow(vE5.id, { last_try_at: Date.now() - 4 * 3600e3, stats_at: Date.now() - 4 * 3600e3 });
+  const rfB5 = await refresh(vE5.id, E);
+  ok(rfB5.status === 409 && /^(token|scope)$/.test(rfB5.body.code || ''), 'блогеру «Обновить» — по-прежнему «переподключите»', rfB5.body);
+  ok(row(vE5.id).paid === 0 && (await bal(E)).available === eBal2, '«Обновить» на паузе денег не двигает');
   /* Владелец сам решил «засчитать» — начисление по цифрам на момент решения, и подсчёт закрыт. */
   const rE7 = await review(vE7.id, ADV, true);
   ok(rE7.body.settle === 'held' && row(vE7.id).hold_kind === 'access', 'второй ролик тоже ждёт');
@@ -1973,8 +1998,13 @@ try {
   ok(row(n6.body.video.id).status === 'active' && row(n6.body.video.id).miss === 1 && (await bal(N)).available === nY0,
     'площадка один раз не отдала засчитанный ролик — он не снят, ничего нового не начислено', row(n6.body.video.id));
   setRow(n6.body.video.id, { last_try_at: Date.now() - 25 * 60e3 });
+  const qn6 = fakeLog.length;
   await syncDay();
   ok(row(n6.body.video.id).status === 'active' && row(n6.body.video.id).miss === 1, 'второй промах в тот же день не считается');
+  /* #32: до VID_MISS_GAP_MS от промаха площадку о ролике не спрашиваем
+     (раньше — каждые полчаса до 20 часов, квота YouTube). */
+  ok(!fakeLog.slice(qn6).some((l) => l.startsWith('Q ') && l.includes(ID.N6)),
+    'после промаха засчитанный ролик не опрашивается каждый круг', fakeLog.slice(qn6));
   V.set(ID.N6, n6v);
   ageRow(n6.body.video.id);
   await syncDay();
@@ -2260,7 +2290,8 @@ try {
      доплатил. Замер позже конца срока больше чем на сутки не считается. */
   console.log('\n— спор блогера по бюджету задания, блокировка, поздний замер');
   {
-  const W = await reg('blogerw', 'blogger');
+  /* «blogerw» уже занят выше (общий набор блогеров) — второй с той же почтой получал 409 */
+  const W = await reg('blogerdw', 'blogger');
   const Z = await reg('blogerz', 'blogger');
   ok(await linkTikTok(W, 'code-W') && await linkTikTok(Z, 'code-Z'), 'Дабл и Зет подтвердили TikTok');
   await api('POST', '/api/topup', { amount: 50000, opKey: 'topw-' + tag }, ADV.token);

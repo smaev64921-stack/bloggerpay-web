@@ -126,5 +126,18 @@ ok(assessVideo(null, null, null).level === 'ok', 'пустой вход не р�
 ok(assessVideo({ views: 8000, likes: 30, comments: 0, shares: 0 }, [], {}, { vidWeightSilent: 0 }).risk === 35,
   'пороги ролика настраиваются снаружи');
 
+/* #31: чего площадка не сообщила — неизвестно, а не ноль (YouTube: репостов нет вовсе) */
+const ytOk = assessVideo({ views: 9000, likes: 600, comments: 25, shares: 0, noShares: true }, [], {});
+ok(ytOk.level === 'ok' && ytOk.risk === 0, 'YouTube: живые комментарии, репостов у площадки нет — не «тишина»', ytOk);
+const ytOff = assessVideo({ views: 9000, likes: 600, comments: 0, shares: 0, noShares: true, commentsOff: true }, [], {});
+ok(ytOff.level === 'ok' && ytOff.risk === 0, 'YouTube: комментарии выключены — «ни одного комментария и репоста» не считается', ytOff);
+const ytHid = assessVideo({ views: 9000, likes: 0, comments: 0, shares: 0, noShares: true, commentsOff: true, likesHidden: true }, days, { medViews: 100, followers: 50 });
+ok(ytHid.level === 'ok' && ytHid.risk === 0, 'YouTube: лайки скрыты и комментарии выключены — ни «нет лайков», ни «тишины», ни скачка', ytHid);
+const ytQuiet = assessVideo({ views: 9000, likes: 600, comments: 0, shares: 0, noShares: true }, [], {});
+ok(ytQuiet.risk === 25 && /ни одного комментария\.$/.test(ytQuiet.reasons[0]) && !/репост/.test(ytQuiet.reasons[0]),
+  'YouTube: комментарии открыты и их ноль — признак по комментариям, без слова «репост»', ytQuiet.reasons);
+const ytNoLikes = assessVideo({ views: 9000, likes: 5, comments: 20, shares: 0, noShares: true }, [], {});
+ok(ytNoLikes.risk === 35, 'YouTube: лайки видны, их почти нет — признак лайков остаётся', ytNoLikes);
+
 console.log(`\nИтого: ${passed} ok, ${failed} FAIL\n`);
 process.exit(failed ? 1 : 0);

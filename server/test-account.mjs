@@ -59,6 +59,22 @@ try {
   const T4 = (await api('POST', '/api/login', { email, password: P2 })).body.token;
   ok(!!T4, 'новый пароль входит');
 
+  /* oldAlt (аудит 16.10.2026): окно «Пароль» шлёт текущий пароль двумя видами
+     — производной (old) и как есть (oldAlt); промах за попытку — один */
+  {
+    const em2 = 'alt' + tag + '@t.ru', RAW = 'пароль-открытый-56', D1 = 'd'.repeat(64), D2 = 'e'.repeat(64);
+    const T7 = (await api('POST', '/api/register', { email: em2, name: 'Старый', role: 'blogger', password: RAW })).body.token;
+    const miss2 = await api('POST', '/api/password/change', { old: 'f'.repeat(64), oldAlt: 'не-тот', password: D1 }, T7);
+    ok(miss2.status === 403 && miss2.body.left === 4, 'oldAlt: оба варианта мимо — один промах (осталось 4)', miss2.body);
+    const alt = await api('POST', '/api/password/change', { old: 'f'.repeat(64), oldAlt: RAW, password: D1 }, T7);
+    ok(alt.status === 200, 'oldAlt: подошёл пароль «как есть» — сменён на производную', alt.body);
+    ok((await api('POST', '/api/login', { email: em2, password: D1 })).status === 200, 'oldAlt: новый (производная) входит');
+    const alt2 = await api('POST', '/api/password/change', { old: D1, oldAlt: 'что-то-ещё', password: D2 }, T7);
+    ok(alt2.status === 200, 'old (производная) подходит и с oldAlt рядом', alt2.body);
+    const same2 = await api('POST', '/api/password/change', { old: D2, oldAlt: 'x', password: D2 }, T7);
+    ok(same2.status === 400 && /совпадает/.test(same2.body.error || ''), 'oldAlt: «совпадает с текущим» по подошедшему варианту', same2.body);
+  }
+
   /* перебор старого пароля упирается в паузу */
   let locked = false;
   for (let i = 0; i < 7 && !locked; i++) {

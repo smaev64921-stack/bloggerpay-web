@@ -841,7 +841,10 @@ Google при обмене доступа → `youtube`, оплаченный р
   `refresh_access_token?grant_type=ig_refresh_token`, новый срок — `putToken`.
 - Цифры: публикация по id (`IG_FIELDS`) + `/{id}/insights?metric=views,…`
   (нет метрики, код 100 → прежнее имя `plays`). Длительность Instagram не
-  отдаёт (`duration: null`).
+  отдаёт (`duration: null`): в задании с «мин. N сек» Reels принимается, но
+  в снимке условий `durUnchecked: N` → DTO `durUnchecked` — рекламодатель
+  видит «проверьте длину сами» (карточка и уведомление), блогер — что
+  короткий ролик могут не засчитать (аудит 16.10.2026, #27).
 - Ошибки Graph: 190 → `token`, 10/200–299 → `scope`, остальное — `instagram` (502).
 - Обратные вызовы Meta: `POST /api/verify/instagram/deauth|delete` →
   `handleIgSigned`: подпись `signed_request` (HMAC-SHA256 секретом IG,

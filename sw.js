@@ -18,7 +18,7 @@
    Обновление: меняем VERSION — старые кэши удаляются в activate.
    ══════════════════════════════════════════════════════════════════════ */
 
-var VERSION = 'bp-v164';
+var VERSION = 'bp-v165';
 var CACHE = 'bloggerpay-' + VERSION;
 
 /* Ничего не кладём заранее: имя главного файла меняется от версии к
@@ -93,7 +93,13 @@ self.addEventListener('notificationclick', function (e) {
       .then(function (list) {
         for (var i = 0; i < list.length; i++) {
           var c = list[i];
-          if (c.url.indexOf(self.location.origin) === 0 && 'focus' in c) return c.focus();
+          if (c.url.indexOf(self.location.origin) === 0 && 'focus' in c) {
+            /* Вкладка уже открыта: раньше её только поднимали, и ссылка
+               уведомления (/?go=campaigns…) никуда не вела. Адрес — сообщением:
+               приложение само откроет раздел (bp-mv-flag), без перезагрузки. */
+            try { c.postMessage({ type: 'bp-go', url: url }); } catch (err) {}
+            return c.focus();
+          }
         }
         if (self.clients.openWindow) return self.clients.openWindow(url);
         return null;
@@ -138,6 +144,15 @@ self.addEventListener('fetch', function (e) {
      мимо: там разберётся свой работник. */
   if (url.pathname === '/sauce' || url.pathname.indexOf('/sauce/') === 0) return;
 
+  /* Копия страницы — под адресом БЕЗ строки запроса (аудит 16.10).
+     Возвраты со входа и подключения соцсети приходят на ?vfy=…&claim=…,
+     ?glogin=…, кнопка бота — на ?from=tg: под каждый такой адрес ложилась
+     своя полная копия страницы (7 МБ, до смены VERSION), с одноразовыми
+     метками в ключе кэша. А без сети копия искалась по точному адресу —
+     открытие с ?from=tg не находило сохранённую для «/». Сервер отдаёт
+     одну и ту же страницу при любой строке запроса. */
+  var key = req.mode === 'navigate' ? new Request(url.origin + url.pathname) : req;
+
   e.respondWith(
     fetch(req)
       .then(function (res) {
@@ -146,13 +161,13 @@ self.addEventListener('fetch', function (e) {
         if (res && res.ok && res.status === 200 && res.type === 'basic') {
           var copy = res.clone();
           caches.open(CACHE).then(function (c) {
-            c.put(req, copy).catch(function () {});
+            c.put(key, copy).catch(function () {});
           }).catch(function () {});
         }
         return res;
       })
       .catch(function () {
-        return caches.match(req).then(function (hit) {
+        return caches.match(key).then(function (hit) {
           if (hit) return hit;
           /* Переход по адресу без сети и без копии — показываем страницу,
              а не браузерную ошибку. */

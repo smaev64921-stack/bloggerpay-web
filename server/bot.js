@@ -368,7 +368,15 @@ async function loop() {
       }
       if (e.code === 401) {
         console.error('[бот] Токен не подошёл. Проверьте BOT_TOKEN в server/.env.');
-        process.exit(1);
+        /* Отдельный процесс — падаем. Внутри server.js (аудит 16.10.2026)
+           process.exit ронял сайт, кассу и вебхук оплаты из-за отозванного
+           токена: здесь останавливаем только опрос, сервер живёт дальше,
+           причину пишем в журнал «Поломки» (хук onStop из server.js). */
+        if (require.main === module) process.exit(1);
+        stopping = true;
+        console.error('[бот] опрос остановлен — сайт и касса работают. Новый токен → перезапуск сервера.');
+        try { if (typeof HOOKS.onStop === 'function') HOOKS.onStop('token'); } catch (_) {}
+        break;
       }
       /* Обрыв связи или тайм-аут опроса — это норма, просто ждём и снова. */
       const why = e.name === 'TimeoutError' ? 'нет ответа' : e.message;

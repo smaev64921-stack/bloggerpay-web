@@ -527,6 +527,32 @@ function syncBump(kind, rid) {
     }
   } catch (e) { console.error('[sync] не удалось обновить конверт', kind, rid, e && e.message); }
 }
+/* Бюджет задания вернули целиком (завершили, удалили, вернули всё): если
+   конверт ещё «active»/«paused» — переписываем его со статусом «done» и
+   новым ver (аудит 16.10.2026). Удаление в приложении конверта не
+   отправляло вовсе, и удалённое задание у всех блогеров так и стояло
+   «активным». Автор, адресат и время создания — прежние. */
+function syncCampClose(rid) {
+  try {
+    const ex = q.syncGet.get('camp', String(rid));
+    if (!ex) return false;
+    let d = null;
+    try { d = JSON.parse(ex.data); } catch (e) { return false; }
+    if (!d || typeof d !== 'object' || (d.status !== 'active' && d.status !== 'paused')) return false;
+    d.status = 'done';
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      q.syncDel.run('camp', ex.rid);
+      q.syncIns.run('camp', ex.rid, ex.a_id, ex.b_id, ex.from_id, JSON.stringify(d), ex.created_at);
+      db.exec('COMMIT');
+    } catch (e) {
+      try { db.exec('ROLLBACK'); } catch (_) {}
+      throw e;
+    }
+    tsumCache.at = 0;
+    return true;
+  } catch (e) { console.error('[sync] не удалось закрыть задание', rid, e && e.message); return false; }
+}
 /* Комиссии сервиса (14.10.2026, решение владельца):
    · пополнение — 7% СВЕРХУ суммы: просит 10 000 ₽ на баланс — платит 10 700 ₽;
    · задание — 7% сверху бюджета с рекламодателя (бюджет 10 000 ₽ — со счёта
@@ -1052,6 +1078,22 @@ db.exec(`CREATE TABLE IF NOT EXISTS task_video_stats (
    получил бы чужой аккаунт вместе с балансом (та же причина, по которой
    телеграм-вход связывается по tg_id). */
 try { db.exec('ALTER TABLE users ADD COLUMN presence_off INTEGER NOT NULL DEFAULT 0'); } catch (e) { /* уже есть */ }
+/* Номер телефона из «Верификации» (аудит 16.10.2026, C62): раньше жил только
+   в браузере — на новом устройстве шаг «Телефон» снова был пустым и
+   принимал любой другой номер. Пишется один раз и больше не меняется
+   (решение владельца 14.10: «номер телефона менять нельзя»). */
+try { db.exec('ALTER TABLE users ADD COLUMN kyc_phone TEXT'); } catch (e) { /* уже есть */ }
+try { db.exec('ALTER TABLE users ADD COLUMN kyc_phone_at INTEGER'); } catch (e) { /* уже есть */ }
+const qPhone = {
+  get: db.prepare('SELECT kyc_phone, kyc_phone_at FROM users WHERE id = ?'),
+  set: db.prepare('UPDATE users SET kyc_phone = ?, kyc_phone_at = ? WHERE id = ? AND kyc_phone IS NULL'),
+};
+/* Отпечаток ключа владельца, которым аккаунт взял права через
+   /api/admin/claim (аудит 16.10.2026): смена ADMIN_KEY снимает такие
+   права при старте (см. ADMIN_FP ниже). Колонка новая — у тех, кто уже
+   админ, ставим отпечаток текущего ключа, чтобы выкладка никого не сняла. */
+let ADMIN_FP_NEW = false;
+try { db.exec('ALTER TABLE users ADD COLUMN admin_fp TEXT'); ADMIN_FP_NEW = true; } catch (e) { /* уже есть */ }
 try { db.exec('ALTER TABLE users ADD COLUMN google_sub TEXT'); }
 catch (e) { /* уже есть */ }
 try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_gsub ON users(google_sub) WHERE google_sub IS NOT NULL'); }
@@ -1450,8 +1492,27 @@ const q = {
       COALESCE(SUM(CASE WHEN bucket='available' THEN amount END), 0) AS available,
       COALESCE(SUM(CASE WHEN bucket='hold' THEN amount END), 0) AS hold
     FROM ledger WHERE user_id = ?`),
-  myLedger: db.prepare(`SELECT id, bucket, amount, kind, ref, created_at
-    FROM ledger WHERE user_id = ? ORDER BY id DESC LIMIT 100`),
+  /* История кошелька (аудит 16.10.2026): постранично (before = id) и с
+     фильтром по корзине — раньше отдавались последние 100 строк всех
+     корзин, и у рекламодателя их целиком съедали строки заморозки
+     (выплаты блогерам), пополнений в истории не оставалось вовсе.
+     camp — название задания из его конверта (у удалённого задания конверт
+     остаётся со статусом «done»): в браузере удалённого задания уже нет.
+     Только конверт того, кто платит по этому заданию (не чужая подделка
+     с тем же номером), общий или адресованный этому человеку. */
+  myLedger: db.prepare(`SELECT l.id, l.bucket, l.amount, l.kind, l.ref, l.created_at,
+      CASE WHEN l.ref LIKE 'camp:%' THEN (SELECT CASE WHEN json_valid(s.data)
+          THEN CAST(COALESCE(json_extract(s.data, '$.name'), json_extract(s.data, '$.title')) AS TEXT) END
+        FROM sync s WHERE s.kind = 'camp' AND s.rid = substr(l.ref, 6)
+          AND (s.a_id = l.user_id OR s.b_id IS NULL OR s.b_id = l.user_id)
+          AND EXISTS (SELECT 1 FROM deals d WHERE d.id = l.ref AND d.payer_id = s.a_id) LIMIT 1) END AS camp
+    FROM ledger l WHERE l.user_id = ? AND (? = '' OR l.bucket = ?) AND (? = 0 OR l.id < ?)
+    ORDER BY l.id DESC LIMIT ?`),
+  /* Итоги для плиток кошелька — по всему журналу, не по странице. */
+  myLedgerTotals: db.prepare(`SELECT
+      COALESCE(SUM(CASE WHEN kind = 'topup' THEN amount END), 0) AS topup,
+      COALESCE(SUM(CASE WHEN kind IN ('payout','settle-payout') THEN amount END), 0) AS earned
+    FROM ledger WHERE user_id = ? AND bucket = 'available'`),
   /* Рейтинг блогеров: одна выплата в журнале = одна закрытая сделка или
      принятое задание. Денег в рейтинге нет — только счётчик.
      Виды выплат два: обычная 'payout' и 'settle-payout' — деньги, которые
@@ -1513,10 +1574,14 @@ const q = {
   /* Задания заблокированного автора в общую ленту не попадают.
      Витрина гостя (аудит 16.10.2026) — только задания с бюджетом,
      замороженным сейчас (held): без денег объявление — просто текст. */
-  publicCamps: db.prepare(`SELECT rid, data, updated_at FROM sync
-    WHERE kind = 'camp' AND b_id IS NULL AND a_id NOT IN (SELECT id FROM users WHERE is_blocked = 1)
-      AND EXISTS (SELECT 1 FROM deals d WHERE d.id = 'camp:' || sync.rid AND d.payer_id = sync.a_id AND d.status = 'held')
-    ORDER BY ver DESC LIMIT ?`),
+  /* Статус «active» — в самом запросе, ДО ограничения: иначе 60 свежих
+     неактивных конвертов (завершённые, на паузе) вытесняли с витрины все
+     активные. Бюджет витрины — из заморозки (held), не из текста конверта. */
+  publicCamps: db.prepare(`SELECT s.rid, s.data, s.created_at, s.updated_at, d.amount AS held_amount
+    FROM sync s JOIN deals d ON d.id = 'camp:' || s.rid AND d.payer_id = s.a_id AND d.status = 'held'
+    WHERE s.kind = 'camp' AND s.b_id IS NULL AND s.a_id NOT IN (SELECT id FROM users WHERE is_blocked = 1)
+      AND (CASE WHEN json_valid(s.data) THEN json_extract(s.data, '$.status') END) = 'active'
+    ORDER BY s.ver DESC LIMIT ?`),
   /* пределы обмена (см. SYNC_CAMP_LIVE): занятое человеком — по последнему
      писавшему, задания — по автору; связь двух людей — для лимита новых
      личных диалогов */
@@ -1783,6 +1848,10 @@ const q = {
     WHERE deal_id = ? AND status = 'open'`),
   closeDisputesFor: db.prepare(`UPDATE disputes SET status = 'closed', closed_at = datetime('now')
     WHERE deal_id = ? AND status = 'open' AND payee_id = ?`),
+  /* /admin · «Снять спор» по строке (аудит 16.10.2026): ровно этот спор —
+     снятие спора плательщика «по всей сделке» не трогает споры блогеров. */
+  closeDisputeById: db.prepare(`UPDATE disputes SET status = 'closed', closed_at = datetime('now')
+    WHERE id = ? AND deal_id = ? AND status = 'open'`),
   /* Снятие спора ТЕМ, КТО ЕГО ОТКРЫЛ. Отдельные запросы, а не общий
      UPDATE: тогда чужую строку нельзя закрыть даже по недосмотру. */
   closeDisputesByOpener: db.prepare(`UPDATE disputes SET status = 'closed', closed_at = datetime('now')
@@ -1919,12 +1988,17 @@ const q = {
      Замороженный не опрашиваем. Очередь — по последней попытке: ролики,
      которые площадка не отдаёт, не стоят вечно впереди остальных.
      Оплаченный ролик после неудачной попытки ждёт сутки от попытки, а не
-     от замера: иначе мёртвый доступ дёргал бы площадку каждые полчаса. */
+     от замера: иначе мёртвый доступ дёргал бы площадку каждые полчаса.
+     Ролик на проверке, который площадка один раз не вернула, ждёт
+     следующего замера VID_MISS_GAP_MS от промаха ($miss): раньше второй
+     промах всё равно не считается, а запрос каждые полчаса тратил квоту
+     YouTube (аудит 16.10.2026, #32). */
   vidDue: db.prepare(`SELECT * FROM task_videos WHERE COALESCE(frozen, 0) = 0
     AND (status = 'review'
       OR (status = 'paid' AND COALESCE(track_ends_at, COALESCE(posted_at, created_at) + $track) > $now
         AND ($force = 1 OR COALESCE(last_try_at, 0) < $stale)))
     AND ($force = 1 OR stats_at IS NULL OR stats_at < $stale)
+    AND ($force = 1 OR last_miss_at IS NULL OR last_miss_at < $miss)
     ORDER BY COALESCE(last_try_at, 0) ASC, id ASC LIMIT $lim`),
   /* Каким засчитанным пора к vidAccrue (замер + прибавка):
      - замороженные (финальный замер уже снят или считать нечем) — каждый
@@ -1932,7 +2006,11 @@ const q = {
        снятия спора и закрываются без запроса к площадке;
      - пауза «нет доступа» — не чаще раза в 3 часа;
      - остальные — раз в сутки (порог 20 ч), а с вышедшим сроком — сразу
-       (финальный замер), повтор после сбоя — не чаще раза в 20 минут.
+       (финальный замер), повтор после сбоя — не чаще раза в 20 минут;
+       после промаха (площадка не вернула ролик) — не раньше VID_MISS_GAP_MS
+       от него ($miss: раньше второй промах не считается), а с вышедшим
+       сроком — не чаще раза в 3 часа ($access): финальный замер ещё
+       успеет, если ролик вернётся (аудит 16.10.2026, #32).
      force — все засчитанные (кнопка владельца и проверки). */
   vidAccrueDue: db.prepare(`SELECT id FROM task_videos WHERE status = 'active' AND (
       $force = 1
@@ -1942,7 +2020,9 @@ const q = {
         AND COALESCE(last_try_at, 0) < $access)
       OR (COALESCE(frozen, 0) = 0 AND NOT (COALESCE(pay_hold, 0) = 1 AND COALESCE(hold_kind, '') = 'access')
         AND COALESCE(last_try_at, 0) < $retry
-        AND (stats_at IS NULL OR stats_at < $stale OR COALESCE(track_ends_at, 0) <= $now)))
+        AND (stats_at IS NULL OR stats_at < $stale OR COALESCE(track_ends_at, 0) <= $now)
+        AND (last_miss_at IS NULL
+          OR last_miss_at < (CASE WHEN COALESCE(track_ends_at, 0) <= $now THEN $access ELSE $miss END))))
     ORDER BY COALESCE(last_try_at, 0) ASC, id ASC LIMIT 200`),
   /* Ролики оффера, по которым деньги ещё могут уйти блогеру. */
   vidLive: db.prepare(`SELECT * FROM task_videos WHERE camp_id = ? AND status IN ('review','active','rejected')`),
@@ -2032,6 +2112,9 @@ const q = {
       AND u.is_blocked = 0
     GROUP BY v.blogger_id
     ORDER BY views DESC, earned DESC, first_at ASC, v.blogger_id ASC LIMIT 5000`),
+  /* Выплаты по роликам задания — для сумм «на баланс» (комиссия с каждого). */
+  boardPaid: db.prepare(`SELECT blogger_id AS uid, paid FROM task_videos
+    WHERE camp_id = ? AND COALESCE(paid, 0) > 0`),
   /* Канал, с которого у блогера самый смотримый ролик в этом задании. */
   boardChan: db.prepare(`SELECT platform, external_id, handle FROM task_videos
     WHERE camp_id = ? AND blogger_id = ? AND status IN ('review','rejected','active','paid')
@@ -2413,6 +2496,24 @@ async function handleIgSigned(req, res, url) {
   return send(res, 200, { ok: true });
 }
 
+/* Обход тела без рекурсии: '' — всё хорошо, иначе текст отказа. */
+function bodyTrap(root) {
+  if (root === null || typeof root !== 'object') return '';
+  const stack = [[root, 1]];
+  const own = Object.prototype.hasOwnProperty;
+  while (stack.length) {
+    const [o, d] = stack.pop();
+    if (d > 100) return 'Слишком глубокая вложенность в теле запроса';
+    if (!Array.isArray(o) && (own.call(o, 'toString') || own.call(o, 'valueOf'))) {
+      return 'Недопустимое поле в теле запроса';
+    }
+    for (const k in o) {
+      const v = o[k];
+      if (v !== null && typeof v === 'object') stack.push([v, d + 1]);
+    }
+  }
+  return '';
+}
 function readBody(req, limit) {
   const max = limit || 64 * 1024;
   return new Promise((resolve, reject) => {
@@ -2427,6 +2528,12 @@ function readBody(req, limit) {
       if (!chunks.length) return resolve({});
       try {
         const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        /* Поля-ловушки (аудит 16.10.2026): {"toString":1} или {"valueOf":1}
+           роняют String(поле) TypeError'ом — 500 на ~45 маршрутах и тревоги
+           владельцу, которые глушили настоящие. Вложенность в тысячи уровней
+           роняла JSON.stringify (RangeError). Отвергаем и то и другое. */
+        const bad = bodyTrap(parsed);
+        if (bad) return reject(httpError(400, bad));
         /* «null» и «строка» — валидный JSON, но маршруты ждут объект:
            без этого body.что-нибудь бросает TypeError и плодит ложные 500. */
         resolve(parsed !== null && typeof parsed === 'object' ? parsed : {});
@@ -2681,6 +2788,22 @@ function syncAdminFlag(user) {
     return user;
   } catch (e) { return user; }
 }
+/* Права, взятые ключом (/api/admin/claim), живут, пока жив этот ключ
+   (аудит 16.10.2026): ключ утёк → владелец меняет ADMIN_KEY и
+   перезапускает сервер → у всех, кто не в ADMIN_EMAIL и брал права
+   другим ключом, is_admin снимается. Раньше флаг оставался навсегда, а
+   заблокировать «владельца» нельзя. */
+const ADMIN_FP = ADMIN_KEY
+  ? crypto.createHmac('sha256', ADMIN_KEY).update('admin-claim').digest('hex').slice(0, 32) : '';
+try {
+  if (ADMIN_FP_NEW && ADMIN_FP) db.prepare('UPDATE users SET admin_fp = ? WHERE is_admin = 1').run(ADMIN_FP);
+  for (const r of db.prepare('SELECT id, email, admin_fp FROM users WHERE is_admin = 1').all()) {
+    if (ADMIN_EMAILS.includes(String(r.email || '').toLowerCase())) continue;
+    if (ADMIN_FP && r.admin_fp === ADMIN_FP) continue;
+    q.setAdmin.run(0, r.id);
+    console.warn('[BloggerPay] права владельца сняты с аккаунта id ' + r.id + ': ключ владельца сменён');
+  }
+} catch (e) { console.error('[admin_fp]', (e && e.message) || e); }
 
 /* ── Ограничение частоты ───────────────────────────────────────────
    Скользящее окно по IP в памяти. Защищает дорогие и абузные ручки
@@ -2800,6 +2923,10 @@ function rateLimit(req, key, limit, windowMs) {
   const now = Date.now();
   let arr = rlMap.get(k);
   if (!arr) { arr = []; rlMap.set(k, arr); }
+  /* Окно запоминаем на самой записи: уборка раз в 5 минут резала всё
+     старше 5 минут, и часовые лимиты (удаление аккаунта, поддержка,
+     отвязка ролика) сбрасывались через ≤10 минут (аудит 16.10.2026). */
+  if (!(arr.w >= windowMs)) arr.w = windowMs;
   while (arr.length && now - arr[0] > windowMs) arr.shift();
   if (arr.length >= limit) return false;
   arr.push(now);
@@ -2884,13 +3011,25 @@ function loginPausedReply(ms) {
 const CARD_STR = { name: 60, initials: 4, col: 64, catsText: 200, sinceText: 60,
   subsVal: 20, reachVal: 20, erVal: 20, cpvVal: 20, publishedAt: 40, msg: 500 };
 const CARD_PLATS = ['youtube', 'telegram', 'tiktok', 'instagram', 'vk'];
-function cardStr(v, max) { return String(v == null ? '' : v).slice(0, max); }
+/* Строка из чужих данных — без исключений (аудит 16.10.2026): объект
+   {"toString":1} из JSON ломает String() (TypeError), и один такой
+   конверт ронял всю витрину гостя (500 всем). */
+function safeStr(v) {
+  if (v == null) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  try { return String(v); } catch (e) { return ''; }
+}
+function cardStr(v, max) { return safeStr(v).slice(0, max); }
 /* витрина заданий: число из объявления (ставка, потолок) — только
    конечное неотрицательное; площадки — короткие коды через запятую */
-function pubNum(v) { const n = Number(v); return Number.isFinite(n) && n > 0 ? Math.min(n, 1e9) : 0; }
+function pubNum(v) {
+  const n = typeof v === 'number' ? v : (typeof v === 'string' ? Number(v) : NaN);
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 1e9) : 0;
+}
 function pubPlats(v) {
-  const a = Array.isArray(v) ? v : String(v == null ? '' : v).split(/[,;\s]+/);
-  return a.map((x) => String(x || '').toLowerCase().replace(/[^a-z]/g, '').slice(0, 12)).filter(Boolean).slice(0, 8).join(',');
+  const a = Array.isArray(v) ? v : safeStr(v).split(/[,;\s]+/);
+  return a.map((x) => safeStr(x || '').toLowerCase().replace(/[^a-z]/g, '').slice(0, 12)).filter(Boolean).slice(0, 8).join(',');
 }
 function cleanCard(raw) {
   const src = (raw && typeof raw === 'object') ? raw : {};
@@ -3080,10 +3219,14 @@ const TG_API_BASE = (ENV.TG_API_BASE || 'https://api.telegram.org').replace(/\/+
 const ALERTS_ON = Boolean(BOT_TOKEN && ADMIN_CHAT_ID);
 
 const tgSeen = new Map();          /* подпись → { n, lastSent }, свежие в конце */
-const TG_CAP = { client: 15, server: 10 };   /* тревог в час на каждый кошелёк */
+const TG_CAP = { client: 15, guest: 15, server: 10 };   /* тревог в час на каждый кошелёк */
 const TG_REPEAT_MS = 10 * 60 * 1000;
 const tgLane = {
   client: { sent: 0, muted: false },
+  /* ошибки невошедших — свой кошелёк (аудит 16.10.2026): /api/errors без
+     входа, и поток выдуманных «ошибок» от гостей глушил тревоги о
+     настоящих ошибках у вошедших людей */
+  guest: { sent: 0, muted: false },
   server: { sent: 0, muted: false },
 };
 let tgHourAt = 0;
@@ -3127,10 +3270,9 @@ function tgAlert(sig, text, lane, critical) {
   const now = Date.now();
   if (now - tgHourAt > 3600000) {
     tgHourAt = now;
-    tgLane.client.sent = 0; tgLane.client.muted = false;
-    tgLane.server.sent = 0; tgLane.server.muted = false;
+    for (const k of Object.keys(tgLane)) { tgLane[k].sent = 0; tgLane[k].muted = false; }
   }
-  const key = lane === 'client' ? 'client' : 'server';
+  const key = (lane === 'client' || lane === 'guest') ? lane : 'server';
   const L = tgLane[key];
 
   const rec = tgSeen.get(sig);
@@ -3149,7 +3291,7 @@ function tgAlert(sig, text, lane, critical) {
   if (!critical && L.sent >= TG_CAP[key]) {
     if (!L.muted) {
       L.muted = true;
-      tgSendRaw('⚠️ Тревог ' + (key === 'client' ? 'с сайта' : 'серверных')
+      tgSendRaw('⚠️ Тревог ' + (key === 'client' ? 'с сайта' : key === 'guest' ? 'с сайта от гостей' : 'серверных')
         + ' больше ' + TG_CAP[key] + ' за час — молчу про них до конца часа, чтобы не завалить чат.'
         + ' Полный список: пульт оператора, раздел «Поломки».');
     }
@@ -3170,7 +3312,8 @@ function tgAlert(sig, text, lane, critical) {
 setInterval(() => {
   const now = Date.now();
   for (const [k, arr] of rlMap) {
-    while (arr.length && now - arr[0] > 300000) arr.shift();
+    const w = arr.w > 300000 ? arr.w : 300000;
+    while (arr.length && now - arr[0] > w) arr.shift();
     if (!arr.length) rlMap.delete(k);
   }
 }, 300000).unref();
@@ -3821,6 +3964,12 @@ const routes = {
     if (body.data == null || typeof body.data !== 'object') return { status: 400, body: { error: 'Нет содержимого' } };
     let data = JSON.stringify(body.data);
     if (data.length > 400 * 1024) return { status: 413, body: { error: 'Запись слишком большая' } };
+    /* Поле «toString»/«valueOf» в данных (аудит 16.10.2026): приложение их
+       не пишет, а на сервере такой объект ломает String()/Number() у
+       любого, кто читает конверт (витрина гостя отвечала 500 всем). В
+       JSON без пробелов ключ узнаётся однозначно: в строке кавычка
+       экранирована. */
+    if (/"(?:toString|valueOf|toJSON)":/.test(data)) return { status: 400, body: { error: 'Неверное содержимое записи' } };
     const ex = q.syncGet.get(kind, rid);
     let a = u.id, b = null, created = null;
     if (ex) {
@@ -3841,6 +3990,16 @@ const routes = {
        SYNC_CAMP_ALL всего у одного автора. Пауза, «завершено» и правка
        уже запущенного проходят всегда. */
     if (kind === 'camp' && a === u.id) {
+      /* Бюджет задания уже возвращён целиком — «активным» оно не станет:
+         старая копия с другого устройства (или местная правка после
+         «Удалить»/«Завершить») иначе вернула бы его в ленту всем. */
+      if (campLiveStatus(body.data.status)) {
+        const dl = q.deal.get('camp:' + rid);
+        if (dl && dl.status === 'refunded') {
+          body = Object.assign({}, body, { data: Object.assign({}, body.data, { status: 'done' }) });
+          data = JSON.stringify(body.data);
+        }
+      }
       if (!ex && (Number((q.campCountAll.get(u.id) || {}).n) || 0) >= SYNC_CAMP_ALL) {
         return { status: 409, body: { error: 'Заданий в аккаунте больше ' + SYNC_CAMP_ALL + ' — напишите в поддержку', code: 'camp_limit' } };
       }
@@ -3911,19 +4070,30 @@ const routes = {
     if (!rateLimit(req, 'tasks:pub' + softKey(req), 60, 60000)) return tooOften;
     const rows = q.publicCamps.all(60);
     const out = [];
+    /* Каждая строка — в своём try (аудит 16.10.2026): один кривой конверт
+       пропускаем, а не роняем витрину всем гостям. */
     for (const r of rows) {
+     try {
       let d = null;
       try { d = JSON.parse(r.data); } catch (e) { continue; }
-      if (!d || String(d.status || '') !== 'active') continue;
+      if (!d || typeof d !== 'object' || d.status !== 'active') continue;
       const title = cardStr(d.title || d.name, 120);
       if (!title) continue;
+      /* дата создания задания: из самого задания, иначе — когда конверт
+         впервые лёг на сервер (SQLite хранит UTC без пояса — добавляем Z) */
+      const cMs = vidMs(typeof d.createdAt === 'number' || typeof d.createdAt === 'string' ? d.createdAt : '')
+        || Date.parse(safeStr(r.created_at).replace(' ', 'T') + 'Z');
+      const atMs = Date.parse(safeStr(r.updated_at).replace(' ', 'T') + 'Z');
       out.push({
         id: String(r.rid).slice(0, 80),
         title,
         desc: cardStr(d.desc || d.description, 400),
-        budget: Number(d.budget) || 0,
-        perBlogger: Number(d.perBlogger || d.price) || 0,
-        slots: Number(d.slots) || 0,
+        /* бюджет — сколько на самом деле заморожено под задание */
+        budget: Math.max(0, Number(r.held_amount) || 0),
+        perBlogger: pubNum(d.perBlogger || d.price),
+        slots: pubNum(d.slots),
+        accountType: cardStr(d.accountType, 40),
+        createdAt: Number.isFinite(cMs) && cMs > 0 ? new Date(cMs).toISOString() : '',
         platform: cardStr(d.platform, 24),
         format: cardStr(d.format, 40),
         topics: Array.isArray(d.topics) ? d.topics.slice(0, 6).map((t) => cardStr(t, 40)) : [],
@@ -3944,9 +4114,12 @@ const routes = {
         minDuration: pubNum(d.minDuration || d.videoMinSec),
         language: cardStr(d.language, 40),
         hashtags: cardStr(d.hashtags, 300),
-        deadline: Number.isFinite(Date.parse(d.deadline)) ? new Date(Date.parse(d.deadline)).toISOString() : '',
-        at: r.updated_at,
+        deadline: Number.isFinite(Date.parse(safeStr(d.deadline))) ? new Date(Date.parse(safeStr(d.deadline))).toISOString() : '',
+        /* последняя правка — ISO с поясом (было «2026-10-15 20:08:23»:
+           браузер читал её как местное время) */
+        at: Number.isFinite(atMs) ? new Date(atMs).toISOString() : '',
       });
+     } catch (e) { continue; }
     }
     return { status: 200, body: { rows: out } };
   },
@@ -4686,10 +4859,17 @@ const routes = {
       return { status: 429, body: { error: 'Слишком много попыток — подождите 15 минут' } };
     }
     const old = String(body.old || ''), pass = String(body.password || '');
+    /* oldAlt — второй вариант текущего пароля за ту же попытку (аудит
+       16.10.2026): приложение кладёт на сервер производную пароля (bpSrvPass),
+       но у части аккаунтов пароль лёг как есть. Окно «Пароль» не знает,
+       какой из двух здесь, — шлёт оба; промах считается один. */
+    const oldAlt = body.oldAlt == null ? '' : String(body.oldAlt).slice(0, 1024);
     if (pass.length < 8) return { status: 400, body: { error: 'Новый пароль — минимум 8 символов' } };
     if (pass.length > PASS_MAX) return { status: 400, body: { error: 'Слишком длинный пароль' } };
-    const hash = scrypt(old, u.pass_salt);
-    if (!crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(u.pass_hash))) {
+    const stored = Buffer.from(String(u.pass_hash || ''));
+    const fits = (v) => { const h = Buffer.from(scrypt(v, u.pass_salt)); return h.length === stored.length && crypto.timingSafeEqual(h, stored); };
+    const hit = fits(old) ? old : (oldAlt && oldAlt !== old && fits(oldAlt) ? oldAlt : null);
+    if (hit === null) {
       const m = miss && now - miss.at < 15 * 60000 ? miss : { n: 0, at: now };
       m.n += 1; m.at = now;
       pwChgMiss.set(u.id, m);
@@ -4697,7 +4877,7 @@ const routes = {
       const left = Math.max(0, 5 - m.n);
       return { status: 403, body: { error: left ? 'Текущий пароль не подходит · осталось попыток: ' + left : 'Текущий пароль не подходит — подождите 15 минут', left } };
     }
-    if (old === pass) return { status: 400, body: { error: 'Новый пароль совпадает с текущим' } };
+    if (hit === pass) return { status: 400, body: { error: 'Новый пароль совпадает с текущим' } };
     pwChgMiss.delete(u.id);
     const salt = crypto.randomBytes(16).toString('hex');
     db.exec('BEGIN IMMEDIATE');
@@ -4731,7 +4911,7 @@ const routes = {
     if (!rateLimit(req, 'delreq:' + u.id, 3, 3600000)) return tooOften;
     const why = String((body && body.why) || '').replace(/\s+/g, ' ').trim().slice(0, 300);
     const b = q.balance.get(u.id) || {};
-    try { q.insAdminLog.run('сам человек', 'erase-request', String(u.id), why || null); } catch (e) { /* журнал — не главное */ }
+    try { q.insAdminLog.run('сам человек', 'erase-request', 'user ' + u.id, why || null); } catch (e) { /* журнал — не главное */ }
     tgAlert('erase:req:' + u.id,
       '🗑 Запрос на удаление аккаунта\n\n' + vidWho(u.id)
       + '\nБаланс: ' + (Number(b.available) || 0) + ' ₽, в заморозке: ' + (Number(b.hold) || 0) + ' ₽'
@@ -4788,10 +4968,21 @@ const routes = {
     return { status: 200, body: q.balance.get(u.id) };
   },
 
-  'GET /api/ledger': async (req) => {
+  'GET /api/ledger': async (req, body, url) => {
     const u = auth(req);
     if (!u) return { status: 401, body: { error: 'Нужен вход' } };
-    return { status: 200, body: { rows: q.myLedger.all(u.id) } };
+    /* ?bucket=available|hold — одна корзина; ?before=<id> — следующая
+       страница; ?limit= — до 200 (по умолчанию 100, как раньше). more —
+       есть ли строки старше; totals — итоги по всему журналу. */
+    const bucket = ['available', 'hold'].includes(url.searchParams.get('bucket')) ? url.searchParams.get('bucket') : '';
+    const before = Math.max(0, Math.floor(Number(url.searchParams.get('before')) || 0));
+    const limit = Math.min(200, Math.max(1, Math.floor(Number(url.searchParams.get('limit')) || 100)));
+    const rows = q.myLedger.all(u.id, bucket, bucket, before, before, limit + 1);
+    const more = rows.length > limit;
+    if (more) rows.length = limit;
+    for (const r of rows) { if (r.camp == null) delete r.camp; else r.camp = String(r.camp).slice(0, 120); }
+    const t = q.myLedgerTotals.get(u.id);
+    return { status: 200, body: { rows, more, totals: { topup: Number(t.topup) || 0, earned: Number(t.earned) || 0 } } };
   },
 
   /* ТЕСТОВОЕ пополнение. Живо только пока не настроена касса (и его
@@ -4849,7 +5040,9 @@ const routes = {
         + '\n' + (email || u.email) + (comment ? '\n«' + comment + '»' : '')
         + '\n\nКлиент откроет чат с ботом — его сообщения придут сюда. Зачислить после оплаты: админ-панель → Счета.', 'счёт');
     }
-    adminLog(req, 'inv-new', 'user ' + u.id, 'счёт №' + id + ' · ' + amount + ' ₽');
+    /* заявку создаёт сам человек, а не владелец: adminWho() у обычного
+       аккаунта отвечал «ключ» (аудит 16.10.2026) */
+    try { q.insAdminLog.run('сам человек', 'inv-new', 'user ' + u.id, 'счёт №' + id + ' · ' + amount + ' ₽'); } catch (e) { /* журнал — не главное */ }
     const bot = (BOT && typeof BOT.botName === 'function' && BOT.botName()) || String(ENV.BOT_USERNAME || '').replace(/^@/, '') || 'BloggerPay_bot';
     const fee = pctOf(amount, TOPUP_FEE_PCT);
     return { status: 200, body: { ok: true, id, code, amount, fee, total: amount + fee, feePct: TOPUP_FEE_PCT, bot, min: INV_MIN } };
@@ -5209,10 +5402,14 @@ const routes = {
        себе весь эскроу. Оператор снимает любой спор; решение арбитра
        (/api/deals/settle) снимает замок само. */
     if (asOperator) {
-      const infoA = payeeId == null ? q.closeDisputesAll.run(dealId) : q.closeDisputesFor.run(dealId, payeeId);
+      const did = Number(body.id);
+      const byId = Number.isInteger(did) && did > 0;
+      const infoA = byId ? q.closeDisputeById.run(did, dealId)
+        : payeeId == null ? q.closeDisputesAll.run(dealId) : q.closeDisputesFor.run(dealId, payeeId);
       const nA = Number(infoA.changes || 0);
       if (nA) {
-        adminLog(req, 'dispute-close', 'сделка ' + dealId, payeeId == null ? 'все споры' : 'исполнитель id ' + payeeId);
+        adminLog(req, 'dispute-close', 'сделка ' + dealId, byId ? 'спор №' + did + (payeeId == null ? '' : ', исполнитель id ' + payeeId)
+          : payeeId == null ? 'все споры' : 'исполнитель id ' + payeeId);
         /* начисления за видео, которые держал спор, пойдут со следующего круга */
         if (/^camp:/.test(dealId)) vidBoardDrop(dealId.slice(5));
       }
@@ -5301,7 +5498,7 @@ const routes = {
       }
       if (!userKey(body.opKey)) return badKey;
       const all = sum >= left && !live;
-      return moneyOp(String(body.opKey || ''), u.id, 'refund', (add) => {
+      const rp = moneyOp(String(body.opKey || ''), u.id, 'refund', (add) => {
         add(d.payer_id, 'hold', -sum, 'refund', dealId);
         add(d.payer_id, 'available', sum, 'refund', dealId);
         const feeBack = all ? dealFeeBackAll(add, d) : dealFeeBack(add, d, sum);
@@ -5310,6 +5507,9 @@ const routes = {
         vidBoardDrop(cid);
         return { ok: true, dealId, refunded: sum, feeBack, left: left - sum, closed: all };
       });
+      /* вернули всё — задание закрыто и в ленте у всех */
+      if (rp.status === 200 && rp.body && rp.body.closed) syncCampClose(cid);
+      return rp;
     }
     /* Пока по заданию есть ролики на проверке или в подсчёте просмотров
        (засчитанные: 30 дней сервер доначисляет по мере роста), бюджет —
@@ -5328,7 +5528,7 @@ const routes = {
         code: 'videos_live' } };
     }
     if (!userKey(body.opKey)) return badKey;
-    return moneyOp(String(body.opKey || ''), u.id, 'refund', (add) => {
+    const rf = moneyOp(String(body.opKey || ''), u.id, 'refund', (add) => {
       add(d.payer_id, 'hold', -rest, 'refund', dealId);
       add(d.payer_id, 'available', rest, 'refund', dealId);
       const feeBack = dealFeeBackAll(add, d);
@@ -5337,6 +5537,9 @@ const routes = {
       if (dealId.startsWith('camp:')) vidBoardDrop(dealId.slice(5));
       return { ok: true, dealId, refunded: rest, feeBack };
     });
+    /* бюджет задания вернули целиком — задание закрыто и в ленте у всех */
+    if (rf.status === 200 && dealId.startsWith('camp:')) syncCampClose(dealId.slice(5));
+    return rf;
   },
 
   /* Пополнение бюджета задания (11.10.2026): кошелёк → заморозка
@@ -5681,6 +5884,21 @@ const routes = {
     if (!/^\d{2}\.\d{2}\.\d{4}$/.test(birth)) {
       return { status: 400, body: { error: 'Дата рождения — в формате ДД.ММ.ГГГГ' } };
     }
+    /* Аудит 16.10.2026 (C89): дата должна существовать и не быть в будущем,
+       а человеку — исполниться 18 (условия и политика: сервис только для
+       совершеннолетних). Раньше проходили и 31.02.2030, и 15-летние. */
+    {
+      const [bd, bmo, by] = birth.split('.').map(Number);
+      const dt = new Date(Date.UTC(by, bmo - 1, bd));
+      const now = new Date(Date.now() + 3 * 3600000);   /* день по Москве */
+      if (dt.getUTCFullYear() !== by || dt.getUTCMonth() !== bmo - 1 || dt.getUTCDate() !== bd || dt.getTime() > now.getTime()) {
+        return { status: 400, body: { error: 'Такой даты нет — проверьте дату рождения', code: 'bad_birth' } };
+      }
+      let age = now.getUTCFullYear() - by;
+      if (now.getUTCMonth() + 1 < bmo || (now.getUTCMonth() + 1 === bmo && now.getUTCDate() < bd)) age--;
+      if (age < 18) return { status: 400, body: { error: 'Вывод доступен с 18 лет', code: 'underage' } };
+      if (age > 110) return { status: 400, body: { error: 'Проверьте год рождения', code: 'bad_birth' } };
+    }
     const IMG = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
     if (!IMG.test(photo) || photo.length > 700 * 1024) {
       return { status: 400, body: { error: 'Нужно фото документа (jpeg/png/webp, до 700 КБ)' } };
@@ -5712,8 +5930,32 @@ const routes = {
     const u = auth(req);
     if (!u) return { status: 401, body: { error: 'Нужен вход' } };
     const last = q.myLastKyc.get(u.id);
-    if (!last) return { status: 200, body: { status: 'none' } };
-    return { status: 200, body: { status: last.status, note: last.note || '' } };
+    /* номер из «Верификации» — его же владельцу, чтобы новое устройство
+       не спрашивало заново (C62) */
+    const ph = qPhone.get.get(u.id) || {};
+    const phone = ph.kyc_phone ? { phone: ph.kyc_phone, phoneAt: Number(ph.kyc_phone_at) || 0 } : {};
+    if (!last) return { status: 200, body: { status: 'none', ...phone } };
+    return { status: 200, body: { status: last.status, note: last.note || '', ...phone } };
+  },
+
+  /* Номер телефона из шага «Телефон» (аудит 16.10.2026, C62). Пишется один
+     раз: тот же номер — ok, другой — 409 с записанным (решение владельца:
+     после подтверждения номер не меняется). */
+  'POST /api/kyc/phone': async (req, body) => {
+    if (!rateLimit(req, 'kycphone', 10, 60000)) return tooOften;
+    const u = auth(req);
+    if (!u) return { status: 401, body: { error: 'Нужен вход' } };
+    let d = String(body.phone || '').replace(/\D/g, '');
+    if (d.length === 11 && d[0] === '8') d = '7' + d.slice(1);
+    if (!/^7\d{10}$/.test(d)) return { status: 400, body: { error: 'Номер — в формате +7 (999) 123-45-67' } };
+    let row = qPhone.get.get(u.id) || {};
+    if (!row.kyc_phone) {
+      qPhone.set.run(d, Date.now(), u.id);
+      row = qPhone.get.get(u.id) || {};
+    }
+    if (row.kyc_phone === d) return { status: 200, body: { ok: true, phone: d, phoneAt: Number(row.kyc_phone_at) || 0 } };
+    return { status: 409, body: { error: 'Номер уже подтверждён — изменить его нельзя', code: 'phone_locked',
+      phone: row.kyc_phone, phoneAt: Number(row.kyc_phone_at) || 0 } };
   },
 
   /* ── ПОДТВЕРЖДЕНИЕ ВЛАДЕНИЯ КАНАЛОМ ──────────────────────────────
@@ -5737,7 +5979,14 @@ const routes = {
        комментарий к vfy выше. Угадать её нельзя (24 случайных байта). */
     vfySweep();
     const state = crypto.randomBytes(24).toString('hex');
-    vfy.set(state, { userId: u.id, platform: p, at: Date.now(), channel: null, code: '', tries: 0 });
+    /* code=1 — подключение из мини-приложения Телеграма (аудит 16.10.2026):
+       площадка открывается во внешнем браузере, где человек в BloggerPay не
+       вошёл (входил через Телеграм, пароля нет), и пропуск из адреса возврата
+       там привязать нечем. Таким страница возврата показывает шестизначный
+       код — его вводят в мини-приложении (POST /api/verify/confirm, канал
+       получает только начавший проверку аккаунт, 5 попыток). */
+    const viaCode = url.searchParams.get('code') === '1';
+    vfy.set(state, { userId: u.id, platform: p, at: Date.now(), channel: null, code: '', tries: 0, viaCode });
     const redirect = OAUTH_BASE + '/api/verify/callback/' + p;
 
     const q1 = new URLSearchParams({
@@ -6107,7 +6356,8 @@ const routes = {
     if (!list.length) return { status: 200, body: { taken: 0 } };
     const u = auth(req);
     let taken = 0;
-    for (const e of list) {
+    /* гость — до 5 строк за запрос (было 20 × 30/мин = 600 строк в минуту) */
+    for (const e of (u ? list : list.slice(0, 5))) {
       const msg = String((e && e.message) || '').trim().slice(0, 300);
       if (!msg) continue;
       const where = String((e && e.where) || '').slice(0, 120);
@@ -6120,12 +6370,17 @@ const routes = {
         String(req.headers['user-agent'] || '').slice(0, 200) || null,
       );
       taken++;
-      /* Каждая новая ошибка тут же уходит владельцу в Телеграм. */
+      /* Каждая новая ошибка тут же уходит владельцу в Телеграм. Текст
+         прислал браузер (у гостя — кто угодно без входа), поэтому ссылки,
+         адреса и @имена обезврежены: бот не должен приносить владельцу
+         кликабельную «срочно войдите по ссылке» (аудит 16.10.2026).
+         Гости — свой кошелёк тревог, вошедших они не заглушат. */
+      const safe = (s) => String(s).replace(/:\/\//g, ':∕∕').replace(/\.(?=\S)/g, '․').replace(/@/g, '＠');
       tgAlert('site:' + msg.slice(0, 120) + '|' + where,
-        '🐞 Ошибка на сайте\n\n' + msg
-        + (where ? '\n\nГде: ' + where : '')
-        + (ver ? '\nВерсия: ' + ver : '')
-        + '\nКто: ' + (u ? (u.name || 'без имени') + ' (id ' + u.id + ')' : 'гость (не вошёл)'), 'client');
+        '🐞 Ошибка на сайте\n\n' + safe(msg)
+        + (where ? '\n\nГде: ' + safe(where) : '')
+        + (ver ? '\nВерсия: ' + safe(ver) : '')
+        + '\nКто: ' + (u ? safe(u.name || 'без имени') + ' (id ' + u.id + ')' : 'гость (не вошёл)'), u ? 'client' : 'guest');
     }
     /* Журнал ошибок — не деньги, его можно и нужно подрезать, иначе
        одна зациклившаяся вкладка забьёт базу. */
@@ -6263,7 +6518,11 @@ const routes = {
   'GET /api/admin/invoices': async (req, body, url) => {
     if (!isAdmin(req)) return { status: 403, body: { error: 'Нужен X-Admin-Key' } };
     const st = String(url.searchParams.get('status') || '');
-    return { status: 200, body: { rows: qi.list.all(st, st, st), min: INV_MIN } };
+    /* fee/total — сумма счёта с комиссией: окно «Зачислить» сверяет с ней
+       пришедшее (аудит 16.10.2026) */
+    const rows = qi.list.all(st, st, st).map((r) => Object.assign({}, r, {
+      fee: pctOf(r.amount, TOPUP_FEE_PCT), total: r.amount + pctOf(r.amount, TOPUP_FEE_PCT) }));
+    return { status: 200, body: { rows, min: INV_MIN, feePct: TOPUP_FEE_PCT } };
   },
 
   'POST /api/admin/invoices/credit': async (req, body) => {
@@ -6271,7 +6530,36 @@ const routes = {
     const r = qi.byId.get(Number(body.id));
     if (!r) return { status: 404, body: { error: 'Заявка не найдена' } };
     if (r.status === 'rejected') return { status: 409, body: { error: 'Заявка закрыта — зачислить нельзя' } };
-    const amount = body.amount == null || body.amount === '' ? r.amount : Number(body.amount);
+    if (r.status !== 'paid') {
+      const owner = q.userById.get(r.user_id);
+      if (!owner || /@erased\.invalid$/.test(String(owner.email || ''))) {
+        return { status: 409, body: { error: 'Данные этого человека удалены — зачислить некуда. Верните деньги плательщику'
+          + ' по реквизитам из платёжки и закройте заявку.', code: 'erased' } };
+      }
+    }
+    /* Два вида запроса (аудит 16.10.2026). paid — СКОЛЬКО ПРИШЛО на
+       расчётный счёт (с комиссией): так спрашивает окно /admin, оператор
+       переписывает число из выписки. На баланс — обратный расчёт счёта
+       (наибольшая сумма, у которой сумма + 7% не больше пришедшего),
+       комиссия — остаток: «внесено» в сверке = ровно то, что пришло.
+       Раньше окно спрашивало «сколько пришло», а сервер клал всё это на
+       баланс и дописывал 7% сверху — клиент получал лишние 7%.
+       amount — сумма НА БАЛАНС (без комиссии), прежний вид, по умолчанию —
+       сумма заявки. */
+    const paidIn = body.paid == null || body.paid === '' ? null : Number(body.paid);
+    let amount, fee;
+    if (paidIn != null) {
+      if (!Number.isInteger(paidIn) || paidIn < 2 || paidIn > 110000000) {
+        return { status: 400, body: { error: 'Пришедшая сумма — целое число рублей' } };
+      }
+      amount = Math.floor(paidIn * 100 / (100 + TOPUP_FEE_PCT));
+      while (amount > 0 && amount + pctOf(amount, TOPUP_FEE_PCT) > paidIn) amount--;
+      while (amount + 1 + pctOf(amount + 1, TOPUP_FEE_PCT) <= paidIn) amount++;
+      fee = paidIn - amount;
+    } else {
+      amount = body.amount == null || body.amount === '' ? r.amount : Number(body.amount);
+      fee = null;
+    }
     if (!Number.isInteger(amount) || amount < 1 || amount > 100000000) {
       return { status: 400, body: { error: 'Сумма — целое число от 1 ₽' } };
     }
@@ -6279,7 +6567,7 @@ const routes = {
       return { status: 409, body: { error: 'Счёт уже оплачен: зачислено ' + rubTxt(r.paid) } };
     }
     /* комиссия 7% сверху: счёт выставлен на сумму + комиссию, на баланс — сумма */
-    const fee = pctOf(amount, TOPUP_FEE_PCT);
+    if (fee == null) fee = pctOf(amount, TOPUP_FEE_PCT);
     /* Ключ — служебный sys:invoice:<id> (из приложения его не занять, см.
        RESERVED_OP). Прежнее зачисление ключом 'invoice:<id>' (до 16.10)
        узнаём: тот же человек, вид topup и счёт уже «оплачен» — повтор идёт
@@ -6474,6 +6762,13 @@ const routes = {
       return { status: 409, body: { error: 'По роликам этого человека или его заданиям ещё идут проверка или подсчёт ('
         + live + '). Удалить можно, когда подсчёт закончится.', code: 'videos_live' } };
     }
+    /* Открытый счёт (аудит 16.10.2026): клиент мог его оплатить уже после
+       удаления — деньги легли бы на обезличенный аккаунт без входа. */
+    const invOpen = Number((qi.openByUser.get(id) || {}).n) || 0;
+    if (invOpen) {
+      return { status: 409, body: { error: 'У человека открытые заявки на счёт (' + invOpen + '). Зачислите или закройте их'
+        + ' в разделе «Счета» — потом удаление.', code: 'invoices' } };
+    }
     const n = {};
     const run = (k, sql, ...a) => { n[k] = Number(db.prepare(sql).run(...a).changes) || 0; };
     db.exec('BEGIN IMMEDIATE');
@@ -6533,9 +6828,18 @@ const routes = {
         return { status: 429, body: { error: 'Слишком много попыток — подождите десять минут' } };
       }
       const given = String((body && body.key) || req.headers['x-admin-key'] || '');
+      /* Ключа нет вовсе — это не подбор (аудит 16.10.2026): вход «почтой»
+         обычным аккаунтом считался промахом ключа, 8 таких входов запирали
+         ключ и Телеграм на 10 минут и слали тревогу «ошибся ключом».
+         Негодный билет по-прежнему считается промахом. */
+      if (!given) {
+        if (body && body.ticket) adminMissed(req);
+        return { status: 403, body: { error: u ? 'Этот аккаунт не владелец площадки' : 'Нужен ключ владельца' } };
+      }
       const a = Buffer.from(given, 'utf8'), b = Buffer.from(ADMIN_KEY, 'utf8');
       pass = !!(b.length && a.length === b.length && crypto.timingSafeEqual(a, b));
-      if (!pass) { adminMissed(req); return { status: 403, body: { error: 'Ключ владельца не подошёл' } }; }
+      /* ключ из заголовка уже посчитал isAdmin — второй раз не считаем */
+      if (!pass) { if (!req.headers['x-admin-key']) adminMissed(req); return { status: 403, body: { error: 'Ключ владельца не подошёл' } }; }
     }
     const until = Date.now() + ADMIN_SESSION_MS;
     /* Кто входит — пишется в куку и потом в журнал действий. */
@@ -6641,6 +6945,7 @@ const routes = {
       return { status: 403, body: { error: 'Ключ владельца не подошёл' } };
     }
     q.setAdmin.run(1, u.id);
+    try { db.prepare('UPDATE users SET admin_fp = ? WHERE id = ?').run(ADMIN_FP, u.id); } catch (e) { /* колонка есть всегда */ }
     return { status: 200, body: { ok: true, isAdmin: true } };
   },
 
@@ -6742,6 +7047,12 @@ const routes = {
        снимок условий (limit), иначе резерв ушёл бы за бюджет и «Свободно»
        стало бы отрицательным. */
     if (vidEarnBy(terms, v.views) > free) terms.limit = free;
+    /* Длину ролика площадка не сообщила (Instagram её не отдаёт вовсе,
+       VIDEO-SPEC §12.3): правило «мин. N сек» сервер проверить не может.
+       Не молчим (аудит 16.10.2026, #27): пометка в снимке условий —
+       рекламодатель видит «длину проверьте сами» в карточке и в
+       уведомлении, блогер — что ролик короче N сек не засчитают. */
+    if (minSec && v.duration == null) terms.durUnchecked = minSec;
 
     const now = Date.now();
     const handle = p === 'youtube'
@@ -6772,14 +7083,16 @@ const routes = {
     q.vidSnap.run(rowId, dayOf(now), v.views, v.likes, v.comments, v.shares, now);
     if (vkind) vidKindSet.run(vkind, rowId);
     if (v.cover) vidCoverSet(rowId, v.cover);
-    vidJudge(q.vidById.get(rowId));
+    vidJudge(q.vidById.get(rowId), v);
     vidBoardDrop(campId);
     const name = vidCampName(ci);
     /* Загрузил → отвязал → загрузил: рекламодателю о том же ролике в том
        же задании пишем не чаще раза в сутки, иначе это рассылка спама его
        руками. */
     if (vidOnce(vidBindSeen, campId + '|' + id)) {
-      vidNotify(ci.env.a_id, 'Новое видео по заданию', '«' + name + '»: проверьте интеграцию', '/?go=campaigns');
+      vidNotify(ci.env.a_id, 'Новое видео по заданию', '«' + name + '»: проверьте интеграцию'
+        + (terms.durUnchecked ? '. ' + vidPlatName(p) + ' не сообщает длину ролика — проверьте сами, что он не короче '
+          + terms.durUnchecked + ' сек' : ''), '/?go=campaigns');
     }
     return { status: 200, body: { ok: true, video: vidDTO(q.vidById.get(rowId), 'blogger') } };
   },
@@ -6817,7 +7130,11 @@ const routes = {
     if (was && was.left_at == null) {
       return { status: 200, body: { ok: true, already: true, joinedAt: was.joined_at } };
     }
-    if (String(ci.camp.status || '') !== 'active') {
+    /* Вступить — только в задание, бюджет которого заморожен сейчас и не
+       исчерпан (аудит 16.10.2026): раньше хватало слова «active» в
+       конверте — вступали в «задание» без единого рубля и в удалённое
+       (деньги возвращены, конверт остался прежним). */
+    if (!vidCampOpen(ci, campId)) {
       return { status: 409, body: { error: 'Задание сейчас не принимает участников', code: 'camp_closed' } };
     }
     const now = Date.now();
@@ -6866,16 +7183,21 @@ const routes = {
       ok: true, campId, sort,
       members: agg.members, videos: agg.videos, views: agg.views,
       paid: agg.paid, reserved: agg.reserved, budget: agg.budget, left: agg.left,
+      /* выплачено «на баланс» блогерам (за вычетом комиссии с каждого ролика) */
+      paidNet: agg.paidNet,
       /* комиссии задания (14.10.2026): с рекламодателя сверху бюджета и с выплат блогерам */
       feePct: agg.feePct, payFeePct: agg.payFeePct,
       /* автору — сколько можно вернуть в кошелёк сейчас (не из кэша доски) */
       free: isOwn ? vidReturnable(campId) : undefined,
+      /* автору — что вернёт «Завершить задание»: остаток и комиссия */
+      close: isOwn ? vidCloseOut(campId) : undefined,
       leaders: vidBoardOut(board.leaders, board.uids, u.id, isOwn),
       participants: vidBoardOut(page.rows, page.uids, u.id, isOwn), offset, limit,
       more: offset + page.rows.length < agg.members,
       me: {
         rank: mine ? mine.rank : null,
         videos: mine ? mine.videos : 0, views: mine ? mine.views : 0, earned: mine ? mine.earned : 0,
+        earnedNet: mine ? mine.earnedNet || 0 : 0,
         joined: !!(memb && memb.left_at == null), owner: ci.env.a_id === u.id,
       },
     } };
@@ -7038,17 +7360,27 @@ const routes = {
     if ((tried && now - tried < gap) || row.frozen) {
       return { status: 200, body: { ok: true, video: vidDTO(row, view), fresh: false } };
     }
+    /* Нет доступа к аккаунту блогера (token/scope/no_channel): блогеру —
+       просьба переподключить, а рекламодателю она ни к чему — чужой
+       аккаунт он не переподключит. Ему — карточка ролика (пауза видна по
+       holdKind) и свой текст (аудит 16.10.2026, #30). */
+    const ownerAccess = (code) => {
+      if (view !== 'owner' || !VID_ACCESS_FAIL.has(code)) return null;
+      const cur = q.vidById.get(row.id) || row;
+      return { status: 200, body: { ok: true, video: vidDTO(cur, view), fresh: false, wait: 'access',
+        note: 'Блогер потерял доступ к аккаунту ' + vidPlatName(row.platform) + ' — цифры обновятся, когда он переподключит его' } };
+    };
     if (row.status === 'active') {
       let s;
       try { s = await vidAccrue(row.id, { manual: true }); }
       catch (e) { console.error('[видео] начисление по кнопке упало:', (e && e.message) || e); s = { state: 'fail' }; }
-      if (s.code) return vidFail(s.code, { p: row.platform || 'tiktok' });
+      if (s.code) return ownerAccess(s.code) || vidFail(s.code, { p: row.platform || 'tiktok' });
       return { status: 200, body: { ok: true, video: vidDTO(q.vidById.get(row.id), view), fresh: s.state !== 'busy',
         credited: s.paid || 0 } };
     }
     const res = await vidRefresh([row], now);
     const code = res.errors[row.id];
-    if (code) return vidFail(code, { p: row.platform || 'tiktok' });
+    if (code) return ownerAccess(code) || vidFail(code, { p: row.platform || 'tiktok' });
     return { status: 200, body: { ok: true, video: vidDTO(q.vidById.get(row.id), view), fresh: true } };
   },
 
@@ -7176,6 +7508,9 @@ const routes = {
      ролики в работе, не дожидаясь суток. */
   'POST /api/admin/task-videos/sync': async (req, body) => {
     if (!isAdmin(req)) return { status: 403, body: { error: 'Нужен X-Admin-Key' } };
+    /* Фоновый круг уже идёт (в том числе первый после старта) — дождёмся
+       его, а не отвечаем «занято»: кнопка и проверки хотят свой круг. */
+    for (let i = 0; vidSyncBusy && i < 600; i++) await new Promise((ok) => setTimeout(ok, 100));
     const r = await vidSyncRound({ force: body.force === true });
     return { status: r.busy ? 409 : 200, body: Object.assign({ ok: !r.busy && !r.error }, r) };
   },
@@ -7891,6 +8226,10 @@ function ytVid(it) {
     title: String(sn.title || '').slice(0, 150),
     duration: ytIsoSec(cd.duration),
     views: n(stt.viewCount), likes: n(stt.likeCount), comments: n(stt.commentCount), shares: 0,
+    /* Оценке накрутки: репостов YouTube не отдаёт вовсе, а без likeCount /
+       commentCount лайки скрыты / комментарии выключены — это «неизвестно»,
+       а не ноль (аудит 16.10.2026, #31). */
+    noShares: true, likesHidden: stt.likeCount == null, commentsOff: stt.commentCount == null,
     channelId: String(sn.channelId || ''),
     channelTitle: String(sn.channelTitle || '').slice(0, 80),
     privacy: String(st.privacyStatus || ''),
@@ -8523,7 +8862,7 @@ function vidCampPlatNames(camp) {
    сам решает, когда зафиксировать просмотры), а вышедший после — нет
    (too_late). */
 function vidCampOpen(ci, campId) {
-  if (String(ci.camp.status || '') !== 'active') return false;
+  if (ci.camp.status !== 'active') return false;
   const d = q.deal.get('camp:' + campId);
   return !!(d && d.status === 'held' && d.amount - d.paid > 0);
 }
@@ -8654,6 +8993,17 @@ function vidOwed(campId) {
    правило — у частичного возврата (/api/deals/refund с amount) и у
    ручной выплаты (/api/deals/release), а число автор видит на доске
    (free) — чтобы шторка «Вернуть в кошелёк» не обещала больше. */
+/* Что вернёт «Завершить задание» (полный возврат /api/deals/refund, аудит
+   16.10.2026): остаток заморозки и невыбранная комиссия — та же формула,
+   что dealFeeBackAll; live — живые ролики (с ними касса откажет videos_live).
+   Окно «Завершить» и тост называли сумму по местному журналу, без комиссии. */
+function vidCloseOut(campId) {
+  const d = q.deal.get('camp:' + campId);
+  if (!d || d.status !== 'held') return { rest: 0, feeBack: 0, live: 0 };
+  const rest = Math.max(0, d.amount - d.paid), p = Number(d.fee_pct) || 0;
+  const feeBack = rest > 0 && p > 0 ? Math.max(0, (Number(d.fee_in) || 0) - (Number(d.fee_back) || 0) - pctUp(d.paid, p)) : 0;
+  return { rest, feeBack, live: q.vidLive.all(campId).length };
+}
 function vidReturnable(campId) {
   const d = q.deal.get('camp:' + campId);
   if (!d || d.status !== 'held') return 0;
@@ -8726,6 +9076,8 @@ function vidDTO(r, view, opts) {
     platform: r.platform || 'tiktok', videoId: vid,
     url: r.url || '', handle: r.handle || '', title: r.title || '',
     duration: r.duration == null ? null : r.duration, postedAt: r.posted_at || null,
+    /* «мин. N сек» не проверено сервером: площадка не сообщила длину (#27) */
+    durUnchecked: r.duration == null && Number(t.durUnchecked) > 0 ? Math.round(Number(t.durUnchecked)) : null,
     views: r.views || 0, likes: r.likes || 0, comments: r.comments || 0, shares: r.shares || 0,
     statsAt: r.stats_at || null,
     submitViews: r.submit_views == null ? null : r.submit_views,
@@ -8802,7 +9154,8 @@ function vidWho(uid) {
    одно решение по 5 000 просмотров пропускало бы потом накрутку до
    миллиона. Ролик с закрытым подсчётом оценку получает (её видят
    рекламодатель и владелец), но паузы и тревоги уже не будет. */
-function vidJudge(row) {
+/* v — свежий ответ площадки (если есть): чего она не сообщила (#31). */
+function vidJudge(row, v) {
   if (!row) return null;
   const plat = row.platform || 'tiktok';
   const today = dayOf(row.stats_at || Date.now());
@@ -8810,7 +9163,9 @@ function vidJudge(row) {
   const st = q.lastStats.get(row.blogger_id, plat, row.external_id) || {};
   const ch = q.channelOf.get(row.blogger_id, plat, row.external_id) || {};
   const res = quality.assessVideo(
-    { views: row.views, likes: row.likes, comments: row.comments, shares: row.shares },
+    { views: row.views, likes: row.likes, comments: row.comments, shares: row.shares,
+      noShares: plat === 'youtube' || !!(v && v.noShares),
+      likesHidden: !!(v && v.likesHidden), commentsOff: !!(v && v.commentsOff) },
     prev,
     { medViews: st.med_views, followers: st.followers != null ? st.followers : ch.subs,
       erLikes: st.er_likes, riskLevel: ch.risk_level });
@@ -8830,8 +9185,10 @@ function vidJudge(row) {
       '🚩 Видео по заданию (' + vidPlatName(plat) + '): цифры выбиваются\n\n'
       + 'Оценка: ' + riskWord(res.level) + ' (' + res.risk + ' из 100)\n'
       + 'Задание: «' + vidCampName(ci) + '»\nБлогер: ' + vidWho(row.blogger_id) + '\n'
-      + 'Просмотров ' + row.views + ', лайков ' + row.likes + ', комментариев ' + row.comments
-      + ', репостов ' + row.shares + '\n' + (row.url || '') + '\n\n'
+      + 'Просмотров ' + row.views
+      + ', лайков ' + (v && v.likesHidden ? 'скрыто' : row.likes)
+      + ', комментариев ' + (v && v.commentsOff ? 'выключены' : row.comments)
+      + (plat === 'youtube' ? '' : ', репостов ' + row.shares) + '\n' + (row.url || '') + '\n\n'
       + 'Что выбилось:\n• ' + res.reasons.join('\n• ') + '\n\n'
       + (hold && !row.risk_hold ? 'Начисления по ролику заморожены до вашего решения: ' : 'Посмотреть: ')
       + PUBLIC_URL + '/admin', 'server');
@@ -8847,7 +9204,7 @@ function vidApply(row, v, now) {
     now, now, row.id).changes) return false;
   q.vidSnap.run(row.id, dayOf(now), v.views, v.likes, v.comments, v.shares, now);
   if (v.cover) vidCoverSet(row.id, v.cover);
-  vidJudge(q.vidById.get(row.id));
+  vidJudge(q.vidById.get(row.id), v);
   /* Просмотры и резерв задания поменялись — лидерборд пересчитаем. */
   vidBoardDrop(row.camp_id);
   return true;
@@ -9510,7 +9867,7 @@ async function vidSyncRound(opts) {
     const auto = await vidAutoAccept(Date.now(), count);
     const t0 = Date.now();
     const due = q.vidAccrueDue.all({ $force: force ? 1 : 0, $now: t0, $stale: t0 - VID_DAILY_MS,
-      $retry: t0 - VID_RETRY_MS, $access: t0 - VID_ACCESS_RETRY_MS });
+      $retry: t0 - VID_RETRY_MS, $access: t0 - VID_ACCESS_RETRY_MS, $miss: t0 - VID_MISS_GAP_MS });
     tally.counted = due.length;
     for (const r of due) {
       let s;
@@ -9520,7 +9877,7 @@ async function vidSyncRound(opts) {
     }
     const now = Date.now();
     const rows = q.vidDue.all({ $track: VID_TRACK_MS, $now: now, $force: force ? 1 : 0,
-      $stale: now - VID_DAILY_MS, $lim: 200 });
+      $stale: now - VID_DAILY_MS, $miss: now - VID_MISS_GAP_MS, $lim: 200 });
     const res = await vidRefresh(rows, now);
     delete res.errors;
     return Object.assign(res, { autoAccepted: auto }, tally);
@@ -9532,6 +9889,19 @@ async function vidSyncRound(opts) {
   }
 }
 setInterval(() => { vidSyncRound().catch(() => {}); }, 30 * 60 * 1000).unref();
+/* Первый круг — вскоре после старта (аудит 16.10.2026, #33): каждая
+   выкладка перезапускает процесс, и с одним setInterval автозачёт,
+   суточные прибавки и финальные замеры ждали полчаса после каждого
+   перезапуска, а при частых выкладках не шли вовсе. VID_SYNC_FIRST_S —
+   через сколько секунд (по умолчанию 90: ретранслятор и бот успевают
+   подняться); 0 — без раннего круга (проверки, которые сами «старят»
+   строки и считают итоги круга). */
+const VID_SYNC_FIRST_MS = (() => {
+  const raw = String(ENV.VID_SYNC_FIRST_S == null ? '' : ENV.VID_SYNC_FIRST_S).trim();
+  const n = Number(raw);
+  return raw !== '' && Number.isFinite(n) && n >= 0 ? Math.round(n * 1000) : 90 * 1000;
+})();
+if (VID_SYNC_FIRST_MS > 0) setTimeout(() => { vidSyncRound().catch(() => {}); }, VID_SYNC_FIRST_MS).unref();
 
 /* ── Лидерборд и участники задания (как в More Views) ──
    Наружу — имя из профиля, ник и аватар подтверждённого аккаунта, число
@@ -9578,7 +9948,21 @@ function vidBoardAgg(campId) {
   }));
   const d = q.deal.get('camp:' + key);
   const reserved = vidReserved(key);
+  /* «на баланс» блогеру (аудит 16.10.2026): касса берёт комиссию с КАЖДОГО
+     ролика по накопленному (вверх), поэтому сумма строки «на баланс» — это
+     Σ vidNetOf(paid ролика), а не vidNetOf(суммы); иначе лидерборд и
+     «Выплачено блогерам» расходились с кошельком на 1 ₽ за ролик. */
+  const pfp = d ? Number(d.pay_fee_pct) || 0 : 0;
+  const netBy = new Map();
+  let feeAll = 0;
+  for (const v of q.boardPaid.all(key)) {
+    const n = vidNetOf(v.paid, pfp);
+    feeAll += Math.max(0, Math.round(Number(v.paid) || 0)) - n;
+    netBy.set(v.uid, (netBy.get(v.uid) || 0) + n);
+  }
+  for (const r of ranked) r.earnedNet = netBy.get(r.uid) || 0;
   const agg = {
+    paidNet: Math.max(0, (d ? Number(d.paid) || 0 : 0) - feeAll),
     at: now, key, ranked, sorted: {}, byUid: new Map(ranked.map((r) => [r.uid, r])), pages: new Map(),
     members: Number((q.tmCount.get(key) || {}).n) || 0,
     videos: ranked.reduce((s, r) => s + r.videos, 0),
@@ -9628,7 +10012,7 @@ function vidBoardSorted(agg, sort) {
   const mine = new Map(list.map((r, i) => [r.uid, Object.assign({}, r, { rank: i + 1 })]));
   const top = list.slice(0, 50);
   const leaders = top.map((r, i) => Object.assign({ rank: i + 1, name: vidPubName(r.name) },
-    vidPubChan(agg.key, r.uid), { card: vidCardOf(r.uid), who: vidWhoKey(r.uid), videos: r.videos, views: r.views, earned: r.earned }));
+    vidPubChan(agg.key, r.uid), { card: vidCardOf(r.uid), who: vidWhoKey(r.uid), videos: r.videos, views: r.views, earned: r.earned, earnedNet: r.earnedNet || 0 }));
   agg.sorted[sort] = { leaders, uids: top.map((r) => r.uid), mine };
   return agg.sorted[sort];
 }
@@ -10044,6 +10428,13 @@ async function handleVerifyCallback(req, res, url) {
     rec.channel = channel;
     rec.code = String(crypto.randomInt(100000, 1000000));
     rec.claim = crypto.randomBytes(24).toString('hex');
+    /* Начинали в мини-приложении Телеграма — код на странице (см. start). */
+    if (rec.viaCode) {
+      const pn = { tiktok: 'TikTok', youtube: 'YouTube', instagram: 'Instagram' }[rec.platform] || 'Аккаунт';
+      return verifyPage(res, pn + ' найден' + (channel.title ? ': ' + String(channel.title).slice(0, 60) : ''),
+        'Вернитесь в Телеграм — в BloggerPay откроется окно для кода. Введите там эти шесть цифр.'
+        + ' Никому их не сообщайте — даже поддержке BloggerPay.', true, rec.code);
+    }
     /* Возвращаем человека прямо в приложение. Пропуск живёт в адресе —
        его получает только этот браузер. */
     const back = APP_BASE + '?vfy=' + encodeURIComponent(state) + '&claim=' + rec.claim;
@@ -10067,8 +10458,14 @@ function sendOperatorPage(res) {
   res.writeHead(200, Object.assign({}, PAGE_SECURITY, {
     'Content-Type': 'text/html; charset=utf-8',
     'Cache-Control': 'no-store',
-    'Content-Security-Policy': "frame-ancestors 'none'",
-    'X-Frame-Options': 'DENY',
+    /* Единственное исключение — веб-Телеграм (аудит 16.10.2026): кнопка
+       «Админ панель» там открывает мини-приложение во фрейме, и при 'none'
+       владелец видел пустое «отказано в подключении» вместо подсказки
+       «откройте в приложении Телеграма». Действий во фрейме всё равно нет:
+       кука bp_admin SameSite=Strict чужому фрейму не достаётся. Прочие
+       сайты обернуть страницу по-прежнему не могут (X-Frame-Options не
+       умеет список, поэтому его нет — правило задаёт CSP). */
+    'Content-Security-Policy': "frame-ancestors https://web.telegram.org",
   }));
   res.end(html);
 }
@@ -10201,33 +10598,121 @@ const PAGE_SECURITY = {
    что десяток параллельных запросов от кого угодно клал приём платежей.
    Теперь читаем один раз и следим за временем правки: обновили файл на
    хостинге — отдача подхватит новый сам. */
+/* Сжатие и переспрос (аудит 16.10, C52). Главная весит 7 МБ и уходила
+   целиком, без сжатия и с no-store: КАЖДОЕ открытие мини-аппа по
+   мобильному интернету — 7 МБ заново (на живом адресе 38 с заставки).
+   Теперь:
+     · сжатые копии (br и gzip) готовятся ОДИН раз на версию файла, в
+       фоне (пул потоков zlib — сервер и касса не стоят), пока не готовы —
+       отдаём как есть;
+     · отпечаток (ETag по содержимому) и Last-Modified, Cache-Control:
+       no-cache — браузер хранит копию, но КАЖДЫЙ раз переспрашивает:
+       не изменилась — 304 в пару сотен байт, изменилась — новая версия
+       сразу (свежесть как при no-store, застрять старой версии нельзя).
+   ETag слабый (W/) и общий для всех сжатий: тело одно и то же по смыслу. */
+const zlib = require('node:zlib');
+function packable(type) {
+  return /^(text\/|application\/(json|manifest\+json|javascript)|image\/svg\+xml)/.test(String(type || ''));
+}
 const fileCache = new Map();
-function readCached(file) {
+function readCached(file, type) {
   let st;
   try { st = fs.statSync(file); } catch (e) { fileCache.delete(file); return null; }
   const stamp = String(st.mtimeMs) + ':' + String(st.size);
   const hit = fileCache.get(file);
-  if (hit && hit.stamp === stamp) return hit.buf;
+  if (hit && hit.stamp === stamp) return hit;
   let buf;
   try { buf = fs.readFileSync(file); } catch (e) { fileCache.delete(file); return null; }
-  fileCache.set(file, { stamp, buf });
-  return buf;
+  const ent = {
+    stamp,
+    buf,
+    etag: 'W/"' + crypto.createHash('sha1').update(buf).digest('base64url') + '"',
+    mtime: new Date(Math.floor(st.mtimeMs / 1000) * 1000),
+    pack: packable(type) && buf.length >= 1024,
+    gz: null,
+    br: null,
+  };
+  fileCache.set(file, ent);
+  if (ent.pack) {
+    zlib.gzip(buf, { level: 9 }, (err, out) => {
+      if (!err && fileCache.get(file) === ent && out.length < buf.length) ent.gz = out;
+    });
+    zlib.brotliCompress(buf, { params: {
+      [zlib.constants.BROTLI_PARAM_QUALITY]: 9,
+      [zlib.constants.BROTLI_PARAM_SIZE_HINT]: buf.length,
+    } }, (err, out) => {
+      if (!err && fileCache.get(file) === ent && out.length < buf.length) ent.br = out;
+    });
+  }
+  return ent;
+}
+/* Принимает ли клиент сжатие name (с q > 0). */
+function acceptsEnc(req, name) {
+  const parts = String(req.headers['accept-encoding'] || '').toLowerCase().split(',');
+  for (const part of parts) {
+    const bits = part.split(';');
+    if (bits[0].trim() !== name) continue;
+    let qv = 1;
+    for (const b of bits.slice(1)) {
+      const m = /^\s*q\s*=\s*([0-9.]+)\s*$/.exec(b);
+      if (m) qv = Number(m[1]);
+    }
+    return qv > 0;
+  }
+  return false;
+}
+function notModified(req, ent) {
+  const inm = req.headers['if-none-match'];
+  if (inm) {
+    const want = ent.etag.replace(/^W\//, '');
+    return String(inm).split(',').some((t) => {
+      const v = t.trim();
+      return v === '*' || v.replace(/^W\//, '') === want;
+    });
+  }
+  const ims = Date.parse(String(req.headers['if-modified-since'] || ''));
+  return Number.isFinite(ims) && ent.mtime.getTime() <= ims;
 }
 
 function sendFile(req, res, file, type) {
-  const buf = readCached(file);
-  if (!buf) return send(res, 404, { error: 'Файл не найден: ' + path.basename(file) });
-  /* Страницу приложения не кэшируем: иначе у людей застрянет старая
-     версия с деньгами. Картинку — можно, она не меняется. */
-  const fresh = /^image\//.test(type) ? 'public, max-age=86400' : 'no-store';
-  res.writeHead(200, Object.assign({}, PAGE_SECURITY, {
-    'Content-Type': type,
+  const ent = readCached(file, type);
+  if (!ent) return send(res, 404, { error: 'Файл не найден: ' + path.basename(file) });
+  /* Страницу приложения браузер хранит, но каждый раз переспрашивает
+     (no-cache, не no-store): иначе у людей застрянет старая версия с
+     деньгами. Картинку — можно держать сутки, она не меняется. */
+  const fresh = /^image\//.test(type) ? 'public, max-age=86400' : 'no-cache';
+  const head = Object.assign({}, PAGE_SECURITY, {
     'Cache-Control': fresh,
-    'Content-Length': buf.length,
-  }));
+    ETag: ent.etag,
+    'Last-Modified': ent.mtime.toUTCString(),
+  });
+  if (ent.pack) head.Vary = 'Accept-Encoding';
+  if (notModified(req, ent)) {
+    res.writeHead(304, head);
+    return res.end();
+  }
+  let body = ent.buf;
+  if (ent.pack && ent.br && acceptsEnc(req, 'br')) {
+    body = ent.br;
+    head['Content-Encoding'] = 'br';
+  } else if (ent.pack && ent.gz && acceptsEnc(req, 'gzip')) {
+    body = ent.gz;
+    head['Content-Encoding'] = 'gzip';
+  }
+  head['Content-Type'] = type;
+  head['Content-Length'] = body.length;
+  res.writeHead(200, head);
   if (req.method === 'HEAD') return res.end();
-  res.end(buf);
+  res.end(body);
 }
+/* Главную и sw.js читаем и сжимаем сразу при старте: первый человек
+   после выкладки уже получает сжатую страницу. */
+setTimeout(() => {
+  for (const p of ['/', '/sw.js']) {
+    const hit = staticFile(p);
+    if (hit) { try { readCached(hit.file, hit.type); } catch (e) { /* нет файла — не беда */ } }
+  }
+}, 50).unref();
 
 /* Обработчик вынесен отдельно: слушать приходится не один порт (почему —
    у listenOn ниже), а один http.Server умеет слушать только один. */
@@ -10536,6 +11021,15 @@ function boot() {
     const botMod = require('./bot');
     BOT = botMod;
     if (typeof botMod.setHooks === 'function') botMod.setHooks(invoiceHooks(botMod));
+    /* Телеграм отверг токен посреди работы (отозван в @BotFather) — бот
+       стоит, сайт работает. Тревога в Телеграм тем же токеном не дойдёт,
+       поэтому — запись в «Поломки» /admin. */
+    if (typeof botMod.setHooks === 'function') botMod.setHooks({ onStop: () => {
+      try {
+        q.insError.run(null, '[сервер] Бот остановлен: Телеграм не принял BOT_TOKEN (401 — токен отозван или сменён).'
+          + ' Сайт и касса работают. Впишите новый токен и перезапустите сервер.', 'server:bot', null, null);
+      } catch (e) { console.error('[бот] не записал остановку: ' + ((e && e.message) || e)); }
+    } });
     botMod.boot().then((ok) => {
       if (ok) console.log('[BloggerPay] бот запущен, кнопка ведёт на ' + PUBLIC_URL);
     }).catch((e) => console.error('[бот] ' + ((e && e.message) || e)));

@@ -250,7 +250,11 @@ function assess(input, over) {
 /* ── Оценка одного ролика задания ──
    Зачем отдельно от assess: канал может быть живым, а конкретный ролик
    под рекламу — докручен, потому что за него платят по просмотрам.
-   cur      — цифры ролика сейчас { views, likes, comments, shares };
+   cur      — цифры ролика сейчас { views, likes, comments, shares } и что
+              площадка НЕ сообщила (аудит 16.10.2026, #31): noShares —
+              репостов у площадки нет (YouTube), likesHidden — лайки
+              скрыты, commentsOff — комментарии выключены. Неизвестное
+              число — не ноль: признаки по нему не считаем;
    prevDays — снимки прошлых суток [{ day, views, likes, comments, shares }];
    channel  — база канала { medViews, followers, erLikes, riskLevel }.
    Выход как у assess: { risk 0..100, level, reasons[] по-русски }.
@@ -270,24 +274,30 @@ function assessVideo(cur, prevDays, channel, over) {
   let risk = 0;
   const reasons = [];
 
+  const likesKnown = !c.likesHidden;
   /* 1. Просмотры есть, лайков нет. */
-  if (views >= T.vidViewsForLikes && er < T.erLikesDead) {
+  if (likesKnown && views >= T.vidViewsForLikes && er < T.erLikesDead) {
     risk += T.vidWeightLikes;
     reasons.push('У ролика ' + ru(views) + ' просмотров и всего ' + ru(likes) + ' лайков — '
       + pct(er) + '%. Обычно это единицы процентов.');
   }
 
-  /* 2. Полная тишина: ни одного комментария и репоста при заметных просмотрах. */
-  if (views >= T.vidViewsForTalk && comments === 0 && shares === 0) {
+  /* 2. Полная тишина: ни одного комментария и репоста при заметных
+        просмотрах — только по тем числам, что площадка сообщила. */
+  const talkC = !c.commentsOff, talkS = !c.noShares;
+  if (views >= T.vidViewsForTalk && (talkC || talkS)
+      && (!talkC || comments === 0) && (!talkS || shares === 0)) {
     risk += T.vidWeightSilent;
-    reasons.push('При ' + ru(views) + ' просмотрах ни одного комментария и ни одного репоста.');
+    reasons.push('При ' + ru(views) + ' просмотрах '
+      + (talkC && talkS ? 'ни одного комментария и ни одного репоста.'
+        : talkC ? 'ни одного комментария.' : 'ни одного репоста.'));
   }
 
   /* 3. Ролик выбивается из канала: в десятки раз больше обычного и
         больше всей аудитории — а лайков при этом мало. Вирусный ролик
         тоже выбивается, но его лайкают. */
   const med = num(ch.medViews), fol = num(ch.followers);
-  if (med > 0 && fol > 0 && views > T.vidOverMedian * med && views > T.vidOverFollowers * fol
+  if (likesKnown && med > 0 && fol > 0 && views > T.vidOverMedian * med && views > T.vidOverFollowers * fol
       && er < T.erLikesLow) {
     risk += T.vidWeightOutlier;
     reasons.push('Ролик набрал ' + ru(views) + ' просмотров — в ' + Math.round(views / med)
@@ -297,8 +307,8 @@ function assessVideo(cur, prevDays, channel, over) {
 
   /* 4. Скачок за сутки без лайков. Сравниваем с прошлыми сутками: живой
         ролик, ушедший в рекомендации, приносит и лайки в своей обычной
-        доле; закупленные просмотры — нет. */
-  if (prev.length) {
+        доле; закупленные просмотры — нет. Лайки скрыты — сравнивать нечем. */
+  if (likesKnown && prev.length) {
     const last = prev[prev.length - 1];
     const before = prev.length > 1 ? prev[prev.length - 2] : null;
     const grow = views - num(last.views);

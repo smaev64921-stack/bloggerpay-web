@@ -80,6 +80,7 @@
   .inp:focus{border-color:var(--acc)}
   textarea.inp{resize:vertical;min-height:84px;line-height:1.5}
   .err{color:var(--bad);font-size:var(--fs-sm);margin-top:10px;min-height:1em}
+  .inv-warn{color:var(--warn)}
   .gate-or{display:flex;align-items:center;gap:10px;margin:18px 0 12px;color:var(--t3);font-size:var(--fs-sm)}
   .gate-or::before,.gate-or::after{content:'';flex:1;height:1px;background:var(--line)}
 
@@ -1085,6 +1086,10 @@ var KYC_TAB = 'queued';
    из свежей строки, защита от «решения по фото, которого не видел»
    теряет смысл. */
 var KYC_SEEN = {};
+/* «Заявка изменилась» (409): старую отметку забываем, иначе после «Обновить»
+   и нового просмотра фото решение отвечало тем же отказом до перезагрузки
+   страницы (аудит 16.10.2026). Следующее открытие фото запишет свежую. */
+function kycStale(id, er){ if(er && /изменилась/.test(String(er.message || ''))) delete KYC_SEEN[id]; }
 function kycRu(s){ return { queued:'Ждёт проверки', approved:'Подтверждена', rejected:'Отклонена' }[s] || (s || '—'); }
 function kycButtons(k){
   var h = '<div class="acts">'
@@ -1125,12 +1130,23 @@ VIEWS.kyc = function(first, seq){
    пришлите туда же. Деньги пришли на расчётный счёт — «Зачислить»:
    сумма ложится на баланс через журнал, повтор второй раз не платит. */
 var INV_TAB = 'open';
+var INV_PCT = 7;   /* комиссия пополнения, приходит с сервера (feePct) */
+/* Пришло paid (с комиссией) → на баланс и комиссия: тот же обратный расчёт,
+   что у сервера (POST /api/admin/invoices/credit, поле paid). */
+function invSplit(paid){
+  var pct = Number(INV_PCT) || 0, f = function(a){ return Math.round(a * pct / 100); };
+  var a = Math.floor(paid * 100 / (100 + pct));
+  while(a > 0 && a + f(a) > paid) a--;
+  while(a + 1 + f(a + 1) <= paid) a++;
+  return { net: a, fee: paid - a };
+}
 function invRu(s){ return { 'new':'Ждёт Телеграма', linked:'В переписке', paid:'Оплачен', rejected:'Закрыт' }[s] || (s || '—'); }
 function invSt(s){ return s === 'paid' ? 'approved' : s === 'rejected' ? 'rejected' : 'queued'; }
 VIEWS.inv = function(first, seq){
   var tab = INV_TAB;
   return api('GET', '/api/admin/invoices' + (tab ? ('?status=' + tab) : '')).then(function(j){
     if(SEC !== 'inv' || seq !== loadSeq || tab !== INV_TAB) return;
+    if(j.feePct != null) INV_PCT = Number(j.feePct) || 0;
     var rows = j.rows || [];
     var chips = '<div class="chips">' + [['open','Ждут'],['paid','Оплаченные'],['rejected','Закрытые'],['','Все']].map(function(t){
       return '<button type="button" class="chip' + (t[0] === INV_TAB ? ' on' : '') + '" data-invtab="' + t[0] + '">' + t[1] + '</button>'; }).join('') + '</div>';
@@ -1139,13 +1155,14 @@ VIEWS.inv = function(first, seq){
       + rows.map(function(r){
           var open = r.status === 'new' || r.status === 'linked';
           var acts = open
-            ? '<div class="acts"><button type="button" class="btn ok sm" data-invok="' + r.id + '" data-amt="' + r.amount + '" data-co="' + esc(r.company) + '">Зачислить</button>'
+            ? '<div class="acts"><button type="button" class="btn ok sm" data-invok="' + r.id + '" data-amt="' + r.amount + '" data-total="' + (r.total || r.amount) + '" data-co="' + esc(r.company) + '">Зачислить</button>'
               + '<button type="button" class="btn ghost sm" data-invno="' + r.id + '">Закрыть</button></div>'
             : '<span class="mute">' + (r.status === 'paid' ? 'зачислено ' + money(r.paid) : (r.note ? esc(r.note) : '—')) + '</span>';
           return '<tr><td class="first who"><button type="button" class="linkish" data-user="' + r.user_id + '"><b>' + esc(r.user_name) + '</b><span>' + esc(r.user_email) + ' · id ' + r.user_id + '</span></button></td>'
             + '<td class="who" data-l="Плательщик"><b>' + esc(r.company) + '</b><span>ИНН ' + esc(r.inn) + (r.email && r.email !== r.user_email ? ' · счёт на ' + esc(r.email) : '') + '</span>'
             + (r.comment ? '<div class="mute" style="margin-top:4px">«' + esc(r.comment) + '»</div>' : '') + '</td>'
-            + '<td class="num" data-l="Сумма"><b>' + money(r.amount) + '</b><div class="mute">счёт №' + r.id + '</div></td>'
+            + '<td class="num" data-l="Сумма"><b>' + money(r.amount) + '</b><div class="mute">на баланс · счёт №' + r.id + '</div>'
+            + (r.total && r.total !== r.amount ? '<div class="mute">к оплате ' + money(r.total) + ' (+' + INV_PCT + '%)</div>' : '') + '</td>'
             + '<td data-l="Телеграм">' + (r.tg ? '<b>' + esc(r.tg_user || r.tg_name || 'в боте') + '</b>' : '<span class="mute">ещё не открыл бота</span>') + '</td>'
             + '<td data-l="Статус"><span class="st ' + invSt(r.status) + '">' + invRu(r.status) + '</span></td>'
             + '<td class="mute" data-l="Создана" style="white-space:nowrap">' + when(r.created_at) + '</td>'
@@ -1154,7 +1171,7 @@ VIEWS.inv = function(first, seq){
     $('view').innerHTML = chips + body
       + '<p class="note">Как это работает: человек в приложении выбирает «Пополнить → По счёту», указывает компанию, ИНН и сумму и открывает бота. '
       + 'Его сообщения приходят вам в Телеграм — <b>отвечайте на них кнопкой «Ответить»</b>, бот передаст ответ, можно прислать счёт файлом. '
-      + 'Когда деньги пришли на расчётный счёт, нажмите <b>«Зачислить»</b>: сумма ляжет на баланс клиента, ему придёт сообщение. '
+      + 'Когда деньги пришли на расчётный счёт, нажмите <b>«Зачислить»</b> и впишите, сколько пришло (с комиссией): на баланс клиента ляжет сумма без комиссии ' + INV_PCT + '%, ему придёт сообщение. '
       + 'Минимальная сумма заявки — ' + money(j.min || 10000) + '.</p>';
   });
 };
@@ -1163,12 +1180,40 @@ VIEWS.inv = function(first, seq){
 VIEWS.deals = function(){
   return api('GET', '/api/admin/deals').then(function(j){
     if(SEC !== 'deals') return;
-    var rows = j.rows || [];
-    $('view').innerHTML = (!rows.length ? '<div class="box"><div class="empty">Замороженных денег нет — все сделки закрыты</div></div>'
+    var rows = j.rows || [], dsp = j.disputes || [];
+    /* Открытые споры со сторонами (аудит 16.10.2026): раньше было видно
+       только заморозки — какая под спором и чей он, не понять, а снять
+       спор было нечем. Спор блогера по бюджету задания держит только его
+       начисления — решается его частью, бюджет остаётся открытым. */
+    var dHtml = !dsp.length ? '' : '<h2 class="h2">Открытые споры · ' + dsp.length + '</h2>'
+      + '<div class="box"><table class="rt"><thead><tr><th>Сделка</th><th>Кто открыл</th><th>Что держит</th><th class="num">Остаток</th><th>Открыт</th><th></th></tr></thead><tbody>'
+      + dsp.map(function(x){
+          var held = x.dealStatus === 'held', blg = x.camp && x.payeeId != null;
+          var uBtn = function(id, name, mail){ return '<button type="button" class="linkish" data-user="' + id + '"><b>' + esc(name || ('id ' + id)) + '</b></button>' + (mail ? '<span>' + esc(mail) + '</span>' : ''); };
+          var scope = x.payeeId == null ? 'по всей сделке' : (x.payeeId === x.openedBy ? 'по своей выплате' : 'по выплате id ' + x.payeeId);
+          var holds = !held ? 'сделка уже закрыта (' + esc(x.dealStatus || '—') + ') — спор ничего не держит'
+            : blg ? 'начисления этому блогеру' + (x.liveVideos ? ' · видео в работе: ' + x.liveVideos : '') + '; возврат автору — нет'
+            : x.blocksRefund ? 'выплаты и возврат по сделке' : 'выплату этому исполнителю';
+          var acts = '<div class="acts">'
+            + (held ? (blg
+                ? '<button type="button" class="btn sm" data-dsettle="' + x.id + '" data-deal="' + esc(x.dealId) + '" data-payee="' + x.payeeId + '" data-free="' + (Number(x.free) || 0) + '" data-paidto="' + (Number(x.paidTo) || 0) + '" data-name="' + esc(x.payeeName || ('id ' + x.payeeId)) + '">Решить</button>'
+                : '<button type="button" class="btn sm" data-settle="' + esc(x.dealId) + '" data-left="' + (Number(x.left) || 0) + '" data-payee="' + (x.dealPayeeId || x.payeeId || '') + '">Решить</button>')
+              : '')
+            + '<button type="button" class="btn ghost sm" data-dclose="' + x.id + '" data-deal="' + esc(x.dealId) + '" data-payee="' + (x.payeeId == null ? '' : x.payeeId) + '" data-scope="' + esc(scope) + '" data-name="' + esc(x.openerName || ('id ' + x.openedBy)) + '">Снять спор</button></div>';
+          return '<tr><td class="first"><span class="req">' + esc(x.dealId) + '</span><div class="mute">' + (x.camp ? 'бюджет задания · ' : '') + 'спор №' + x.id + '</div></td>'
+            + '<td class="who" data-l="Кто открыл">' + uBtn(x.openedBy, x.openerName, (x.byPayer ? 'плательщик · ' : '') + scope) + '</td>'
+            + '<td data-l="Что держит"><span>' + holds + (x.paidTo ? '<div class="mute">ему уже выплачено ' + money(x.paidTo) + '</div>' : '') + '</span></td>'
+            + '<td class="num" data-l="Остаток"><span><b>' + money(x.left) + '</b>' + (x.camp && held ? '<div class="mute">свободно ' + money(x.free) + '</div>' : '') + '</span></td>'
+            + '<td class="mute" data-l="Открыт" style="white-space:nowrap">' + when(x.createdAt) + '</td>'
+            + '<td class="acts-td">' + acts + '</td></tr>';
+        }).join('') + '</tbody></table></div>'
+      + '<h2 class="h2">Заморожено</h2>';
+    $('view').innerHTML = dHtml + (!rows.length ? '<div class="box"><div class="empty">Замороженных денег нет — все сделки закрыты</div></div>'
       : '<div class="box"><table class="rt"><thead><tr><th>Сделка</th><th>Плательщик</th><th class="num">Заморожено</th><th class="num">Выплачено</th><th class="num">Остаток</th><th>Создана</th><th></th></tr></thead><tbody>'
       + rows.map(function(d){
           var left = d.amount - d.paid, camp = /^camp:/.test(String(d.id));
-          return '<tr><td class="first"><span class="req">' + esc(d.id) + '</span>' + (camp ? '<div class="mute">бюджет кампании</div>' : '') + '</td>'
+          return '<tr><td class="first"><span class="req">' + esc(d.id) + '</span>' + (camp ? '<div class="mute">бюджет кампании</div>' : '')
+            + (d.disputes ? '<div style="margin-top:4px"><span class="st blocked">' + (d.disputes > 1 ? 'споров: ' + d.disputes : 'спор') + '</span></div>' : '') + '</td>'
             + '<td class="who" data-l="Плательщик"><button type="button" class="linkish" data-user="' + d.payer_id + '"><b>' + esc(d.payer_name) + '</b></button>'
             + '<span>' + (d.payee_id ? ('исполнитель: <button type="button" class="linkish" data-user="' + d.payee_id + '"><b>id ' + d.payee_id + '</b></button>') : 'исполнитель не назначен') + '</span></td>'
             + '<td class="num" data-l="Заморожено">' + money(d.amount) + '</td>'
@@ -1179,7 +1224,9 @@ VIEWS.deals = function(){
         }).join('') + '</tbody></table></div>')
       + '<p class="note">Обычно замороженные деньги закрывают сами участники: заказчик подтверждает работу или возвращает. '
       + '<b>Вмешиваться нужно только по спору.</b> Решение делит <b>остаток</b>: доля исполнителю, остальное — заказчику; копейки не теряются. '
-      + 'Для бюджета кампании без назначенного исполнителя можно только вернуть остаток заказчику — и это закроет бюджет для всех блогеров кампании. Решение необратимо.</p>';
+      + 'Для бюджета кампании без назначенного исполнителя можно только вернуть остаток заказчику — и это закроет бюджет для всех блогеров кампании. Решение необратимо.</p>'
+      + '<p class="note"><b>Спор блогера по бюджету задания</b> держит только его начисления: «Решить» отдаёт ему сумму из свободного остатка (0 — отказать) и снимает спор, '
+      + 'задание остаётся открытым для остальных. <b>Снять спор</b> — без денег: начисления, которые он держал, пойдут со следующего круга.</p>';
   });
 };
 
@@ -1704,6 +1751,9 @@ var LOG_RU = {
   /* имена действий по видео заданий — в духе остальных («что-сделано»);
      незнакомое имя журнал всё равно покажет как есть */
   'video-count':'Видео засчитано', 'video-decline':'Видео не засчитано', 'video-sync':'Данные видео обновлены вручную',
+  'inv-new':'Заявка на пополнение по счёту', 'inv-credit':'Зачислено по счёту', 'inv-reject':'Заявка на счёт закрыта',
+  'user-erase':'Данные пользователя удалены', 'dispute-close':'Спор закрыт',
+  'cards-unpublish-all':'Все карты сняты с витрины', 'cards-restore-all':'Карты возвращены на витрину',
 };
 VIEWS.log = function(){
   return api('GET', '/api/admin/log?limit=300').then(function(j){
@@ -1860,6 +1910,41 @@ function doSettle(dealId, left, payeeId){
       .then(function(r){ after('Разделено: исполнителю ' + money(r.исполнителю) + ', заказчику ' + money(r.плательщику)); });
   });
 }
+/* Снять один спор (аудит 16.10.2026): оператор снимает любой — по номеру
+   строки, чтобы снятие спора «по всей сделке» не трогало споры блогеров. */
+function doDisputeClose(ds){
+  var id = Number(ds.dclose), payee = ds.payee ? Number(ds.payee) : null;
+  return ask({ title:'Снять спор', html:'Спор №' + id + ' по сделке <b>' + esc(ds.deal) + '</b> — открыл <b>' + esc(ds.name) + '</b>, ' + esc(ds.scope) + '.'
+      + '\nДеньги не двигаются: снимается только замок. ' + (/^camp:/.test(ds.deal) ? 'Начисления, которые он держал, пойдут со следующего круга.' : 'Стороны снова смогут выплатить или вернуть деньги.'),
+    ok:'Снять спор' }).then(function(r){
+    if(!r.ok) return;
+    return api('POST', '/api/deals/dispute/close', { dealId: ds.deal, payeeId: payee, id: id })
+      .then(function(j){ after(j.closed ? 'Спор снят' : 'Спор уже был снят'); });
+  });
+}
+/* Спор блогера по бюджету задания: его часть — сумма из свободного
+   остатка (резервы живых роликов не трогаем), 0 — отказать; спор
+   снимается, задание остаётся открытым для остальных. */
+function doDisputeSettle(ds){
+  var id = Number(ds.dsettle), free = Number(ds.free) || 0, paidTo = Number(ds.paidto) || 0;
+  return ask({ title:'Решить спор блогера',
+    html:'Блогер <b>' + esc(ds.name) + '</b>, задание <b>' + esc(ds.deal) + '</b>.'
+      + (paidTo ? '\nЕму уже выплачено по заданию ' + money(paidTo) + '.' : '')
+      + '\nСвободно в бюджете: <b>' + money(free) + '</b> — остальное держат видео на проверке и в подсчёте просмотров.'
+      + '\nСколько присудить блогеру сверх начисленного? 0 — в претензии отказано. Спор снимется, задание останется открытым; комиссия с этой суммы не берётся. Решение необратимо.',
+    input:true, value:'0', placeholder:'Сумма, ₽', ok:'Решить', danger:true,
+    check: function(v){
+      var n = Number(String(v).replace(/\s+/g, ''));
+      if(!/^\d+$/.test(String(v).replace(/\s+/g, ''))) return 'Целое число рублей, от 0';
+      if(n > free) return 'Свободно только ' + money(free);
+      return '';
+    } }).then(function(r){
+    if(!r.ok) return;
+    var amount = Number(String(r.value).replace(/\s+/g, '')) || 0;
+    return api('POST', '/api/deals/settle', { dealId: ds.deal, payeeId: Number(ds.payee), amount: amount, opKey: 'bp-op-dsettle-' + id })
+      .then(function(j){ after(amount ? 'Блогеру ' + money(j.исполнителю) + ' из бюджета задания — спор снят' : 'В претензии отказано — спор снят'); });
+  });
+}
 
 /* «Снять все карты с витрины» / «Вернуть все». Перед окном берём свежие
    числа с сервера: в окне должно стоять ровно то, что сейчас снимется. */
@@ -1921,14 +2006,37 @@ document.addEventListener('click', function(e){
   if(ds.kyctab !== undefined){ KYC_TAB = ds.kyctab; load(true); return; }
   if(ds.invtab !== undefined){ INV_TAB = ds.invtab; load(true); return; }
   if(ds.invok){
-    ask({ title:'Зачислить по счёту №' + ds.invok, html:'Деньги от <b>' + esc(ds.co) + '</b> пришли на расчётный счёт? Укажите, сколько пришло — эта сумма ляжет на баланс клиента.',
-          input:'text', value:String(ds.amt || ''), required:'Укажите сумму',
-          check:function(v){ var n = Number(String(v).replace(/[\s\u00a0]/g, '')); return Number.isInteger(n) && n > 0 ? '' : 'Сумма — целое число рублей'; },
+    /* Оператор переписывает число из выписки банка — «сколько пришло» (с
+       комиссией); на баланс и комиссию окно считает само и показывает до
+       нажатия (аудит 16.10.2026: раньше пришедшее целиком ложилось на
+       баланс, и сервер дописывал 7% сверху). */
+    var invTotal = Number(ds.total) || Number(ds.amt) || 0, invAmt = Number(ds.amt) || 0;
+    var invNum = function(v){ return Number(String(v || '').replace(/[\s ]/g, '')); };
+    var invPaint = function(root){
+      var box = root.querySelector('#invSplit'); if(!box) return;
+      var n = invNum((root.querySelector('#dlgIn') || {}).value);
+      if(!Number.isInteger(n) || n < 2){ box.innerHTML = 'Впишите сумму целым числом рублей.'; return; }
+      var s = invSplit(n);
+      box.innerHTML = 'На баланс клиента: <b>' + money(s.net) + '</b><br>Комиссия сервиса: <b>' + money(s.fee) + '</b>'
+        + (n !== invTotal ? '<br><span class="inv-warn">Пришло ' + (n > invTotal ? 'больше' : 'меньше') + ', чем в счёте ('
+          + money(invTotal) + '). Проверьте выписку.</span>' : '');
+    };
+    ask({ title:'Зачислить по счёту №' + ds.invok,
+          html:'Счёт для <b>' + esc(ds.co) + '</b>: к оплате <b>' + money(invTotal) + '</b>'
+            + (invTotal !== invAmt ? ' — это ' + money(invAmt) + ' на баланс и комиссия ' + INV_PCT + '% сверху' : '') + '.'
+            + '<br>Сколько пришло на расчётный счёт? Впишите сумму из выписки банка — как есть, с комиссией.',
+          body:'<p class="txt" id="invSplit" style="margin:0 0 8px"></p>',
+          input:'text', value:String(invTotal || ''), required:'Укажите, сколько пришло',
+          onOpen:function(w){ var i = w.querySelector('#dlgIn'); if(i){ i.setAttribute('inputmode', 'numeric'); i.setAttribute('aria-label', 'Сколько пришло, ₽'); i.addEventListener('input', function(){ invPaint(w); }); } invPaint(w); },
+          check:function(v){ var n = invNum(v); return Number.isInteger(n) && n >= 2 ? '' : 'Сумма — целое число рублей'; },
           ok:'Зачислить', okClass:'ok' })
       .then(function(r){
         if(!r.ok) return;
-        var n = Number(String(r.value).replace(/[\s\u00a0]/g, ''));
-        return api('POST', '/api/admin/invoices/credit', { id: Number(ds.invok), amount: n }).then(function(){ after('Зачислено ' + money(n)); });
+        var n = invNum(r.value);
+        return api('POST', '/api/admin/invoices/credit', { id: Number(ds.invok), paid: n }).then(function(res){
+          after('Зачислено на баланс ' + money(res && res.amount != null ? res.amount : invSplit(n).net)
+            + (res && res.fee ? ' · комиссия ' + money(res.fee) : ''));
+        });
       }).catch(function(er){ say(er.message, true); after(); });
     return;
   }
@@ -1968,7 +2076,7 @@ document.addEventListener('click', function(e){
       .then(function(r){
         if(!r.ok) return;
         return api('POST', '/api/admin/kyc/approve', { requestId: Number(ds.kycok), seenAt: KYC_SEEN[ds.kycok] || ds.seen }).then(function(){ after('Личность подтверждена'); });
-      }).catch(function(er){ say(er.message, true); after(); });
+      }).catch(function(er){ kycStale(ds.kycok, er); say(er.message, true); after(); });
     return;
   }
   if(ds.kycno){
@@ -1978,10 +2086,12 @@ document.addEventListener('click', function(e){
       .then(function(r){
         if(!r.ok) return;
         return api('POST', '/api/admin/kyc/reject', { requestId: Number(ds.kycno), note: r.value, seenAt: KYC_SEEN[ds.kycno] || ds.seen }).then(function(){ after('Отклонена — человек сможет прислать документы заново'); });
-      }).catch(function(er){ say(er.message, true); after(); });
+      }).catch(function(er){ kycStale(ds.kycno, er); say(er.message, true); after(); });
     return;
   }
   if(ds.settle){ doSettle(ds.settle, Number(ds.left), Number(ds.payee) || null).catch(function(er){ say(er.message, true); }); return; }
+  if(ds.dclose){ doDisputeClose(ds).catch(function(er){ say(er.message, true); after(); }); return; }
+  if(ds.dsettle){ doDisputeSettle(ds).catch(function(er){ say(er.message, true); after(); }); return; }
   if(ds.take){
     t.disabled = true;
     api('POST', '/api/admin/withdrawals/take', { withdrawalId: Number(ds.take) })
@@ -2086,15 +2196,41 @@ $('key').addEventListener('keydown', function(e){ if(e.key === 'Enter') enter();
 /* Вход почтой владельца: обычный вход в аккаунт даёт токен, токен меняется
    на сессию пульта (с вашим именем для журнала), а сам токен сразу
    гасится — пульту он больше не нужен. */
+/* Аудит 16.10.2026: приложение кладёт на сервер не пароль, а производную —
+   SHA-256 от «bp-srv-v1:почта:пароль» (bpSrvPass в bloggerpay-1008-v100.html).
+   Пульт слал пароль как есть, и владелец с аккаунтом из приложения получал
+   «Неверный email или пароль». Порядок тот же, что у приложения: сначала
+   производная, при 401 — сам пароль (аккаунты, где он лёг открытым). */
+function srvPass(email, pass){
+  var raw = 'bp-srv-v1:' + String(email || '').trim().toLowerCase() + ':' + String(pass || '');
+  try{
+    if(window.crypto && crypto.subtle && window.TextEncoder){
+      return crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw)).then(function(buf){
+        var a = new Uint8Array(buf), o = '';
+        for(var i = 0; i < a.length; i++) o += ('0' + a[i].toString(16)).slice(-2);
+        return o;
+      }, function(){ return null; });
+    }
+  }catch(e){}
+  return Promise.resolve(null);
+}
+function loginTry(email, password){
+  return fetch('/api/login', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ email: email, password: password }) })
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ return { r: r, j: j }; }); });
+}
 function mailEnter(){
   var b = $('mailEnter'); if(b.disabled) return;
   var email = $('mail').value.trim(), pass = $('mailPass').value;
   if(!email || !pass){ $('mailErr').textContent = 'Введите почту и пароль'; return; }
   $('mailErr').textContent = ''; b.disabled = true;
   var token = '';
-  fetch('/api/login', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ email: email, password: pass }) })
-    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){
-      if(!r.ok || !j.token) throw new Error(j.error || 'Почта или пароль не подошли');
+  srvPass(email, pass)
+    .then(function(dp){
+      if(!dp) return loginTry(email, pass);
+      return loginTry(email, dp).then(function(x){ return x.r.status === 401 ? loginTry(email, pass) : x; });
+    })
+    .then(function(x){ var r = x.r, j = x.j; return Promise.resolve().then(function(){
+      if(!r.ok || !j.token) throw new Error(j.error || (r.status >= 500 ? 'Сервер не отвечает — попробуйте через минуту' : 'Почта или пароль не подошли'));
       token = j.token;
       return fetch('/api/admin/session', { method:'POST', credentials:'same-origin',
         headers:{ 'Content-Type':'application/json', 'X-Admin-Session':'1', 'Authorization':'Bearer ' + token }, body:'{}' });

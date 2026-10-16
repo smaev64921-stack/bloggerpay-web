@@ -37,6 +37,7 @@ media('18000000000000001', 'V', 'PH0to1', 'IMAGE', 'FEED', 0);
 media('18000000000000002', 'V', 'RC0de0', 'VIDEO', 'REELS', 900);
 media('18000000000000003', 'V', 'RC0de1', 'VIDEO', 'REELS', 4200);
 media('18000000000000004', 'K', 'KReel01', 'VIDEO', 'REELS', 7000);
+media('18000000000000005', 'V', 'RC0de2', 'VIDEO', 'REELS', 2500);
 const ig = { noViews: false, dead: new Set(), refreshed: [], tokens: new Map() };   // tok → long-lived token
 const YCH = { 'UC-Vanya00000000000000': 'Ваня Влог' };
 const YTV = new Map([
@@ -145,7 +146,7 @@ const srv = spawn(process.execPath, ['server.js'], { cwd: CWD, stdio: process.en
   ...process.env, PORT: String(PORT), DB_PATH: DB, ADMIN_KEY: KEY, ADMIN_EMAIL: '', PUBLIC_URL: BASE, APP_URL: BASE + '/',
   IG_CLIENT_ID: 'ig-client', IG_CLIENT_SECRET: IG_SECRET, IG_AUTH_BASE: FK, IG_API_BASE: FK, IG_GRAPH_BASE: FK, IG_GRAPH_VER: '',
   YT_CLIENT_ID: 'yt-client', YT_CLIENT_SECRET: 'yt-secret', YT_API_BASE: FK, YT_OAUTH_BASE: FK, YT_WEB_BASE: FK, YT_API_KEY: 'yt-key',
-  TT_CLIENT_KEY: '', TT_CLIENT_SECRET: '', VID_AUTO_ACCEPT_H: '', VID_TRACK_DAYS: '',
+  TT_CLIENT_KEY: '', TT_CLIENT_SECRET: '', VID_AUTO_ACCEPT_H: '', VID_TRACK_DAYS: '', VID_SYNC_FIRST_S: '0',
   BOT_TOKEN: '', ADMIN_CHAT_ID: '', RESEND_API_KEY: '', TOPUP_FEE_PCT: '0', TASK_FEE_PCT: '0', PAYOUT_FEE_PCT: '0', WITHDRAW_FEE_PCT: '0',
   TEST_TOPUP: '1', TEST_TOPUP_OPEN: '1', YOOKASSA_SHOP_ID: '', YOOKASSA_SECRET_KEY: '' } });
 async function up() { for (let i = 0; i < 100; i++) { try { const r = await fetch(BASE + '/api/health'); await r.text(); if (r.ok) return true; } catch (e) {} await sleep(150); } return false; }
@@ -239,6 +240,16 @@ try {
   ok(wp.status === 409 && wp.body.code === 'wrong_platform' && /TikTok/.test(wp.body.error), 'в задании только TikTok — Reels не принимается', wp.body);
   const wl = await bind(BLG, 'A', 'https://www.instagram.com/reel/RC0de0/', { platform: 'tiktok' });
   ok(wl.status === 400 && wl.body.code === 'wrong_link' && /Instagram-аккаунт/.test(wl.body.error), 'ссылка Instagram при выбранном TikTok — подсказка «выберите Instagram-аккаунт»', wl.body);
+  /* #27: длину ролика Instagram не отдаёт — правило «мин. N сек» сервер не
+     проверил; не молча: пометка durUnchecked у ролика (её видят обе стороны) */
+  ok(await camp('L', { platforms: 'inst', minDuration: 15, videoMinSec: 15 }, 5000, ADV), 'задание только для Instagram с минимальной длиной 15 сек');
+  const dur = await bind(BLG, 'L', 'https://www.instagram.com/reel/RC0de2/');
+  const vd = dur.body.video || {};
+  ok(dur.status === 200 && vd.status === 'review' && vd.duration === null && vd.durUnchecked === 15,
+    'Reels в задание «мин. 15 сек»: принят, длина помечена «не проверена сервером» (durUnchecked 15)', dur.body);
+  ok(v1.durUnchecked === null, 'в задании без минимальной длины пометки нет', { durUnchecked: v1.durUnchecked });
+  const vda = (await api('GET', '/api/tasks/video?id=' + vd.id, null, ADV.token)).body.video || {};
+  ok(vda.durUnchecked === 15, 'рекламодатель видит пометку в карточке ролика', { durUnchecked: vda.durUnchecked });
 
   /* 3 · зачёт, выплата, рост и суточный круг */
   const rv = await api('POST', '/api/tasks/video/review', { id: v1.id, ok: true }, ADV.token);

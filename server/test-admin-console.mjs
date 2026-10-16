@@ -86,7 +86,8 @@ try {
     const r = await fetch(BASE + p);
     const html = await r.text();
     ok(r.status === 200 && /text\/html/.test(r.headers.get('content-type') || '')
-      && r.headers.get('x-frame-options') === 'DENY' && /BloggerPay/.test(html), 'страница пульта открывается по ' + p);
+      && (r.headers.get('content-security-policy') || '') === 'frame-ancestors https://web.telegram.org'
+      && /BloggerPay/.test(html), 'страница пульта открывается по ' + p + ' (во фрейме — только веб-Телеграм)');
   }
   const adminHtml = await (await fetch(BASE + '/admin')).text();
   ok(/data-act="fullsite"/.test(adminHtml) && /data-act="fulloff"/.test(adminHtml)

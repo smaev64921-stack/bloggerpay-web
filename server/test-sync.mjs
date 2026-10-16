@@ -209,6 +209,48 @@ try {
     && t4.payMode === 'fixed' && t4.deadline === '' && t4.formatLabel.length === 40,
     'кривые поля приведены: площадки — только буквы, числа — конечные и неотрицательные, срок — дата или пусто', t4);
   ok(JSON.stringify(shop2.rows || []).indexOf('#srv:') < 0, 'и в новой витрине номеров людей нет');
+
+  /* ── аудит 16.10.2026: витрина ── */
+  /* бюджет — из заморозки, тип аккаунта и дата создания — из задания */
+  const made = new Date(Date.now() - 5 * 864e5).toISOString();
+  await api('POST', '/api/sync/put', { kind: 'camp', rid: 'camp_pub_5',
+    data: { id: 'camp_pub_5', status: 'active', title: 'Персональное', budget: 1000000, accountType: 'Персонализированный', createdAt: made } }, adv.token);
+  ok((await holdIt('camp_pub_5', 3000)).status === 200, 'бюджет пятого заморожен');
+  const t5 = ((await (await fetch(BASE + '/api/tasks/public')).json()).rows || []).find((r) => r.id === 'camp_pub_5') || {};
+  ok(t5.budget === 3000, 'бюджет витрины — сколько заморожено, а не что написано в объявлении', t5.budget);
+  ok(t5.accountType === 'Персонализированный' && t5.createdAt === made && /Z$/.test(t5.at || ''),
+    'тип аккаунта, дата создания задания и время правки с поясом', t5);
+  /* поле toString в данных ломало String() — конверт не принимаем */
+  const poison = await api('POST', '/api/sync/put', { kind: 'camp', rid: 'camp_poison',
+    data: { id: 'camp_poison', status: 'active', title: 'x', advertiserName: { toString: 1 } } }, adv.token);
+  ok(poison.status === 400, 'конверт с полем toString отклонён', poison.body);
+  /* 61 свежее неактивное задание с бюджетом не вытесняет активные */
+  for (let i = 0; i < 61; i++) {
+    const rid = 'camp_done_' + i;
+    await api('POST', '/api/sync/put', { kind: 'camp', rid, data: { id: rid, status: 'done', title: 'Готово ' + i } }, adv.token);
+    await holdIt(rid, 1);
+  }
+  const shop3 = ((await (await fetch(BASE + '/api/tasks/public')).json()).rows || []).map((r) => r.id);
+  ok(shop3.includes('camp_pub_1') && shop3.includes('camp_pub_5') && !shop3.some((x) => /^camp_done_/.test(x)),
+    'после 61 завершённого активные на витрине, завершённых нет', shop3.slice(0, 6));
+  /* без заморозки и в удалённое (бюджет возвращён) не вступить; конверт закрывается у всех */
+  const joinFake = await api('POST', '/api/tasks/join', { campId: 'camp_fake_' + tag }, other.token);
+  ok(joinFake.status === 409 && joinFake.body.code === 'camp_closed', 'в задание без денег вступить нельзя', joinFake.body);
+  ok((await api('POST', '/api/tasks/join', { campId: 'camp_pub_5' }, other.token)).status === 200, 'в оплаченное — можно');
+  const vBefore = (await api('GET', '/api/sync/pull?since=0&limit=1', null, other.token)).body;
+  const maxVer = (await api('POST', '/api/sync/put', { kind: 'camp', rid: 'camp_pub_6', data: { id: 'camp_pub_6', status: 'active', title: 'Удаляемое' } }, adv.token)).body.ver;
+  ok((await holdIt('camp_pub_6', 2000)).status === 200 && !!vBefore, 'шестое запущено');
+  const rf = await api('POST', '/api/deals/refund', { dealId: 'camp:camp_pub_6', opKey: 'sync-rf6-' + tag }, adv.token);
+  ok(rf.status === 200, 'бюджет шестого возвращён целиком («Удалить»)', rf.body);
+  const shop4 = ((await (await fetch(BASE + '/api/tasks/public')).json()).rows || []).map((r) => r.id);
+  ok(!shop4.includes('camp_pub_6'), 'удалённого на витрине нет');
+  const join6 = await api('POST', '/api/tasks/join', { campId: 'camp_pub_6' }, other.token);
+  ok(join6.status === 409, 'в удалённое вступить нельзя', join6.body);
+  const env6 = ((await api('GET', '/api/sync/pull?since=' + maxVer, null, other.token)).body.rows || []).find((r) => r.rid === 'camp_pub_6');
+  ok(env6 && env6.data.status === 'done', 'лента блогера получила задание закрытым', env6 && env6.data);
+  const back = await api('POST', '/api/sync/put', { kind: 'camp', rid: 'camp_pub_6', data: { id: 'camp_pub_6', status: 'active', title: 'Удаляемое' } }, adv.token);
+  const env6b = ((await api('GET', '/api/sync/pull?since=' + (back.body.ver - 1), null, other.token)).body.rows || []).find((r) => r.rid === 'camp_pub_6');
+  ok(back.status === 200 && env6b && env6b.data.status === 'done', 'старая копия «active» не оживляет задание с возвращённым бюджетом', env6b && env6b.data);
 } catch (e) {
   failed++; console.log('  FAIL исключение: ' + e.message);
 } finally {
