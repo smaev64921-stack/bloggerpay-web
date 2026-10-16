@@ -6280,7 +6280,7 @@ const routes = {
     }
     if (++rec.tries > 30) { ytCode.delete(u.id); return { status: 429, body: { error: 'Слишком много проверок — получите новый код' } }; }
     let ch;
-    try { ch = await ytChannelFor(u.id, { id: rec.channel.id }); }
+    try { ch = await ytChannelFor(u.id, { id: rec.channel.id }, true); }
     catch (e) { return ytCodeFail(e); }
     if (!ch) return { status: 404, body: { error: 'Канал не найден' } };
     if (!ytHasCode(ch.description, rec.code)) {
@@ -8490,10 +8490,13 @@ const ytCodeUser = new Map();
 const YT_CHAN_MS = ENV.YT_CHAN_CACHE_MS != null && ENV.YT_CHAN_CACHE_MS !== '' && Number(ENV.YT_CHAN_CACHE_MS) >= 0
   ? Math.min(300000, Number(ENV.YT_CHAN_CACHE_MS)) : 30000;
 const ytChan = new Map();
-async function ytChannelFor(uid, ref) {
+async function ytChannelFor(uid, ref, fresh) {
   const key = ref.id ? 'id:' + ref.id : 'h:' + String(ref.handle || '').toLowerCase();
   const c = ytChan.get(key);
-  if (c && Date.now() - c.at < YT_CHAN_MS) return c.ch;
+  /* «Проверить» (fresh) всегда спрашивает YouTube заново: человек только что
+     вписал код, а в кэше — описание с момента выдачи кода, и он видел
+     «код пока не виден» до 30 с. Квоту бережёт предел на человека и общий. */
+  if (!fresh && c && Date.now() - c.at < YT_CHAN_MS) return c.ch;
   if (c) ytChan.delete(key);
   const units = ytUnitsNow();
   if (units.code >= YT_CODE_UNITS || !ytBindRoom()) throw ttErr('yt_code_quota');

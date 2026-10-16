@@ -56,8 +56,8 @@ function boot(port, key) {
       ADMIN_KEY: 'k', ADMIN_EMAIL: '', BOT_TOKEN: '', ADMIN_CHAT_ID: '', RESEND_API_KEY: '', YOOKASSA_SHOP_ID: '', YOOKASSA_SECRET_KEY: '', TEST_TOPUP: '0',
       YT_API_KEY: key, YT_API_BASE: 'http://127.0.0.1:' + YTP, YT_CLIENT_ID: 'cid', YT_CLIENT_SECRET: 'sec',
       TRUST_PROXY: '1',
-      /* квота 1000 → на подключение кодом 10 % = 100 единиц */
-      YT_DAILY_UNITS: '1000', YT_CHAN_CACHE_MS: String(CACHE_MS),
+      /* квота 2000 → на подключение кодом 10 % = 200 единиц («Проверить» тратит единицу каждый раз — не из кэша) */
+      YT_DAILY_UNITS: '2000', YT_CHAN_CACHE_MS: String(CACHE_MS),
     },
     stdio: process.env.BP_DEBUG ? 'inherit' : 'ignore',
   });
@@ -113,10 +113,9 @@ try {
   let l0 = (await api(BASE, 'GET', '/api/verify/list', null, A)).body.rows || [];
   ok(!l0.some((r) => r.platform === 'youtube'), 'канал не записан, пока кода нет', l0);
   CH.UCaaaaaaaaaaaaaaaaaaaaaa.desc = 'Ролики про бег.\nКод для BloggerPay: ' + s1.body.code.toLowerCase().replace('-', '- ');
-  const kc = await api(BASE, 'POST', '/api/verify/youtube/check', {}, A);
-  ok(kc.status === 409, 'сразу после правки описания ответ ещё из кэша (≤30 с в бою) — 409, не ошибка', kc);
-  await sleep(CACHE_MS + 200);
-  const k1 =await api(BASE, 'POST', '/api/verify/youtube/check', {}, A);
+  /* «Проверить» спрашивает YouTube заново, не из кэша (16.10.2026): человек
+     вписал код и сразу жмёт — канал подключается без ожидания */
+  const k1 = await api(BASE, 'POST', '/api/verify/youtube/check', {}, A);
   ok(k1.status === 200 && k1.body.ok && k1.body.id === 'UCaaaaaaaaaaaaaaaaaaaaaa' && k1.body.title === 'Ваня Shorts', 'код в описании (другим регистром и с пробелом) — канал подключён', k1);
   l0 = (await api(BASE, 'GET', '/api/verify/list', null, A)).body.rows || [];
   const row = l0.find((r) => r.platform === 'youtube');
@@ -186,7 +185,7 @@ try {
   ok(!!quota && /завтра/.test(quota.body.error) && !/YT_API_KEY|не ответил/.test(quota.body.error) && who.length === 0,
     'при исчерпании — 503 «на сегодня закончилось, попробуйте завтра»', [quota, n, who.slice(0, 2)]);
   const qA = chAsks();
-  ok(qA === 100, 'за весь тест YouTube спрошен ровно 100 раз = 10 % квоты 1000', qA);
+  ok(qA === 200, 'за весь тест YouTube спрошен ровно 200 раз = 10 % квоты 2000', qA);
   const G = await reg('yg');
   const g1 = await api(BASE, 'POST', '/api/verify/youtube/code', { channel: '@vanya_shorts_new' }, G);
   ok(g1.status === 503 && chAsks() === qA, 'дальше — 503 и YouTube не спрашиваем (запас квоты — загрузкам и замерам)', [g1.status, chAsks() - qA]);
