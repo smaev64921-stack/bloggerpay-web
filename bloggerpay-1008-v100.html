@@ -65667,6 +65667,11 @@ function tuGo(){
       }catch(e){ E(e); }
       delete btn.dataset.busy;
       tuSync();
+      /* MV (15.10.2026): экран «Оплата прошла» с эффектом (bp-mv-paid) —
+         вместо тоста и шторки; его кнопка ведёт туда же, куда afterTopup */
+      try{
+        if(typeof window.bpMvPaidFx === 'function' && window.bpMvPaidFx({ amount:v, gross:v + tuFeeOf(v), after:after, done:afterTopup })) return;
+      }catch(e){ E(e); }
       /* Пришли за недостающей суммой (сделка / кампания / задание) — сразу
          возвращаемся по прежней логике, без шторки: иначе флаг возврата
          пережил бы закрытие шторки и сработал при следующем пополнении. */
@@ -71353,7 +71358,7 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
     }
     return fallback;
   }
-  function tuRelease(btn){ if(!btn) return; btn.__bpBusy = 0; clearTimeout(btn.__bpBusyT); }
+  function tuRelease(btn){ if(!btn) return; btn.__bpBusy = 0; clearTimeout(btn.__bpBusyT); try{ if(btn.classList.contains('bp-paying')) btn.classList.remove('bp-paying'); }catch(_){} }
   function tuPass(btn){
     btn.__bpPass = 1;
     try{ btn.click(); }catch(_){ if(typeof window.tuSubmit === 'function') window.tuSubmit(); }
@@ -71390,8 +71395,18 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
     pendingSet(null);
     recordTopup(amount, payId);
     sync().then(function(){
-      try{ bpNotify('success', 'Баланс пополнен', '+' + rub(amount) + ' — оплата подтверждена кассой.', { duration: 5000 }); }
-      catch(e){ toast('Баланс пополнен на ' + rub(amount), 'ok'); }
+      var shown = false;
+      /* MV (15.10.2026): экран «Оплата прошла» с эффектом — и сразу после
+         оплаты, и когда человек вернулся на сайт позже (checkPending) */
+      try{
+        if(typeof window.bpMvPaidFx === 'function') shown = window.bpMvPaidFx({ amount: amount, real: true,
+          after: (typeof currentUser !== 'undefined' && currentUser) ? Number(currentUser.balance) || 0 : null,
+          done: function(){ try{ if(typeof bpTopupReturn === 'function') bpTopupReturn(); else if(typeof goTo === 'function') goTo('balance'); }catch(e){ E(e); } } });
+      }catch(e){ E(e); }
+      if(!shown){
+        try{ bpNotify('success', 'Баланс пополнен', '+' + rub(amount) + ' — оплата подтверждена кассой.', { duration: 5000 }); }
+        catch(e){ toast('Баланс пополнен на ' + rub(amount), 'ok'); }
+      }
       try{ if(typeof window.tuSync === 'function') window.tuSync(); }catch(e){}
     });
   }
@@ -71521,8 +71536,10 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
       e.preventDefault();
       e.stopImmediatePropagation();
       btn.__bpBusy = 1;
+      /* видно сразу, что оплата пошла (вид — bp-mv-paid-css, только MV) */
+      try{ if(!btn.classList.contains('bp-paying')) btn.classList.add('bp-paying'); }catch(_){}
       clearTimeout(btn.__bpBusyT);
-      btn.__bpBusyT = setTimeout(function(){ btn.__bpBusy = 0; }, 20000);
+      btn.__bpBusyT = setTimeout(function(){ btn.__bpBusy = 0; try{ btn.classList.remove('bp-paying'); }catch(_){} }, 20000);
       payCfg().then(function(cfg){
         if(cfg.mode === 'yookassa'){ ykTopup(btn, amount); return; }
         if(cfg.mode === 'off'){ tuRelease(btn); toast('Пополнение временно недоступно', 'err'); return; }
@@ -96556,6 +96573,10 @@ function rulesRows(body, c){
       + '<span class="tk-rule-k">' + k + '</span><span class="tk-rule-v">' + esc(v) + '</span>';
     rules.appendChild(r);
   }
+  /* 15.10.2026, владелец: «из критериев задания убери площадки для видео,
+     комиссию сервиса и оплату» — в режиме MV этих строк нет (площадки видны
+     значками, суммы «на баланс» — в роликах и кошельке); полный доступ — как был */
+  if(document.documentElement.classList.contains('bp-mv')) return;
   add('pl', 'pl', 'Площадки для видео', namesOf(allowed(c), ', ', c));
   /* 11.10.2026: у фикса сервер платит один раз — в момент зачёта (или когда
      наберётся порог), «30 дней по росту» про него неправда */
@@ -101502,7 +101523,7 @@ function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'bp-mv-tadv'); }cat
 function $(id){ return document.getElementById(id); }
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
 function num(v){ var n = Number(v); return isFinite(n) && n > 0 ? n : 0; }
-var NB = ' ';
+var NB = '\u00a0';
 function int(n){ return Math.round(num(n)).toLocaleString('ru').replace(/\s/g, NB); }
 function rub(n){ return int(n) + NB + '₽'; }
 function plural(n, a, b, c){ n = Math.abs(Math.round(num(n))); var t = n % 100, o = n % 10; if(t > 10 && t < 20) return c; if(o > 1 && o < 5) return b; if(o === 1) return a; return c; }
@@ -101814,9 +101835,8 @@ function taskHtml(c){
     + (fixed ? '' : rule('max', 'Макс. выплата за видео', cap ? rub(cap) : 'без потолка'))
     + rule('time', 'Минимальная длина видео', minD ? minD + ' сек.' : '')
     + rule('user', 'Тип аккаунта', c.accountType || 'Любой')
-    + rule('pl', 'Площадки для видео', plats.join(', '))
-    + rule('pay', 'Оплата', (typeof window.bpVbPayTxt === 'function' && window.bpVbPayTxt(c)) || (fixed ? 'сразу после зачёта' : '30 дней по росту просмотров'))
-    + rule('info', 'Комиссия сервиса', feeRule(c))
+    /* 15.10.2026, владелец: без «Площадки для видео», «Оплата» и «Комиссия
+       сервиса» — площадки видны значками в шапке, деньги — в «Бюджете» */
     + rule('chk', 'Проверка видео', 'до 72 часов, потом засчитается само')
     + rule('mk', 'Маркировка', mkTxt)
     + '</div>'
@@ -104425,45 +104445,43 @@ var CONN = null;
 function openConnect(pre){
   if(!mv()) return;
   if(!online()){ toast('Подключение работает, когда есть связь с сервером', 'err'); return; }
-  var sel = pre === 'youtube' || pre === 'tiktok' || pre === 'instagram' ? pre : '';
   var tg = !!tgApp();
+  /* 15.10.2026, владелец: «не нравится, как сделан выбор соцсети». Было:
+     пунктирная плашка-пояснение, карточки-переключатели (выбранная —
+     оранжевой рамкой), отдельная подсказка про Instagram и кнопка
+     «Подключить». Стало — как строки «Профиля»: крупный знак площадки,
+     название, одна строка «как подключается», справа «Подключён» / «Скоро»
+     или стрелка; нажатие сразу начинает подключение. Вид — bp-mv-conn2-css. */
+  function how(p, cfg){
+    if(p === 'youtube') return cfg && cfg.youtube && cfg.youtube.code === false ? 'Видео и Shorts · вход через Google' : 'Видео и Shorts · код в описании канала';
+    if(p === 'tiktok') return 'Вход через TikTok — пароль вводите только там';
+    return 'Reels · только аккаунт «Автор» или «Бизнес»';
+  }
   function body(cfg){
     var rows = ACC.rows || [];
-    return '<div class="mx-pl blue">' + (cfg && cfg.youtube && cfg.youtube.code
-        ? 'TikTok и Instagram подключаются через официальную авторизацию площадок, YouTube — коротким кодом в описании канала, без входа в Google.'
-        : 'Подключение YouTube, TikTok и Instagram проходит через официальную авторизацию площадок.') + ' Мы не получаем ваш пароль и не храним данные для входа. Подключение нужно, чтобы проверять статистику и видео в заданиях.</div>'
-      + '<p class="mx-txt">Выберите платформу для подключения аккаунта</p>'
-      + '<div class="mvc-pls" role="radiogroup" aria-label="Платформа">' + ORDER.map(function(p){
-        var on = cfg && cfg[p] && cfg[p].configured === false && !cfg[p].code;
-        var has = rows.some(function(r){ return r.platform === p; });
-        return '<button type="button" class="mvc-pl' + (sel === p ? ' on' : '') + '" role="radio" aria-checked="' + (sel === p) + '" data-cp="' + p + '"' + (on ? ' disabled' : '') + '>'
-          + '<span class="mvc-ic">' + GLY[p] + '</span><span class="mvc-tx"><span><b>' + PNAME[p] + '</b>'
-          + (has ? '<em>Подключен • можно добавить ещё</em>' : '') + (on ? '<em class="off">Скоро</em>' : '') + '</span>'
-          + '<i>' + PDESC[p] + '</i></span></button>';
+    return '<p class="mvc2-sub">' + esc(nbsp('Выберите площадку — подключение откроется сразу. Пароль от аккаунта мы не видим и не храним.')) + '</p>'
+      + '<div class="mvc2-list">' + ORDER.map(function(p){
+        var off = !!(cfg && cfg[p] && cfg[p].configured === false && !cfg[p].code);
+        var n = rows.filter(function(r){ return r.platform === p; }).length;
+        var right = off ? '<em class="mvc2-chip off">Скоро</em>'
+          : (n ? '<em class="mvc2-chip ok">Подключён' + (n > 1 ? ' · ' + n : '') + '</em>' : '') + '<span class="mvc2-go">' + I.chev + '</span>';
+        return '<button type="button" class="mvc2-row ' + p + (pre === p ? ' pre' : '') + '" data-cp="' + p + '"' + (off ? ' disabled' : '') + '>'
+          + '<span class="mvc2-ic">' + GLY[p] + '</span>'
+          + '<span class="mvc2-tx"><b>' + PNAME[p] + '</b><i>' + esc(nbsp(how(p, cfg))) + '</i></span>'
+          + '<span class="mvc2-r">' + right + '</span></button>';
       }).join('') + '</div>'
-      + '<div class="mx-pl orange" id="mvConnIg"' + (sel === 'instagram' ? '' : ' hidden') + '><span>Instagram пускает только <b>профессиональные</b> аккаунты — «Автор» или «Бизнес». Переключиться можно бесплатно: Instagram → Настройки → Тип аккаунта.</span></div>'
-      + (tg ? '<div class="mx-pl blue" id="mvConnTg"' + (sel ? '' : ' hidden') + '><span>Авторизация откроется во <b>внешнем браузере</b>. После подключения вернитесь в Телеграм — вход сохранится.</span></div>' : '');
+      + (tg ? '<p class="mvc2-note">' + esc(nbsp('TikTok и Instagram откроются во внешнем браузере — после подключения вернитесь в Телеграм, список обновится сам.')) + '</p>' : '');
   }
-  CONN = modal('mvConn', { title:'Подключить аккаунт', mid:true, body:body(CFG.v),
-    foot:'<button type="button" class="mx-b mx-bg" data-cn="no">Отмена</button><button type="button" class="mx-b mx-bp" data-cn="go"' + (sel ? '' : ' disabled') + '>Подключить</button>',
-    onClose:function(){ CONN = null; } });
+  CONN = modal('mvConn', { title:'Подключить аккаунт', mid:true, body:body(CFG.v), onClose:function(){ CONN = null; } });
   var m = CONN;
-  function paintSel(){
-    [].forEach.call(m.bd.querySelectorAll('[data-cp]'), function(b){ var on = b.getAttribute('data-cp') === sel; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
-    var go = m.ft.querySelector('[data-cn="go"]'); if(go && !go.__busy) go.disabled = !sel;
-    var t = $('mvConnTg'); if(t) t.hidden = !sel;
-    var ig = $('mvConnIg'); if(ig) ig.hidden = sel !== 'instagram';
-  }
+  if(!m) return;
   m.el.addEventListener('click', function(e){
-    var p = e.target.closest ? e.target.closest('[data-cp]') : null;
-    if(p && !p.disabled){ sel = p.getAttribute('data-cp'); paintSel(); return; }
-    var b = e.target.closest ? e.target.closest('[data-cn]') : null; if(!b) return;
-    if(b.getAttribute('data-cn') === 'no'){ m.close(); return; }
-    if(!sel || b.__busy) return;
-    mvConnect(sel, b);
+    var b = e.target.closest ? e.target.closest('[data-cp]') : null;
+    if(!b || b.disabled || b.__busy || !m.el.contains(b)) return;
+    mvConnect(b.getAttribute('data-cp'), b);
   });
-  pullCfg().then(function(cfg){ if(CONN === m && cfg){ m.bd.innerHTML = body(cfg); paintSel(); } });
-  if(!ACC.rows) pullAcc(false).then(function(){ if(CONN === m){ m.bd.innerHTML = body(CFG.v); paintSel(); } }, function(){});
+  pullCfg().then(function(cfg){ if(CONN === m && cfg && !m.el.querySelector('.mvc2-row.busy')) m.bd.innerHTML = body(cfg); });
+  if(!ACC.rows) pullAcc(false).then(function(){ if(CONN === m && !m.el.querySelector('.mvc2-row.busy')) m.bd.innerHTML = body(CFG.v); }, function(){});
 }
 window.bpMvConnectOpen = openConnect;
 
@@ -104492,8 +104510,9 @@ function mvConnect(p, btn){
   }
   if(_busy) return;
   _busy = true;
-  if(btn){ btn.__busy = 1; btn.disabled = true; btn.textContent = 'Подключение…'; }
-  function release(){ _busy = false; _rel = null; if(btn){ btn.__busy = 0; btn.disabled = false; btn.textContent = 'Подключить'; } }
+  var row = !!(btn && btn.classList && btn.classList.contains('mvc2-row'));
+  if(btn){ btn.__busy = 1; btn.disabled = true; if(row) btn.classList.add('busy'); else btn.textContent = 'Подключение…'; }
+  function release(){ _busy = false; _rel = null; if(btn){ btn.__busy = 0; btn.disabled = false; if(row) btn.classList.remove('busy'); else btn.textContent = 'Подключить'; } }
   _rel = release;
   /* мини-приложение Телеграма: площадка откроется во внешнем браузере, где
      человек в BloggerPay не вошёл — просим у сервера код на странице
@@ -109584,7 +109603,8 @@ function paintList(){
       if(!c) return;
       var ava = row.querySelector('.chat-ava'), inner = ava && ava.firstElementChild;
       if(inner && inner.tagName !== 'IMG') paintAva(inner, c.name);
-      if(ava && ava.classList.contains('mvch-online') !== !!c.online) ava.classList.toggle('mvch-online', !!c.online);
+      var onl = !!c.online && !window.bpNoPresence;
+      if(ava && ava.classList.contains('mvch-online') !== onl) ava.classList.toggle('mvch-online', onl);
       var unr = (Number(c.unread) || 0) > 0;
       if(row.classList.contains('mvch-un') !== unr) row.classList.toggle('mvch-un', unr);
       var pv = row.querySelector('.chat-preview');
@@ -109667,7 +109687,7 @@ function paintDialog(){
     if(inner && c) paintAva(inner, c.name);
     var st = $('cdStatus');
     if(st && c){
-      var on = !!c.online, cls = on ? 'mvch-st-on' : 'mvch-st-off';
+      var on = !!c.online && !window.bpNoPresence, cls = on ? 'mvch-st-on' : 'mvch-st-off';
       if(!st.classList.contains(cls)){ st.classList.remove('mvch-st-on', 'mvch-st-off'); st.classList.add(cls); }
       /* «был(а) недавно» стояло у всех подряд — присутствия мы не знаем;
          вместо выдумки — кто собеседник */
@@ -111505,10 +111525,8 @@ function pageHtml(){
     sess ? row('outall', 'amber', X.devices, 'Выйти на всех устройствах', { sub:'Этот телефон останется в аккаунте' }) : ''
   ]);
 
-  var pres = m ? m.presence !== false : true;
-  h += sec('priv', 'Приватность', [
-    sess ? row('presence', 'cyan', X.eye, 'Показывать, что я в сети', { sw:pres, sub:'Видят только те, кому вы сами писали в личном чате' }) : ''
-  ]);
+  /* 15.10.2026: «в сети» в чатах больше не показываем (владелец) — и
+     переключатель «Показывать, что я в сети» не нужен */
 
   var st = pushState(), on = pushOn(), tg = !!tgApp(), pr = prefs();
   var unread = 0; try{ unread = typeof window.bpNotifCount === 'function' ? num(window.bpNotifCount()) : 0; }catch(e){}
@@ -112532,11 +112550,16 @@ function wrapRaw(){
   s.raw = w;
 }
 
-/* ══════════ «в сети» ══════════ */
+/* ══════════ «в сети» ══════════
+   15.10.2026, владелец: «чтобы в чатах не показывался значок в сети / не
+   в сети» — присутствие больше не спрашиваем и не показываем (в списке нет
+   точки, в шапке — роль собеседника). Вернуть — NO_PRESENCE = false. */
+var NO_PRESENCE = true;
+window.bpNoPresence = NO_PRESENCE;     /* его читают bp-mv-chat (точка в списке, шапка) */
 var PR = { on:{}, at:0, p:null };
 function dmPeers(){ var out = []; (list() || []).forEach(function(c){ var p = peerOf(c); if(p != null && out.indexOf(p) < 0) out.push(p); }); return out.slice(0, 60); }
 function pullPresence(force){
-  if(!mv() || !ready() || PR.p) return;
+  if(NO_PRESENCE || !mv() || !ready() || PR.p) return;
   if(!force && Date.now() - PR.at < 20000) return;
   var ids = dmPeers(); if(!ids.length) return;
   PR.at = Date.now();
@@ -112553,7 +112576,7 @@ function pullPresence(force){
 function resetOnline(){
   if(!mv()) return;
   var ch = false;
-  (list() || []).forEach(function(c){ if(c && c.online && PR.on[peerOf(c)] !== true){ c.online = false; ch = true; } });
+  (list() || []).forEach(function(c){ if(c && c.online && (NO_PRESENCE || PR.on[peerOf(c)] !== true)){ c.online = false; ch = true; } });
   if(ch){ save(); listSoon(); }
 }
 
@@ -112869,7 +112892,7 @@ function wrapPeer(){
   var w = function(){
     var c = cur();
     if(!mv() || !c || peerOf(c) == null || typeof window.bpMvModal !== 'function') return o.apply(this, arguments);
-    var nm = String(c.name || '').trim() || 'Собеседник', on = !!c.online;
+    var nm = String(c.name || '').trim() || 'Собеседник', on = !!c.online && !NO_PRESENCE;
     var role = c._pr === 'adv' ? 'Рекламодатель' : c._pr === 'blogger' ? 'Блогер' : (isAdv() ? 'Блогер' : 'Рекламодатель');
     var ava = c.img ? '<span class="bp2-wa"><img src="' + esc(c.img) + '" alt=""></span>'
       : '<span class="bp2-wa" style="background-image:' + esc(avaGrad(nm)) + '">' + esc(nm.charAt(0).toUpperCase()) + '</span>';
@@ -113924,7 +113947,7 @@ html.bp-mv #mvYtc .mvy-code{
 }
 html.bp-mv #mvYtc .mvy-code > div{ flex:1; min-width:0 }
 html.bp-mv #mvYtc .mvy-code small{ display:block; font-size:12px; line-height:16px; font-weight:600; color:rgba(255,255,255,.55) }
-html.bp-mv #mvYtc .mvy-code b{ display:block; margin-top:2px; font-size:24px; line-height:30px; font-weight:800; letter-spacing:.08em; color:#fff; font-variant-numeric:tabular-nums; -webkit-user-select:all; user-select:all }
+html.bp-mv #mvYtc .mvy-code b{ display:block; margin-top:2px; font-size:22px; line-height:28px; font-weight:800; letter-spacing:.06em; white-space:nowrap; color:#fff; font-variant-numeric:tabular-nums; -webkit-user-select:all; user-select:all }
 html.bp-mv #mvYtc .mvy-code .mx-b{ flex:none; height:40px; min-height:40px; padding:0 14px; gap:6px; font-size:14px; font-weight:600 }
 html.bp-mv #mvYtc .mvy-code .mx-b svg{ width:16px; height:16px }
 html.bp-mv #mvYtc .mvy-code.ok{ border-style:solid; border-color:rgba(53,214,112,.55) }
@@ -113945,6 +113968,8 @@ html.bp-mv #mvYtc .mvy-ok .mvk-hi{ margin-bottom:16px }
 html.bp-mv #mvYtc .mvy-ok h3{ margin:0; font-size:20px; line-height:26px; font-weight:700; color:#fff }
 html.bp-mv #mvYtc .mvy-ok p{ max-width:320px; margin:8px 0 0; font-size:14px; line-height:20px; color:rgba(255,255,255,.62); text-wrap:pretty }
 html.bp-mv #mvYtc .mx-ft .mx-b[disabled]{ opacity:.5 }
+/* одна главная кнопка внизу — во всю ширину */
+html.bp-mv #mvYtc .mx-ft .mx-b{ flex:1 1 0 }
 html.bp-mv #mvYtc .mx-b.busy{ pointer-events:none; opacity:.75 }
 </style>
 <script id="bp-mv-ytc">
@@ -113971,7 +113996,7 @@ function srv(){ return window.bpSrv; }
 function online(){ try{ var s = srv(); return !!(s && s.configured && s.configured() && typeof s.raw === 'function'); }catch(e){ return false; } }
 function token(){ try{ return srv().token() || ''; }catch(e){ return ''; } }
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
-var NB = ' ';
+var NB = '\u00a0';
 function nb(s){ return String(s).replace(/(^|[\s«(])(в|во|с|со|к|о|об|у|и|а|не|на|по|за|из|от|до|без|для)\s/gi, '$1$2' + NB); }
 function toast(m, k){ try{ if(typeof showAuthToast === 'function') showAuthToast(m, k || 'ok'); }catch(e){} }
 function ico(k){ var I = window.bpMvIco || {}; return I[k] || ''; }
@@ -114067,7 +114092,17 @@ function find(btn){
     if(!j || !j.code || !j.channel) throw new Error('YouTube не ответил');
     S.ch = j.channel; S.code = j.code; S.at = Date.now();
     step2();
-  }).catch(function(e){ if(!M) return; busy(btn, false); setErr(errText(e, 'Канал не найден — проверьте ссылку')); });
+  }).catch(function(e){
+    if(!M) return;
+    busy(btn, false);
+    if(e && e.status === 503){
+      /* на сервере нет ключа — подключаем прежним входом через Google */
+      window.__bpYtCodeOff = true; close(true);
+      try{ if(typeof window.bpMvConnect === 'function') window.bpMvConnect('youtube'); }catch(err){ E(err); }
+      return;
+    }
+    setErr(errText(e, 'Канал не найден — проверьте ссылку'));
+  });
 }
 function check(btn){
   setErr(''); busy(btn, true, 'Проверяем…');
@@ -114128,7 +114163,9 @@ function onKey(e){
 /* true — окно открыто (кодом можно); false — пусть будет прежний вход через Google */
 function open(cfg){
   if(!mv() || window.bpIsGuest || !online() || !token()) return false;
-  if(!codeOn(cfg)) { pullCfg(); return false; }
+  /* сервер сказал, что кодом нельзя (нет YT_API_KEY) — прежний вход через Google */
+  var known = cfg || CFG.v;
+  if(window.__bpYtCodeOff || (known && !codeOn(known))) { pullCfg(); return false; }
   if(typeof window.bpMvModal !== 'function') return false;
   S = { url:'', ch:null, code:'', at:0, done:false };
   M = window.bpMvModal('mvYtc', { title:'Подключить YouTube', mid:true, body:'', foot:' ', onClose:function(){ M = null; } });
@@ -114188,7 +114225,7 @@ var de = document.documentElement;
 function mv(){ return de.classList.contains('bp-mv'); }
 function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'bp-tg-open'); }catch(_){} }
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
-var NB = ' ';
+var NB = '\u00a0';
 function nb(s){ return String(s).replace(/(^|[\s«(])(в|во|с|со|к|о|об|у|и|а|не|на|по|за|из|от|до|без|для)\s/gi, '$1$2' + NB); }
 var KEY = 'bpTgOpenNo', DAYS3 = 3 * 864e5;
 var ua = String(navigator.userAgent || '');
@@ -114699,6 +114736,346 @@ function boot(){
 wrapLegal();
 if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 setTimeout(wrapLegal, 2500);
+})();
+</script>
+<style id="bp-mv-attach-css">
+/* ══ ЧАТ: МЕНЮ СКРЕПКИ БЕЗ РЫВКА И БЕЗ «ССЫЛКИ» (bp-mv-attach, 15.10.2026) ══
+   Владелец: «при нажатии на скрепку она дёргается при появлении; убери
+   оттуда кнопку „ссылка"». Рывок: меню стояло по центру через
+   transform:translateX(-50%), а анимация появления attachMenuIn сама задаёт
+   transform (translateY) — на время въезда центровка пропадала (меню
+   уезжало вправо на полширины), в конце прыгало на место. Здесь — по центру
+   без transform (left/right/margin) и свой въезд снизу, как у листов MV.
+   «Ссылка» (insertLink) скрыта: остались «Файл» и «Фото».
+   Только под html.bp-mv. Откат: удалить style#bp-mv-attach-css.        */
+html.bp-mv body #cdAttachMenu{
+  left:0!important; right:0!important; margin:0 auto!important; transform:none!important;
+  animation:bpMvAttachUp .3s cubic-bezier(.22,1,.36,1) both!important;
+  will-change:transform;
+}
+@keyframes bpMvAttachUp{ from{ transform:translateY(100%) } to{ transform:none } }
+html.bp-mv body #cdAttachMenu button[onclick*="insertLink"]{ display:none!important }
+html.bp-mv body #cdAttachMenu .bp-mv-row3{ grid-template-columns:repeat(2,1fr)!important }
+@media (prefers-reduced-motion:reduce){ html.bp-mv body #cdAttachMenu{ animation:none!important } }
+</style>
+<style id="bp-mv-conn2-css">
+/* ══ «ПОДКЛЮЧИТЬ АККАУНТ» — ВЫБОР ПЛОЩАДКИ (bp-mv-conn2, 15.10.2026) ══════
+   Владелец: «не нравится, как сделан выбор соцсети для подключения канала».
+   Окно #mvConn (разметку строит bp-mv-me openConnect): строки как в
+   «Профиле» — крупный знак площадки на тёмной плитке с её цветом, название,
+   одна строка «как подключается», справа «Подключён»/«Скоро» и стрелка.
+   Нажатие сразу начинает подключение (строка — «занята»: кружок вместо
+   стрелки). Только под html.bp-mv. Откат: удалить style#bp-mv-conn2-css. */
+html.bp-mv #mvConn .mvc2-sub{ margin:0 2px 14px; font-size:14px; line-height:20px; color:rgba(255,255,255,.6); text-wrap:pretty }
+html.bp-mv #mvConn .mvc2-list{ display:flex; flex-direction:column; gap:10px }
+html.bp-mv #mvConn .mvc2-row{
+  position:relative; display:flex; align-items:center; gap:14px; width:100%; min-height:76px; margin:0; padding:12px 14px 12px 12px;
+  box-sizing:border-box; border-radius:22px; border:1px solid rgba(255,255,255,.06); background:#1d1e20; color:#fff;
+  font:inherit; text-align:left; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  transition:transform .18s cubic-bezier(.22,1,.36,1), background-color .2s ease, border-color .2s ease;
+}
+html.bp-mv #mvConn .mvc2-row:active{ transform:scale(.98); background:#232427 }
+html.bp-mv #mvConn .mvc2-row:focus-visible{ outline:2px solid #92a1ff; outline-offset:2px }
+html.bp-mv #mvConn .mvc2-row.pre{ border-color:rgba(80,138,255,.45); box-shadow:inset 0 0 0 1px rgba(80,138,255,.18) }
+html.bp-mv #mvConn .mvc2-row[disabled]{ cursor:default; opacity:.5 }
+html.bp-mv #mvConn .mvc2-row[disabled]:active{ transform:none; background:#1d1e20 }
+/* знак: тёмная плитка с отсветом цвета площадки */
+html.bp-mv #mvConn .mvc2-ic{
+  flex:none; display:grid; place-items:center; width:52px; height:52px; border-radius:16px; background:#26272b;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
+}
+html.bp-mv #mvConn .mvc2-ic svg{ width:28px; height:28px }
+html.bp-mv #mvConn .mvc2-row.youtube .mvc2-ic{ background:radial-gradient(120% 100% at 50% 0%,rgba(255,40,40,.24),rgba(255,40,40,.04) 70%),#26272b }
+html.bp-mv #mvConn .mvc2-row.tiktok .mvc2-ic{ background:radial-gradient(120% 100% at 30% 0%,rgba(37,244,238,.18),transparent 60%),radial-gradient(120% 100% at 70% 100%,rgba(254,44,85,.18),transparent 60%),#121214 }
+html.bp-mv #mvConn .mvc2-row.instagram .mvc2-ic{ background:radial-gradient(120% 100% at 30% 100%,rgba(254,218,117,.18),transparent 60%),radial-gradient(120% 100% at 70% 0%,rgba(150,47,191,.24),transparent 60%),#26272b }
+html.bp-mv #mvConn .mvc2-tx{ flex:1; min-width:0; display:flex; flex-direction:column; gap:3px }
+html.bp-mv #mvConn .mvc2-tx b{ font-size:16.5px; line-height:21px; font-weight:700; letter-spacing:-.005em }
+html.bp-mv #mvConn .mvc2-tx i{ font-style:normal; font-size:13px; line-height:18px; color:rgba(255,255,255,.55); text-wrap:pretty }
+html.bp-mv #mvConn .mvc2-r{ flex:none; display:flex; align-items:center; gap:8px; color:rgba(255,255,255,.4) }
+html.bp-mv #mvConn .mvc2-go{ display:grid; place-items:center; width:20px; height:20px }
+html.bp-mv #mvConn .mvc2-go svg{ width:18px; height:18px }
+html.bp-mv #mvConn .mvc2-chip{
+  display:inline-flex; align-items:center; height:24px; padding:0 9px; border-radius:9999px; font-style:normal;
+  font-size:12px; font-weight:700; white-space:nowrap;
+}
+html.bp-mv #mvConn .mvc2-chip.ok{ color:#62e39c; background:rgba(53,214,112,.14) }
+html.bp-mv #mvConn .mvc2-chip.off{ color:rgba(255,255,255,.6); background:rgba(255,255,255,.08) }
+/* «подключаем…»: кружок вместо стрелки */
+html.bp-mv #mvConn .mvc2-row.busy{ pointer-events:none; border-color:rgba(80,138,255,.45) }
+html.bp-mv #mvConn .mvc2-row.busy .mvc2-go svg{ display:none }
+html.bp-mv #mvConn .mvc2-row.busy .mvc2-go::after{
+  content:''; width:16px; height:16px; border-radius:50%; border:2px solid rgba(146,161,255,.3); border-top-color:#92a1ff;
+  animation:bpMvConnSpin .8s linear infinite;
+}
+@keyframes bpMvConnSpin{ to{ transform:rotate(360deg) } }
+html.bp-mv #mvConn .mvc2-note{ margin:14px 4px 2px; font-size:12.5px; line-height:17px; color:rgba(255,255,255,.45); text-align:center; text-wrap:pretty }
+@media (prefers-reduced-motion:reduce){ html.bp-mv #mvConn .mvc2-row.busy .mvc2-go::after{ animation-duration:2.4s } }
+</style>
+<style id="bp-mv-paid-css">
+/* ══ ОПЛАТА ПРОШЛА · вид (bp-mv-paid, 15.10.2026) ══════════════════════════
+   Владелец: «при пополнении — „Оплатить", там где „Зачисляем", слева какой-то
+   символ; сделай этот эффект намного лучше; и это должно показываться после
+   того, как пользователь оплатил и зашёл на сайт».
+   · кнопка оплаты «занята» с первого нажатия: бегущий отблеск и текст
+     «Проводим оплату», без кружка-значка внутри текста (он и был «символом»);
+   · после зачисления — экран #mvPaid: галочка рисуется, сумма набирается от
+     нуля, искры разлетаются, ниже — сколько теперь на балансе; кнопка —
+     «Вернуться к заданию» или «Готово»;
+   · ожидание подтверждения ЮKassa (#bpPayWait) — в стиле сайта.
+   Только под html.bp-mv. Откат: удалить style#bp-mv-paid-css и
+   script#bp-mv-paid (без них — прежние тост и шторка).                  */
+
+/* ── кнопка «Оплатить» в работе ── */
+html.bp-mv #tuBtn .bw2-spin, html.bp-mv #tuBtn .bpw-spin{ display:none!important }
+html.bp-mv #tuBtn.bp-paying, html.bp-mv #tuBtn[data-busy="1"]{
+  pointer-events:none;
+  background:linear-gradient(110deg,#3765f6 0%,#508aff 38%,#a9bdff 50%,#508aff 62%,#3765f6 100%)!important;
+  background-size:260% 100%!important; animation:bpMvPayShine 1.15s linear infinite;
+}
+@keyframes bpMvPayShine{ from{ background-position:100% 0 } to{ background-position:-160% 0 } }
+html.bp-mv #tuBtn.bp-paying #tuBtnLabel, html.bp-mv #tuBtn[data-busy="1"] #tuBtnLabel{ visibility:hidden }
+html.bp-mv #tuBtn.bp-paying::after, html.bp-mv #tuBtn[data-busy="1"]::after{
+  content:'Проводим оплату'; position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  font-size:16px; font-weight:600; color:#fff; letter-spacing:0; pointer-events:none;
+}
+
+/* ── экран «Оплата прошла» ── */
+html.bp-mv #mvPaid{
+  position:fixed; inset:0; z-index:720; display:grid; place-items:center; padding:24px 16px calc(24px + var(--bp-sab,env(safe-area-inset-bottom,0px)));
+  background:rgba(8,9,12,.84); animation:bpMvPaidFade .24s ease both;
+}
+html.bp-mv #mvPaid.out{ animation:bpMvPaidOut .2s ease both }
+@keyframes bpMvPaidFade{ from{ opacity:0 } }
+@keyframes bpMvPaidOut{ to{ opacity:0 } }
+html.bp-mv #mvPaid .mvpd-card{
+  position:relative; isolation:isolate; width:100%; max-width:370px; box-sizing:border-box; padding:38px 22px 22px; text-align:center;
+  border-radius:30px; border:1px solid rgba(255,255,255,.07); color:#fff;
+  background:radial-gradient(120% 70% at 50% 0%,rgba(53,214,112,.2),rgba(53,214,112,0) 62%),radial-gradient(90% 60% at 100% 100%,rgba(80,138,255,.14),transparent 70%),#1d1e20;
+  box-shadow:0 30px 80px rgba(0,0,0,.55); animation:bpMvPaidPop .55s cubic-bezier(.34,1.56,.64,1) both;
+}
+@keyframes bpMvPaidPop{ from{ opacity:0; transform:translateY(18px) scale(.94) } }
+/* значок: зелёный круг, кольцо-волна, галочка дорисовывается */
+html.bp-mv #mvPaid .mvpd-badge{
+  position:relative; width:92px; height:92px; margin:0 auto 20px; border-radius:50%;
+  background:linear-gradient(160deg,#4be38f,#1fb565 60%,#13995a); box-shadow:0 16px 44px rgba(53,214,112,.42),inset 0 2px 0 rgba(255,255,255,.35);
+  animation:bpMvPaidBadge .6s cubic-bezier(.34,1.56,.64,1) .08s both;
+}
+@keyframes bpMvPaidBadge{ from{ transform:scale(.3); opacity:0 } }
+html.bp-mv #mvPaid .mvpd-badge::before, html.bp-mv #mvPaid .mvpd-badge::after{
+  content:''; position:absolute; inset:0; border-radius:50%; border:2px solid rgba(75,227,143,.55); pointer-events:none;
+  animation:bpMvPaidWave 1.3s cubic-bezier(.22,1,.36,1) .35s 2 both;
+}
+html.bp-mv #mvPaid .mvpd-badge::after{ animation-delay:.65s }
+@keyframes bpMvPaidWave{ from{ transform:scale(1); opacity:.9 } to{ transform:scale(1.85); opacity:0 } }
+html.bp-mv #mvPaid .mvpd-badge svg{ position:absolute; inset:0; width:100%; height:100% }
+html.bp-mv #mvPaid .mvpd-tick{
+  fill:none; stroke:#fff; stroke-width:5.5; stroke-linecap:round; stroke-linejoin:round;
+  stroke-dasharray:48; stroke-dashoffset:48; animation:bpMvPaidTick .5s cubic-bezier(.65,0,.35,1) .42s forwards;
+}
+@keyframes bpMvPaidTick{ to{ stroke-dashoffset:0 } }
+/* искры */
+html.bp-mv #mvPaid .mvpd-burst{ position:absolute; left:50%; top:84px; width:0; height:0; pointer-events:none; z-index:-1 }
+html.bp-mv #mvPaid .mvpd-burst i{
+  position:absolute; left:-4px; top:-4px; width:8px; height:8px; border-radius:50%; background:var(--c);
+  opacity:0; transform:rotate(var(--a)) translateY(0) scale(.4);
+  animation:bpMvPaidSpark .95s cubic-bezier(.12,.75,.3,1) var(--w,.36s) forwards;
+}
+html.bp-mv #mvPaid .mvpd-burst i.sq{ border-radius:2px; width:7px; height:10px }
+@keyframes bpMvPaidSpark{
+  0%{ opacity:0; transform:rotate(var(--a)) translateY(-30px) scale(.4) }
+  15%{ opacity:1 }
+  100%{ opacity:0; transform:rotate(var(--a)) translateY(calc(-1 * var(--d))) scale(1) rotate(160deg) }
+}
+html.bp-mv #mvPaid h2{ margin:0; font-size:22px; line-height:28px; font-weight:700; letter-spacing:-.01em }
+html.bp-mv #mvPaid .mvpd-amt{
+  margin:10px 0 0; font-size:42px; line-height:48px; font-weight:800; letter-spacing:-.025em; white-space:nowrap;
+  font-variant-numeric:tabular-nums; background:linear-gradient(180deg,#fff,#c9f5dc); -webkit-background-clip:text; background-clip:text; color:transparent;
+}
+html.bp-mv #mvPaid .mvpd-sub{ margin:6px auto 0; max-width:300px; font-size:14.5px; line-height:21px; color:rgba(255,255,255,.62); text-wrap:pretty }
+html.bp-mv #mvPaid .mvpd-sub b{ color:#fff; font-weight:600 }
+html.bp-mv #mvPaid .mvpd-rows{ margin:18px 0 0; padding:4px 14px; border-radius:18px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.06); text-align:left }
+html.bp-mv #mvPaid .mvpd-row{ display:flex; justify-content:space-between; gap:12px; padding:9px 0; font-size:14px; line-height:19px; color:rgba(255,255,255,.6) }
+html.bp-mv #mvPaid .mvpd-row + .mvpd-row{ border-top:1px solid rgba(255,255,255,.06) }
+html.bp-mv #mvPaid .mvpd-row b{ color:#fff; font-weight:600; white-space:nowrap }
+html.bp-mv #mvPaid .mvpd-go{ width:100%; min-height:52px; margin-top:20px }
+@media (prefers-reduced-motion:reduce){
+  html.bp-mv #mvPaid, html.bp-mv #mvPaid .mvpd-card, html.bp-mv #mvPaid .mvpd-badge{ animation:none }
+  html.bp-mv #mvPaid .mvpd-badge::before, html.bp-mv #mvPaid .mvpd-badge::after, html.bp-mv #mvPaid .mvpd-burst{ display:none }
+  html.bp-mv #mvPaid .mvpd-tick{ animation:none; stroke-dashoffset:0 }
+  html.bp-mv #tuBtn.bp-paying, html.bp-mv #tuBtn[data-busy="1"]{ animation:none }
+}
+
+/* ── «Ждём подтверждения оплаты» (ЮKassa) — в стиле сайта ── */
+html.bp-mv #bpPayWait{ background:rgba(8,9,12,.8)!important; -webkit-backdrop-filter:none!important; backdrop-filter:none!important }
+html.bp-mv #bpPayWait > div{
+  max-width:520px!important; background:#1d1e20!important; border:1px solid rgba(255,255,255,.07)!important; border-bottom:0!important;
+  border-radius:28px 28px 0 0!important; padding:28px 18px calc(var(--bp-sab,env(safe-area-inset-bottom,0px)) + 18px)!important;
+}
+html.bp-mv #bpPayWait > div > div:first-child{ width:60px!important; height:60px!important; border-width:4px!important; border-color:rgba(80,138,255,.2)!important; border-top-color:#508aff!important; margin-bottom:18px!important }
+html.bp-mv #bpPayWait > div > div:nth-child(2){ font-size:20px!important; line-height:26px!important; font-weight:700!important; color:#fff!important }
+html.bp-mv #bpPayWait > div > div:nth-child(3){ font-size:14px!important; line-height:20px!important; color:rgba(255,255,255,.62)!important }
+html.bp-mv #bpPayWaitSt{ font-size:12.5px!important; color:rgba(255,255,255,.45)!important }
+html.bp-mv #bpPayCheck{ min-height:52px; border-radius:9999px!important; background:linear-gradient(180deg,#508aff 0%,#3765f6 50%,#7185ff 100%)!important; font-size:16px!important; font-weight:600!important }
+html.bp-mv #bpPayAgain{ min-height:50px; border-radius:9999px!important; border:0!important; background:#2c2d31!important; font-size:15px!important; font-weight:600!important }
+html.bp-mv #bpPayClose{ font-size:14px!important; font-weight:600!important; color:#8fb2ff!important }
+</style>
+<script id="bp-mv-paid">
+/* ══ ОПЛАТА ПРОШЛА · поведение (bp-mv-paid, 15.10.2026) ══════════════════
+   window.bpMvPaidFx({ amount, gross?, after?, real?, done }) — экран «Оплата
+   прошла» (только MV; вернул true — показан). Зовут: bp-wallet2 tuGo (после
+   зачисления) и bp-money paySuccess (ЮKassa — сразу или когда человек
+   вернулся на сайт). Кнопка: «Вернуться к заданию» / «Продолжить» (пришли
+   за недостающей суммой) или «Готово» → done (прежний afterTopup /
+   bpTopupReturn). Сумма набирается от нуля, при «меньше движения» — сразу.
+   Откат: удалить script#bp-mv-paid и style#bp-mv-paid-css.             */
+(function(){
+'use strict';
+if(window.__bpMvPaid) return; window.__bpMvPaid = 1;
+function mv(){ return document.documentElement.classList.contains('bp-mv'); }
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'bp-mv-paid'); }catch(_){} }
+var NB = '\u00a0';
+function rub(n){ return String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, NB) + NB + '₽'; }
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+function reduced(){ try{ return window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){ return false; } }
+function haptic(){
+  try{ var h = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback; if(h && h.notificationOccurred){ h.notificationOccurred('success'); return; } }catch(e){}
+  try{ if(navigator.vibrate) navigator.vibrate([18, 40, 26]); }catch(e){}
+}
+var COLORS = ['#4be38f', '#508aff', '#8b5cf6', '#f5c84c', '#0fb3fa', '#ffffff'];
+function burst(){
+  var h = '';
+  for(var i = 0; i < 22; i++){
+    var a = Math.round(i * (360 / 22) + (i % 2 ? 7 : -5));
+    var d = 92 + (i * 37) % 70;
+    var w = (0.32 + (i % 5) * 0.03).toFixed(2);
+    h += '<i' + (i % 3 === 0 ? ' class="sq"' : '') + ' style="--a:' + a + 'deg;--d:' + d + 'px;--w:' + w + 's;--c:' + COLORS[i % COLORS.length] + '"></i>';
+  }
+  return '<span class="mvpd-burst" aria-hidden="true">' + h + '</span>';
+}
+function backKind(){
+  try{
+    if(window._topupReturnToCampId != null || window._topupReturnToCampaign) return 'task';
+    if(window._topupReturnToDeal != null) return 'deal';
+  }catch(e){}
+  return '';
+}
+var CUR = null;
+function closeFx(cb){
+  var el = CUR; CUR = null;
+  if(!el) return;
+  el.classList.add('out');
+  setTimeout(function(){ try{ el.remove(); }catch(e){} try{ if(cb) cb(); }catch(e){ E(e); } }, reduced() ? 0 : 190);
+}
+window.bpMvPaidFx = function(o){
+  if(!mv() || !o) return false;
+  try{
+    if(CUR) closeFx();
+    var amount = Math.max(0, Math.round(Number(o.amount) || 0));
+    var after = o.after == null ? null : Number(o.after) || 0;
+    var gross = Math.round(Number(o.gross) || 0), fee = gross > amount ? gross - amount : 0;
+    var bk = backKind();
+    var goT = bk === 'task' ? 'Вернуться к заданию' : bk === 'deal' ? 'Продолжить' : 'Готово';
+    var sub = after != null ? 'Зачислено на баланс · теперь на балансе <b>' + esc(rub(after)) + '</b>' : 'Зачислено на баланс';
+    if(bk === 'task') sub += '. Осталось пополнить бюджет задания.';
+    var rows = fee > 0 ? '<div class="mvpd-rows"><div class="mvpd-row"><span>Оплачено</span><b>' + esc(rub(gross)) + '</b></div>'
+      + '<div class="mvpd-row"><span>Комиссия сервиса</span><b>' + esc(rub(fee)) + '</b></div>'
+      + '<div class="mvpd-row"><span>На баланс</span><b>' + esc(rub(amount)) + '</b></div></div>' : '';
+    var el = document.createElement('div');
+    el.id = 'mvPaid';
+    el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-labelledby', 'mvPaidT');
+    el.innerHTML = '<div class="mvpd-card">' + (reduced() ? '' : burst())
+      + '<div class="mvpd-badge"><svg viewBox="0 0 92 92" aria-hidden="true"><path class="mvpd-tick" d="M28 47.5 40.5 60 64 34"/></svg></div>'
+      + '<h2 id="mvPaidT">' + (o.real ? 'Оплата прошла' : 'Баланс пополнен') + '</h2>'
+      + '<div class="mvpd-amt" aria-live="polite">+' + NB + '<span id="mvPaidN">' + (reduced() ? esc(rub(amount).replace(NB + '₽', '')) : '0') + '</span>' + NB + '₽</div>'
+      + '<p class="mvpd-sub">' + sub + '</p>' + rows
+      + '<button type="button" class="mx-b mx-bp mvpd-go">' + esc(goT) + '</button></div>';
+    /* зелёный значок — свой: сторож deGreen (перекраска плотного зелёного)
+       его не трогает */
+    try{ var bdg = el.querySelector('.mvpd-badge'); if(bdg) bdg.__bpGreenDone = 1; el.__bpGreenDone = 1; }catch(e){}
+    document.body.appendChild(el);
+    CUR = el;
+    var done = typeof o.done === 'function' ? o.done : null;
+    el.querySelector('.mvpd-go').addEventListener('click', function(){ closeFx(done); });
+    el.addEventListener('click', function(e){ if(e.target === el) closeFx(done); });
+    setTimeout(function(){ try{ el.querySelector('.mvpd-go').focus({ preventScroll:true }); }catch(e){} }, 80);
+    haptic();
+    /* сумма — от нуля до итога, с замедлением к концу */
+    if(!reduced() && amount > 0){
+      var n = el.querySelector('#mvPaidN'), t0 = 0, dur = 950, delay = 380;
+      var fmt = function(v){ return String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, NB); };
+      var step = function(ts){
+        if(!el.isConnected) return;
+        if(!t0) t0 = ts;
+        var k = Math.min(1, Math.max(0, (ts - t0 - delay) / dur));
+        var e2 = 1 - Math.pow(1 - k, 3);
+        n.textContent = fmt(amount * e2);
+        if(k < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    }
+    return true;
+  }catch(e){ E(e); return false; }
+};
+})();
+</script>
+<script id="bp-mv-wake">
+/* ══ УВЕДОМЛЕНИЯ СРАЗУ (bp-mv-wake, 15.10.2026) ═══════════════════════════
+   Владелец: «уведомления приходят не сразу». Приложение узнавало новое
+   опросом: сообщения и сделки — раз в 15 с (bp-dealsync), ролики, баланс и
+   проверка — ещё реже или только при заходе в раздел. Теперь, пока
+   приложение на экране, оно держит ждущий запрос GET /api/wake: сервер
+   отвечает, как только у человека событие (решение по ролику, выплата,
+   проверка личности, счёт — то же, о чём шлёт push; новое сообщение или
+   конверт сделки от собеседника; зачисление оплаты), и приложение тут же
+   забирает новое прежними функциями — уведомления в колокольчике, чаты,
+   баланс обновляются за доли секунды. Опрос раз в 15 с остаётся запасным.
+   Свёрнуто — не держим (батарея); вернулись — сразу снова.
+   Только под html.bp-mv. Откат: удалить script#bp-mv-wake.            */
+(function(){
+'use strict';
+if(window.__bpMvWake) return; window.__bpMvWake = 1;
+function mv(){ return document.documentElement.classList.contains('bp-mv'); }
+function E(e){ try{ if(typeof BPERR === 'function') BPERR(e, 'bp-mv-wake'); }catch(_){} }
+function S(){ return window.bpSrv; }
+function ready(){
+  try{ var s = S(); return !!(s && s.configured && s.configured() && typeof s.raw === 'function' && typeof s.token === 'function' && s.token()); }
+  catch(e){ return false; }
+}
+function call(name){ try{ if(typeof window[name] === 'function') return window[name](true); }catch(e){ E(e); } return null; }
+function money(){ try{ if(window.bpMoney && typeof window.bpMoney.sync === 'function') window.bpMoney.sync(); }catch(e){ E(e); } }
+/* что проверить по событию */
+function act(kinds){
+  var has = function(k){ return kinds.indexOf(k) >= 0; };
+  var note = has('note');
+  if(note || has('sync')) call('bpDealSyncPull');
+  if(note){ call('bpVbRefresh'); call('bpPullKyc'); money(); }
+  if(has('money')) money();
+  if(has('support')) call('bpSupportPull');
+  try{ document.dispatchEvent(new CustomEvent('bp:wake', { detail:{ kinds:kinds.slice() } })); }catch(e){}
+}
+var busy = false, fails = 0, timer = 0;
+function schedule(ms){ clearTimeout(timer); timer = setTimeout(loop, ms); }
+function loop(){
+  if(busy) return;
+  if(!mv() || document.hidden || !ready()){ schedule(5000); return; }
+  busy = true;
+  S().raw('GET', '/api/wake').then(function(j){
+    busy = false; fails = 0;
+    var k = (j && Array.isArray(j.kinds)) ? j.kinds : [];
+    if(k.length) act(k);
+    schedule(k.length ? 250 : 30);
+  }, function(e){
+    busy = false; fails++;
+    /* нет входа — ждём входа; сеть — отступаем всё дальше, до 30 с */
+    schedule(e && e.status === 401 ? 8000 : Math.min(30000, 1500 * Math.pow(2, Math.min(fails, 5))));
+  });
+}
+document.addEventListener('visibilitychange', function(){ if(!document.hidden) schedule(0); });
+window.addEventListener('online', function(){ fails = 0; schedule(200); });
+window.bpMvWakeKick = function(){ schedule(0); };
+/* после входа приложение уже знает ключ — начинаем */
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ schedule(2500); });
+else schedule(2500);
 })();
 </script>
 </body>

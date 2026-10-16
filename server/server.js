@@ -2252,6 +2252,7 @@ function creditYkPayment(p) {
   });
   if (r.status === 200) {
     try { q.updPay.run('succeeded', p.id); } catch (e) { /* строки могло не быть */ }
+    wakeUser(uid, 'money');
     return { ok: true, status: 'succeeded' };
   }
   /* Зачисление не прошло (сбой транзакции) — строку платежа НЕ помечаем:
@@ -3219,7 +3220,38 @@ if (String(ENV.PUSH_HOSTS_EXTRA || '').trim()) {
     + ' проверок; на боевом сервере уберите её из .env.');
 }
 
+/* ── «Сразу»: ждущий запрос (15.10.2026) ─────────────────────────────────
+   Владелец: «уведомления приходят не сразу». Открытое приложение спрашивало
+   сервер раз в 15 с (сообщения), ролики, баланс и проверку — ещё реже.
+   Теперь оно держит запрос GET /api/wake (до WAKE_MS); как только у человека
+   событие — то же, о чём ему шлём push (ролики, выплаты, проверка, счёт),
+   новый конверт от собеседника, зачисление оплаты, — сервер отвечает сразу
+   { kinds:[…] }, и приложение тут же забирает новое прежними ручками.
+   Событие без ждущего запроса (между запросами) живёт WAKE_KEEP_MS и уходит
+   со следующим. Ни данных, ни текста здесь нет — только «что проверить». */
+const WAKE_MS = Math.max(2000, Math.min(55000, Number(ENV.WAKE_MS) || 25000));
+const WAKE_KEEP_MS = 30000;
+const wakeWait = new Map();    /* id человека → Set ждущих { done } */
+const wakeLate = new Map();    /* id человека → { kinds:Set, at } — пришло, пока никто не ждал */
+function wakeUser(userId, kind) {
+  try {
+    const uid = Number(userId);
+    if (!uid) return;
+    const k = String(kind || 'note').slice(0, 16);
+    const set = wakeWait.get(uid);
+    if (set && set.size) {
+      for (const w of Array.from(set)) w.done([k]);
+      return;
+    }
+    const late = wakeLate.get(uid) || { kinds: new Set(), at: 0 };
+    late.kinds.add(k); late.at = Date.now();
+    wakeLate.set(uid, late);
+    if (wakeLate.size > 5000) wakeLate.delete(wakeLate.keys().next().value);
+  } catch (e) { /* будильник не должен ронять действие */ }
+}
+
 function pushTo(userId, title, body, url) {
+  wakeUser(userId, 'note');
   try {
     const uid = Number(userId);
     if (!uid) return;
@@ -3975,6 +4007,41 @@ const routes = {
   /* Виды, которые приложение применяет к данным получателя: профиль
      (prof), личные настройки и избранное (mine), свободные дни (slot).
      Такой конверт человек пишет только сам себе — см. проверку ниже. */
+  /* ждущий запрос (см. wakeUser): отвечает сразу, как у человека событие,
+     или через WAKE_MS пустым списком — приложение тут же спрашивает снова */
+  'GET /api/wake': async (req) => {
+    const u = auth(req);
+    if (!u) return { status: 401, body: { error: 'Нужен вход' } };
+    if (!rateLimit(req, 'wake:' + u.id, 40, 60000)) return tooOften;
+    const uid = Number(u.id);
+    const late = wakeLate.get(uid);
+    if (late && Date.now() - late.at < WAKE_KEEP_MS && late.kinds.size) {
+      wakeLate.delete(uid);
+      return { status: 200, body: { kinds: Array.from(late.kinds) } };
+    }
+    wakeLate.delete(uid);
+    let set = wakeWait.get(uid);
+    if (!set) { set = new Set(); wakeWait.set(uid, set); }
+    /* не больше трёх ждущих на человека (вкладки, телефоны) — старший уходит */
+    if (set.size >= 3) { const old = set.values().next().value; if (old) old.done([]); }
+    return await new Promise((resolve) => {
+      let fin = false;
+      /* ушёл человек — слушаем СОЕДИНЕНИЕ: 'close' у самого запроса в Node
+         приходит, как только запрос дочитан, и ожидание кончалось бы сразу */
+      const sock = req.socket;
+      const gone = () => { if (!fin) w.done([]); };
+      const w = { done: (kinds) => {
+        if (fin) return; fin = true;
+        clearTimeout(w.t); set.delete(w); if (!set.size) wakeWait.delete(uid);
+        try { if (sock) sock.removeListener('close', gone); } catch (e) {}
+        resolve({ status: 200, body: { kinds: kinds || [] } });
+      } };
+      w.t = setTimeout(() => w.done([]), WAKE_MS);
+      set.add(w);
+      try { if (sock) sock.once('close', gone); } catch (e) {}
+    });
+  },
+
   'POST /api/sync/put': async (req, body) => {
     const u = auth(req);
     if (!u) return { status: 401, body: { error: 'Нужен вход' } };
@@ -4096,6 +4163,11 @@ const routes = {
     if (ex && !own) syncUseAdd(ex.from_id, -1, -oldBytes);
     /* задание включили, поставили на паузу или завели — сводка «Главной» устарела */
     if (kind === 'camp') tsumCache.at = 0;
+    /* вторая сторона конверта (сообщение, сделка) узнаёт сразу (/api/wake) */
+    else {
+      const other = Number(u.id) === Number(a) ? b : a;
+      if (other && Number(other) !== Number(u.id)) wakeUser(other, 'sync');
+    }
     return { status: 200, body: { ok: true, ver, a, b } };
   },
 
