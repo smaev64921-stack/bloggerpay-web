@@ -52625,10 +52625,16 @@ var _holdAsked = {}, _holdP = {};
 function restoreHold(c){
   var id = String(c.id);
   if(_holdAsked[id]) return _holdP[id] || Promise.resolve();
-  _holdAsked[id] = 1;
   var S = window.bpSrv;
   var bad = function(){ E(new Error('кампания ' + c.id + ' активна без записи о заморозке'), 62038); };
-  if(!S || typeof S.raw !== 'function' || !S.configured || !S.configured() || !S.token || !S.token()){ bad(); return Promise.resolve(); }
+  /* Касса настроена, но входа в неё сейчас нет (сессия погасла и ждёт
+     «Войдите снова», вход ещё поднимается) — это не поломка и не повод
+     больше не спрашивать: holdCheck зовут и при открытии задания, спросим
+     там, когда вход вернётся (ревью 16.10: ложная тревога владельцу и
+     «деньги не заведены» до перезагрузки). */
+  if(S && typeof S.raw === 'function' && S.configured && S.configured() && !(S.token && S.token())) return Promise.resolve();
+  _holdAsked[id] = 1;
+  if(!S || typeof S.raw !== 'function' || !S.configured || !S.configured()){ bad(); return Promise.resolve(); }
   return (_holdP[id] = S.raw('GET', '/api/tasks/board?campId=' + encodeURIComponent(id) + '&limit=1').then(function(j){
     var budget = Math.round(num(j && j.budget));
     if(!(budget > 0)){ bad(); return; }
@@ -71043,6 +71049,24 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
         });
         return;
       }
+      /* Аудит 16.10.2026 (V3): касса настроена, а ключа сессии нет (сессия
+         погасла, «Войдите снова» закрыли) — запуск шёл местным путём:
+         «Задание запущено!», задание активно, а заморозки в кассе нет.
+         Теперь сначала вход (bpEnsureSrv), потом тот же запуск; без входа —
+         черновик и честные слова. */
+      if(wasDraft && s && s.configured() && !s.token()){
+        var pk2 = String(campId);
+        if(probing[pk2]) return;
+        probing[pk2] = 1;
+        var ens = typeof window.bpEnsureSrv === 'function' ? window.bpEnsureSrv('Чтобы запустить задание и заморозить бюджет в кассе') : Promise.resolve(false);
+        Promise.resolve(ens).then(function(ok){ return !!ok; }, function(){ return false; }).then(function(ok){
+          delete probing[pk2];
+          if(ok && s.token()){ try{ window.campLaunch(campId); }catch(e){ E(e); } return; }
+          toast('Задание не запущено, деньги не списаны: войдите в аккаунт и запустите его из черновиков ещё раз.', 'err');
+          tell(campId, false, 'nokey');
+        });
+        return;
+      }
       if(!serverMode()) return orig.apply(self, args);
       /* «запущено» скажем после ответа кассы: пока прячем всплывашку и
          уведомление прежних слоёв, после «да» покажем их как были */
@@ -77379,7 +77403,23 @@ if(typeof os === 'function' && !os.__bpLock){
         }
       }
     }catch(e){}
-    return os.apply(this, arguments);
+    /* Бюджет запущенного задания — только через кассу («Пополнить бюджет» /
+       «Вернуть в кошелёк»), как в _campCreate (ревью 16.10.2026): поле
+       «Бюджет» этой шторки писало budgetExact мимо денег — резерв в кассе
+       прежний, а карточки, конверт задания и местные проверки видели другую
+       сумму. Шторка — полный доступ (в MV .tk-campacts скрыт). */
+    var keptBudget = false;
+    try{
+      var c0 = (typeof window._loadCamps === 'function' ? window._loadCamps() : []).find(function(x){ return x && String(x.id) === String(id); });
+      var bi = document.getElementById('tfBudget');
+      if(c0 && bi && String(c0.status || 'draft') !== 'draft'){
+        var cur = num(c0.budgetExact) || num(c0.budget);
+        if(num(bi.value) !== cur){ bi.value = String(cur); keptBudget = true; }
+      }
+    }catch(e){}
+    var r = os.apply(this, arguments);
+    if(keptBudget) toast('Бюджет запущенного задания меняется кнопками «Пополнить бюджет» и «Вернуть в кошелёк»', 'info');
+    return r;
   };
   window.bpSaveTaskTerms.__bpLock = true;
 }
@@ -80839,7 +80879,14 @@ function pull(force){
           if(row.kind === 'req' && applyReq(row.rid, row.data)) touched++;
           else if(row.kind === 'deal' && applyDeal(row.rid, row.data)) touched++;
           else if(row.kind === 'msg' && applyMsg(row.rid, row.data)) touched++;
-          else if(row.kind === 'camp' && applyCamp(row.rid, row.data)) touched++;
+          else if(row.kind === 'camp' && applyCamp(row.rid, row.data)){
+            touched++;
+            /* своё задание с другого телефона приехало ПОСЛЕ старта: запись
+               о заморозке спрашиваем у кассы сейчас — иначе второй телефон
+               до открытия страницы задания писал «не заведены» и «свободно
+               0 ₽» (аудит 16.10.2026; проверка только своих active/paused) */
+            (function(id){ setTimeout(function(){ try{ if(typeof window.bpCampHoldCheck === 'function') window.bpCampHoldCheck(id); }catch(e){ E(e); } }, 0); })(String(row.rid));
+          }
           else if(row.kind === 'join' && applyList(JOIN_KEY, '_rid', row.rid, row.data, function(j){
             /* Выплата по заданию ищет получателя по srvId отклика —
                проставляем его, пока знаем серверный номер человека. */
@@ -102353,11 +102400,40 @@ var HOLD = 'остальное держат видео на проверке и 
 /* обёртка ставится один раз: если наша уже есть где-то в цепочке (поверх
    неё могла встать чужая — например, подтверждение bp-confirm), второй не
    ставим — иначе касса вызывалась бы ДО «Завершить?» */
+/* Касса настроена, а ключа сессии нет (сессия погасла, «Войдите снова»
+   закрыли): эти нажатия шли местным путём — бюджет «пополнялся» и
+   «возвращался» только в браузере, касса ничего не знала (аудит 16.10.2026,
+   V3). Сначала вход (bpEnsureSrv), потом то же нажатие этим же звеном
+   цепочки (подтверждение bp-confirm сверху второй раз не спросит).
+   2 — только у запущенного задания (черновик денег в кассе не держит). */
+var NEEDKEY = { bpTmMoneyGo:1, bpCampFinishGo:1, campComplete:2, campDelete:2 };
+function noKey(){ var s = S(); try{ return !!(s && s.configured && s.configured() && !(s.token && s.token())); }catch(e){ return false; } }
+function campSt(id){
+  try{ var a = typeof window._loadCamps === 'function' ? (window._loadCamps() || []) : []; for(var i = 0; i < a.length; i++) if(a[i] && String(a[i].id) === String(id)) return String(a[i].status || ''); }catch(e){}
+  return '';
+}
+var relogging = false;
+function relog(again){
+  if(relogging) return;
+  relogging = true;
+  var f = window.bpEnsureSrv;
+  Promise.resolve(typeof f === 'function' ? f('Чтобы провести деньги задания через кассу') : false).then(function(ok){ return !!ok; }, function(){ return false; }).then(function(ok){
+    relogging = false;
+    if(ok && cash()){ try{ again(); }catch(e){ E(e); } return; }
+    toast('Операция не проведена, деньги не тронуты: войдите в аккаунт и повторите', 'err');
+  });
+}
 function wrap(name, make){
   var o = window[name];
   if(typeof o !== 'function') return;
   for(var f = o, i = 0; f && i < 30; f = f.__orig, i++) if(f.__bpCash) return;
-  var w = make(o); w.__bpCash = 1; w.__orig = o; window[name] = w;
+  var w0 = make(o), w = w0;
+  if(NEEDKEY[name]) w = function(){
+    var self = this, a = arguments, st = NEEDKEY[name] === 2 ? campSt(a[0]) : '';
+    if(noKey() && (NEEDKEY[name] === 1 || (st && st !== 'draft'))){ relog(function(){ w.apply(self, a); }); return; }
+    return w0.apply(this, arguments);
+  };
+  w.__bpCash = 1; w.__orig = o; window[name] = w;
 }
 function install(){
   /* шторка «Вернуть в кошелёк»: свободное спрашиваем у кассы при открытии */
@@ -103882,6 +103958,8 @@ function trap(root){
   });
 }
 function closerName(id){ return 'close' + id.charAt(0).toUpperCase() + id.slice(1); }
+/* «уменьшить движение»: у окон и экранов анимаций нет (CSS) — уход сразу */
+function calmM(){ try{ return !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches); }catch(e){ return false; } }
 /* окно: шторка снизу на телефоне, по центру с mid */
 function modal(id, o){
   var old = $(id); if(old) old.remove();
@@ -103900,8 +103978,18 @@ function modal(id, o){
     if(done) return; done = true;
     try{ if(window[closerName(id)] === close) delete window[closerName(id)]; }catch(e){ window[closerName(id)] = null; }
     try{ if(o.onClose) o.onClose(); }catch(e){ E(e); }
-    if(now || !ov.isConnected){ ov.remove(); }
-    else { ov.classList.add('out'); setTimeout(function(){ ov.remove(); }, 210); }
+    if(now || !ov.isConnected || calmM()){ ov.remove(); }
+    else {
+      ov.classList.add('out');
+      /* аудит 16.10.2026 (V3): срок ухода — от первого кадра ухода, а не от
+         нажатия. Сразу за закрытием часто идёт тяжёлый переход (карта →
+         пополнение, вывод, «Верификация»): под замедлением процессора кадр
+         с уходом рисовался через ~180 мс, и окно снималось рывком на
+         середине. rAF не придёт в скрытой вкладке — запасной снимает через 1 с. */
+      var rm = function(){ if(ov.isConnected) ov.remove(); };
+      try{ requestAnimationFrame(function(){ setTimeout(rm, 210); }); }catch(e){ setTimeout(rm, 210); }
+      setTimeout(rm, 1000);
+    }
     try{ if(back && back.isConnected && typeof back.focus === 'function') back.focus({ preventScroll:true }); }catch(e){}
   }
   ov.addEventListener('click', function(e){
@@ -103937,8 +104025,15 @@ function screen(id, title, html, onClose){
     if(done) return; done = true;
     try{ if(window[closerName(id)] === close) delete window[closerName(id)]; }catch(e){ window[closerName(id)] = null; }
     try{ if(onClose) onClose(); }catch(e){ E(e); }
-    el.classList.remove('in'); el.classList.add('out');
-    setTimeout(function(){ el.remove(); }, 190);
+    /* «уменьшить движение» — анимации ухода нет: снимаем сразу (а не держим
+       застывший экран 0,19 с); иначе срок — от первого кадра ухода (как у окна) */
+    if(calmM()) el.remove();
+    else {
+      el.classList.remove('in'); el.classList.add('out');
+      var rm = function(){ if(el.isConnected) el.remove(); };
+      try{ requestAnimationFrame(function(){ setTimeout(rm, 190); }); }catch(e){ setTimeout(rm, 190); }
+      setTimeout(rm, 1000);
+    }
     try{ if(back && back.isConnected && typeof back.focus === 'function') back.focus({ preventScroll:true }); }catch(e){}
   }
   el.addEventListener('click', function(e){
@@ -114427,12 +114522,18 @@ function trackDlg(ov){
   function young(){ return calm() || now() - d.__mvm.born < 320 || ov.classList.contains('out'); }
   if(bd) new MutationObserver(function(list){
     if(young()) return;
-    var add = [], rem = 0;
+    var add = [], rem = 0, gone = [];
     list.forEach(function(m){
       rem += m.removedNodes.length;
+      [].forEach.call(m.removedNodes, function(n){ if(n.nodeType === 1) gone.push(n); });
       [].forEach.call(m.addedNodes, function(n){ if(n.nodeType === 1 && n.parentNode === bd) add.push(n); });
     });
     if(!add.length || !rem) return;                /* смена шага, а не дописка */
+    /* аудит 16.10.2026 (V3): тело перерисовали тем же каркасом — ответ сети
+       («Подключить аккаунт»: pullCfg/pullAcc) — это не смена шага: при
+       медленной сети тело гасло до нуля и въезжало сбоку (моргание) */
+    var sig = function(a){ return a.map(function(n){ return n.tagName + '.' + String(n.className || '') + '#' + (n.id || ''); }).join('|'); };
+    if(sig(gone) === sig(add)) return;
     var dx = (now() - backAt < 450) ? -14 : 14;
     add.forEach(function(n){ anim(n, [{ opacity:0, transform:'translateX(' + dx + 'px)' }, { opacity:1, transform:'none' }], { duration:220, easing:EASE }); });
   }).observe(bd, { childList:true });
