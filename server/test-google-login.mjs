@@ -13,7 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 
-const PORT = 8098;
+const PORT = Number(process.env.GLOGIN_PORT || 8098);
 const BASE = 'http://127.0.0.1:' + PORT;
 let passed = 0, failed = 0;
 function ok(c, name, extra) {
@@ -61,9 +61,13 @@ try {
   ok(!/access_type=offline/.test(st.body.url), 'долгий доступ не просим — вход разовый');
 
   /* ── пока человек не вошёл ── */
-  const pend = await api('GET', '/api/auth/google/pending?nonce=' + st.body.nonce);
+  /* 16.10 (аудит): вход отдаётся только с секретом pk из ответа start */
+  ok(/^[0-9a-f]{48}$/.test(st.body.pk || '') && st.body.url.indexOf(st.body.pk) < 0, 'секрет pk выдан и в ссылку Google не попал');
+  const noPk = await api('GET', '/api/auth/google/pending?nonce=' + st.body.nonce);
+  ok(noPk.status === 404, 'метка без секрета pk не отвечает', noPk.body);
+  const pend = await api('POST', '/api/auth/google/pending', { nonce: st.body.nonce, pk: st.body.pk });
   ok(pend.status === 200 && pend.body.state === 'waiting', 'до входа — «ждём»', pend.body);
-  const bad = await api('GET', '/api/auth/google/pending?nonce=' + 'f'.repeat(48));
+  const bad = await api('POST', '/api/auth/google/pending', { nonce: 'f'.repeat(48), pk: st.body.pk });
   ok(bad.status === 404, 'чужая метка не отвечает', bad.body);
 
   /* ── подделанный возврат ── */
@@ -73,7 +77,7 @@ try {
   const denied = await fetch(BASE + '/api/auth/google/callback?state=' + st.body.nonce);
   const deniedTxt = await denied.text();
   ok(/отмен/i.test(deniedTxt), 'отказ в Google показан по-человечески');
-  const afterDeny = await api('GET', '/api/auth/google/pending?nonce=' + st.body.nonce);
+  const afterDeny = await api('POST', '/api/auth/google/pending', { nonce: st.body.nonce, pk: st.body.pk });
   ok(afterDeny.status === 404, 'после отказа метка стёрта');
 
   /* ── подделываем успешный вход: пишем пользователя и сессию как это
@@ -103,21 +107,23 @@ try {
 
   const st2 = await api('GET', '/api/auth/google/start');
   const n2 = st2.body.nonce;
-  const short = await api('POST', '/api/auth/google/claim', { nonce: n2, code: '12' });
+  const noPkClaim = await api('POST', '/api/auth/google/claim', { nonce: n2, code: '000001' });
+  ok(noPkClaim.status === 404, 'код без секрета pk не сверяется вовсе', noPkClaim.body);
+  const short = await api('POST', '/api/auth/google/claim', { nonce: n2, pk: st2.body.pk, code: '12' });
   ok(short.status === 400 && /шесть/i.test(short.body.error || ''), 'короткий код отбит', short.body);
 
   let last = null;
   for (let i = 0; i < 5; i++) {
-    last = await api('POST', '/api/auth/google/claim', { nonce: n2, code: '000001' });
+    last = await api('POST', '/api/auth/google/claim', { nonce: n2, pk: st2.body.pk, code: '000001' });
   }
   ok(last.status === 400 && last.body.left === 0, 'ошибки считаются, попытки кончаются', last.body);
-  const burnt = await api('POST', '/api/auth/google/claim', { nonce: n2, code: '000001' });
+  const burnt = await api('POST', '/api/auth/google/claim', { nonce: n2, pk: st2.body.pk, code: '000001' });
   ok(burnt.status === 429, 'после пяти ошибок метка сгорает', burnt.body);
-  const gone = await api('GET', '/api/auth/google/pending?nonce=' + n2);
+  const gone = await api('POST', '/api/auth/google/pending', { nonce: n2, pk: st2.body.pk });
   ok(gone.status === 404, 'сгоревшую метку больше не забрать', gone.body);
 
   /* ── без ключей Google вход честно отказывает ── */
-  const PORT2 = 8099;
+  const PORT2 = PORT + 1;
   const dir2 = mkdtempSync(path.join(tmpdir(), 'bp-glog2-'));
   const srv2 = spawn(process.execPath, ['server.js'], {
     cwd: fileURLToPath(new URL('.', import.meta.url)),

@@ -12,7 +12,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
-const PORT = 8096;
+const PORT = Number(process.env.TGLOGIN_PORT || 8096);
 const BASE = 'http://127.0.0.1:' + PORT;
 const BOT_ID = '123456789';
 const BOT_TOKEN = BOT_ID + ':AAtest-token-not-real';
@@ -31,7 +31,7 @@ async function api(method, p, body, token) {
   });
   const txt = await r.text();
   let j = {}; try { j = JSON.parse(txt); } catch (e) { j = { _raw: txt.slice(0, 200) }; }
-  return { status: r.status, body: j, text: txt };
+  return { status: r.status, body: j, text: txt, headers: r.headers };
 }
 
 /* Ровно то, что делает Телеграм: поля по алфавиту, «ключ=значение»
@@ -56,6 +56,18 @@ function asQuery(nonce, f) {
   Object.keys(f).forEach((k) => q.set(k, f[k]));
   return q.toString();
 }
+/* 16.10 (аудит): start отдаёт ещё секрет pk и куку «этого браузера».
+   Вход отдаётся только с pk и — без кода — только при возврате с кукой. */
+async function startTg(p, token) {
+  const r = await api('GET', p || '/api/auth/telegram/start', null, token);
+  const sc = r.headers.get('set-cookie') || '';
+  return Object.assign(r, { cookie: sc.split(';')[0] });
+}
+function back(st, f, init) {
+  return fetch(BASE + '/api/auth/telegram/callback?' + asQuery(st.body.nonce, f),
+    Object.assign({ headers: { Cookie: st.cookie } }, init || {}));
+}
+const pending = (st) => api('POST', '/api/auth/telegram/pending', { nonce: st.body.nonce, pk: st.body.pk });
 
 const CWD = fileURLToPath(new URL('.', import.meta.url));
 function start(port, env) {
@@ -87,8 +99,11 @@ try {
   ok(await up(PORT), 'сервер поднялся');
 
   /* ── ссылка входа ── */
-  const st = await api('GET', '/api/auth/telegram/start');
+  const st = await startTg();
   ok(st.status === 200 && typeof st.body.url === 'string', 'ссылка входа выдана', st.body);
+  ok(/^[0-9a-f]{48}$/.test(st.body.pk || '') && st.body.url.indexOf(st.body.pk) < 0,
+    'секрет выдачи pk отдан приложению и в ссылку не попал');
+  ok(/HttpOnly/i.test(st.headers.get('set-cookie') || ''), 'кука «этого браузера» поставлена');
   const u = new URL(st.body.url);
   ok(u.origin + u.pathname === 'https://oauth.telegram.org/auth', 'ведёт на Телеграм', u.href.slice(0, 60));
   ok(u.searchParams.get('bot_id') === BOT_ID, 'номер бота взят из токена', u.searchParams.get('bot_id'));
@@ -98,10 +113,12 @@ try {
   ok(u.searchParams.get('embed') === '0', 'полностраничный вход, не рамка');
 
   /* ── пока человек не вошёл ── */
-  const pend = await api('GET', '/api/auth/telegram/pending?nonce=' + st.body.nonce);
+  const pend = await pending(st);
   ok(pend.status === 200 && pend.body.state === 'waiting', 'до входа — «ждём»', pend.body);
-  const bad = await api('GET', '/api/auth/telegram/pending?nonce=' + 'f'.repeat(48));
+  const bad = await api('POST', '/api/auth/telegram/pending', { nonce: 'f'.repeat(48), pk: st.body.pk });
   ok(bad.status === 404, 'чужая метка не отвечает', bad.body);
+  const noPk = await api('GET', '/api/auth/telegram/pending?nonce=' + st.body.nonce);
+  ok(noPk.status === 404, 'метка без секрета pk не отвечает', noPk.body);
 
   /* ── возврат без метки ── */
   const noState = await fetch(BASE + '/api/auth/telegram/callback');
@@ -124,11 +141,13 @@ try {
   const old = tgReply({ auth_date: String(Math.floor(Date.now() / 1000) - 90000) });
   const oldRes = await fetch(BASE + '/api/auth/telegram/callback?' + asQuery(st.body.nonce, old));
   ok(/просрочен/i.test(await oldRes.text()), 'вчерашний ответ не принимается');
+  const old15 = tgReply({ auth_date: String(Math.floor(Date.now() / 1000) - 15 * 60) });
+  const old15Res = await fetch(BASE + '/api/auth/telegram/callback?' + asQuery(st.body.nonce, old15));
+  ok(/просрочен/i.test(await old15Res.text()), 'ответ 15-минутной давности тоже (срок — 10 минут)');
 
-  /* ── настоящий вход ── */
+  /* ── настоящий вход (возврат в тот же браузер — с его кукой) ── */
   const good = tgReply();
-  const okRes = await fetch(BASE + '/api/auth/telegram/callback?' + asQuery(st.body.nonce, good),
-    { redirect: 'manual' });
+  const okRes = await back(st, good, { redirect: 'manual' });
   const okTxt = await okRes.text();
   /* Возврат приходит в ОКНО, которое открыла кнопка входа, а не в ту
      вкладку, где человек ждёт. Раньше сервер отвечал ему переходом на
@@ -148,7 +167,7 @@ try {
   ok(okTxt.indexOf('tglogin=' + st.body.nonce) > 0,
     'если ждать некому — уходит в приложение, как раньше');
 
-  const got = await api('GET', '/api/auth/telegram/pending?nonce=' + st.body.nonce);
+  const got = await pending(st);
   ok(got.status === 200 && got.body.state === 'ok' && got.body.token, 'сессия отдана приложению', got.body);
   ok(got.body.user && got.body.user.name === 'Иван', 'имя из Телеграма', got.body.user);
 
@@ -160,27 +179,31 @@ try {
   /* Метка живёт ещё минуту после первой выдачи. Пока она сгорала сразу,
      вход был гонкой двух окон: проигравшему сервер отвечал «не найден»,
      и человек смотрел на «Заканчиваем вход» до победного конца. */
-  const twice = await api('GET', '/api/auth/telegram/pending?nonce=' + st.body.nonce);
+  const twice = await pending(st);
   ok(twice.status === 200 && twice.body.token === got.body.token,
     'ту же метку можно забрать второй раз — гонки окон больше нет', twice.status);
 
-  /* ── второй вход тем же человеком — тот же аккаунт, а не второй ── */
-  const st2 = await api('GET', '/api/auth/telegram/start');
-  await fetch(BASE + '/api/auth/telegram/callback?' + asQuery(st2.body.nonce, tgReply()));
-  const got2 = await api('GET', '/api/auth/telegram/pending?nonce=' + st2.body.nonce);
+  /* ── второй вход тем же человеком — тот же аккаунт, а не второй ──
+     Ответ Телеграма каждый раз новый (свой auth_date): прежний второй раз
+     не принимается — см. test-login-hijack.mjs. */
+  const st2 = await startTg();
+  await back(st2, tgReply({ auth_date: String(Math.floor(Date.now() / 1000) - 2) }));
+  const got2 = await pending(st2);
   ok(got2.body.user && got2.body.user.id === got.body.user.id,
     'повторный вход даёт тот же аккаунт', { first: got.body.user, second: got2.body.user });
 
   /* ── код возврата для другого браузера ── */
-  const st3 = await api('GET', '/api/auth/telegram/start');
+  const st3 = await startTg();
   const blind = await api('POST', '/api/auth/telegram/claim', { code: '000000' });
   ok(blind.status === 404, 'код без метки не ищется по чужим входам', blind.body);
+  const noPkClaim = await api('POST', '/api/auth/telegram/claim', { nonce: st3.body.nonce, code: '000001' });
+  ok(noPkClaim.status === 404, 'код без секрета pk не сверяется вовсе', noPkClaim.body);
   let last = null;
   for (let i = 0; i < 5; i++) {
-    last = await api('POST', '/api/auth/telegram/claim', { nonce: st3.body.nonce, code: '000001' });
+    last = await api('POST', '/api/auth/telegram/claim', { nonce: st3.body.nonce, pk: st3.body.pk, code: '000001' });
   }
   ok(last.status === 400 && last.body.left === 0, 'ошибки считаются, попытки кончаются', last.body);
-  const burnt = await api('POST', '/api/auth/telegram/claim', { nonce: st3.body.nonce, code: '000001' });
+  const burnt = await api('POST', '/api/auth/telegram/claim', { nonce: st3.body.nonce, pk: st3.body.pk, code: '000001' });
   ok(burnt.status === 429, 'после пяти ошибок метка сгорает', burnt.body);
 
   /* ── СКЛЕЙКА АККАУНТОВ ──
@@ -203,16 +226,21 @@ try {
   const linkNoAuth = await api('GET', '/api/auth/telegram/start?link=1');
   ok(linkNoAuth.status === 401, 'привязка без входа отбита', linkNoAuth.body);
 
-  const linkSt = await api('GET', '/api/auth/telegram/start?link=1', null, tokA);
+  const linkSt = await startTg('/api/auth/telegram/start?link=1', tokA);
   ok(linkSt.status === 200 && !!linkSt.body.nonce, 'привязка началась', linkSt.body);
   const tgNew = tgReply({ id: '424242', first_name: 'Привязка' });
-  const linkRes = await fetch(BASE + '/api/auth/telegram/callback?' + asQuery(linkSt.body.nonce, tgNew));
+  const linkRes = await back(linkSt, tgNew);
   const linkTxt = await linkRes.text();
   ok(linkRes.status === 200 && /Готово|Возвращаемся/.test(linkTxt),
     'привязка завершилась страницей возврата', linkRes.status);
-  const linkPend = await api('GET', '/api/auth/telegram/pending?nonce=' + linkSt.body.nonce);
-  ok(linkPend.status === 200 && linkPend.body.linked === true && !linkPend.body.token,
-    'привязка не выдаёт сессию — человек уже вошёл', linkPend.body);
+  const m05 = await api('GET', '/api/account/methods', null, tokA);
+  ok(m05.body.telegram === false, 'сам возврат ничего не привязывает (16.10)', m05.body);
+  const linkPend = await pending(linkSt);
+  ok(linkPend.status === 200 && linkPend.body.link === true && !linkPend.body.token,
+    'привязка не выдаёт сессию — просит подтверждения из приложения', linkPend.body);
+  const linkOk = await api('POST', '/api/auth/telegram/link-confirm',
+    { nonce: linkSt.body.nonce, pk: linkSt.body.pk }, tokA);
+  ok(linkOk.status === 200 && linkOk.body.linked === true, 'привязку подтвердил тот же аккаунт', linkOk.body);
   const m1 = await api('GET', '/api/account/methods', null, tokA);
   ok(m1.body.telegram === true, 'Телеграм привязан к почтовому аккаунту', m1.body);
 
@@ -221,19 +249,17 @@ try {
   const reg2 = await api('POST', '/api/register', {
     email: 'vtoroy@t.ru', name: 'Второй', role: 'blogger', password: 'пароль-подлиннее',
   });
-  const st2b = await api('GET', '/api/auth/telegram/start?link=1', null, reg2.body.token);
-  const busy = await fetch(BASE + '/api/auth/telegram/callback?'
-    + asQuery(st2b.body.nonce, tgReply({ id: '424242', first_name: 'Привязка' })));
+  const st2b = await startTg('/api/auth/telegram/start?link=1', reg2.body.token);
+  const busy = await back(st2b, tgReply({ id: '424242', first_name: 'Привязка', auth_date: String(Math.floor(Date.now() / 1000) - 1) }));
   const busyTxt = await busy.text();
   ok(/уже занят|другому аккаунту/i.test(busyTxt), 'занятый Телеграм ко второму аккаунту не привязывается');
   const m2 = await api('GET', '/api/account/methods', null, reg2.body.token);
   ok(m2.body.telegram === false, 'у второго аккаунта Телеграма так и нет', m2.body);
 
   /* Обратная дорога: телеграм-аккаунт задаёт почту и пароль. */
-  const stTg = await api('GET', '/api/auth/telegram/start');
-  await fetch(BASE + '/api/auth/telegram/callback?'
-    + asQuery(stTg.body.nonce, tgReply({ id: '909090', first_name: 'Ботовый' })));
-  const gotTg = await api('GET', '/api/auth/telegram/pending?nonce=' + stTg.body.nonce);
+  const stTg = await startTg();
+  await back(stTg, tgReply({ id: '909090', first_name: 'Ботовый' }));
+  const gotTg = await pending(stTg);
   const tokB = gotTg.body.token;
   ok(!!tokB, 'телеграм-аккаунт вошёл');
   const mB = await api('GET', '/api/account/methods', null, tokB);

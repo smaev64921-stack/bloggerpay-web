@@ -209,21 +209,35 @@ try {
   const camp = { id: 'camp_test_1', name: 'Задание бренда', status: 'active', budget: 1000 };
   const putC = await api('POST', '/api/sync/put', { kind: 'camp', rid: 'camp_test_1', data: camp }, { token: brand.token, cookie: false });
   ok(putC.status === 200, 'бренд опубликовал задание', putC.body);
+  /* в общую ленту и витрину попадает только задание с бюджетом (аудит 16.10.2026) */
+  const pubNo = await api('GET', '/api/tasks/public', null, { cookie: false });
+  ok(!JSON.stringify(pubNo.body).includes('camp_test_1'), 'без заморозки бюджета задания в витрине нет', pubNo.body);
+  const sumNo = await api('GET', '/api/tasks/summary', null, { cookie: false });
+  const stNo = sumNo.body.camps && sumNo.body.camps.camp_test_1;
+  ok(sumNo.status === 200 && !!stNo && stNo.videos === 0 && stNo.views === 0 && stNo.paid === 0 && stNo.budget === 0,
+    'задание есть в сводке «Главной» (без заморозки — нули)', sumNo.body);
+  await api('POST', '/api/topup', { amount: 5000, opKey: 'adm-topup-camp-test-1' }, { token: brand.token, cookie: false });
+  const holdC = await api('POST', '/api/deals/hold', { dealId: 'camp:camp_test_1', amount: 1000, opKey: 'adm-hold-camp-test-1' }, { token: brand.token, cookie: false });
+  ok(holdC.status === 200, 'бренд заморозил бюджет задания', holdC.body);
   const pub0 = await api('GET', '/api/tasks/public', null, { cookie: false });
   const has0 = JSON.stringify(pub0.body).includes('camp_test_1');
   ok(has0, 'задание видно в общей ленте', pub0.body);
+  /* прежний ключ Марии погас при её блокировке выше — входим заново */
+  const mariaTok = (await login('maria@t.ru')).body.token;
+  const pullM0 = await api('GET', '/api/sync/pull?since=0', null, { token: mariaTok, cookie: false });
+  ok(pullM0.status === 200 && JSON.stringify(pullM0.body).includes('camp_test_1'), 'и в обмене другим людям', pullM0);
   const sum0 = await api('GET', '/api/tasks/summary', null, { cookie: false });
   const st0 = sum0.body.camps && sum0.body.camps.camp_test_1;
-  ok(sum0.status === 200 && !!st0 && st0.videos === 0 && st0.views === 0 && st0.paid === 0 && st0.budget === 0,
-    'задание есть и в сводке «Главной» (без заморозки — нули)', sum0.body);
+  ok(sum0.status === 200 && !!st0 && st0.videos === 0 && st0.paid === 0 && st0.budget === 1000,
+    'и в сводке «Главной» — с замороженным бюджетом', sum0.body);
   const brandId = (onlyAdv.body.rows.find((r) => r.email === 'brand@t.ru') || {}).id;
   await api('POST', '/api/admin/users/block', { userId: brandId, blocked: true, reason: 'мошенничество' });
   const pub1 = await api('GET', '/api/tasks/public', null, { cookie: false });
   ok(!JSON.stringify(pub1.body).includes('camp_test_1'), 'после блокировки автора задание из ленты ушло', pub1.body);
   const sum1 = await api('GET', '/api/tasks/summary', null, { cookie: false });
   ok(sum1.status === 200 && !('camp_test_1' in (sum1.body.camps || {})), 'и из сводки — сразу, без минуты кэша', sum1.body);
-  const pullM = await api('GET', '/api/sync/pull?since=0', null, { token: maria.token, cookie: false });
-  ok(!JSON.stringify(pullM.body).includes('camp_test_1'), 'и в обмен другим людям больше не приходит');
+  const pullM = await api('GET', '/api/sync/pull?since=0', null, { token: mariaTok, cookie: false });
+  ok(pullM.status === 200 && !JSON.stringify(pullM.body).includes('camp_test_1'), 'и в обмен другим людям больше не приходит', pullM);
   await api('POST', '/api/admin/users/block', { userId: brandId, blocked: false });
   const sum2 = await api('GET', '/api/tasks/summary', null, { cookie: false });
   ok('camp_test_1' in (sum2.body.camps || {}), 'разблокировали — задание вернулось в сводку');

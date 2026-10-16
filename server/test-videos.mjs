@@ -89,10 +89,14 @@ const ACC = {
   /* N — механика v3: загрузка с нуля, рост по дням. R — у него отзовут доступ. */
   'code-N': { open_id: 'chan-N', username: 'blogern', name: 'Блогер Эн', followers: 1000, access: 'tok-N', refresh: 'ref-N', expires: 86400 },
   'code-R': { open_id: 'chan-R', username: 'blogerr', name: 'Блогер Эр', followers: 1000, access: 'tok-R', refresh: 'ref-R', expires: 86400 },
+  /* W — спор блогера по бюджету задания и блокировка; Z — поздний финальный замер (аудит 16.10.2026). */
+  'code-W': { open_id: 'chan-W', username: 'blogerw', name: 'Блогер Дабл', followers: 1000, access: 'tok-W', refresh: 'ref-W', expires: 86400 },
+  'code-Z': { open_id: 'chan-Z', username: 'blogerz', name: 'Блогер Зет', followers: 1000, access: 'tok-Z', refresh: 'ref-Z', expires: 86400 },
 };
 const TOKENS = { 'tok-A1': 'chan-A', 'tok-A2': 'chan-A', 'tok-B': 'chan-B', 'tok-S': 'chan-S', 'tok-X': 'chan-X',
   'tok-D': 'chan-D', 'tok-E': 'chan-E', 'tok-F1': 'chan-F1', 'tok-F2': 'chan-F2', 'tok-G': 'chan-G', 'tok-H': 'chan-H',
-  'tok-Y': 'chan-Y', 'tok-U': 'chan-U', 'tok-P': 'chan-P', 'tok-N': 'chan-N', 'tok-R': 'chan-R' };
+  'tok-Y': 'chan-Y', 'tok-U': 'chan-U', 'tok-P': 'chan-P', 'tok-N': 'chan-N', 'tok-R': 'chan-R',
+  'tok-W': 'chan-W', 'tok-Z': 'chan-Z' };
 const REFRESH = { 'ref-A': { access_token: 'tok-A2', refresh_token: 'ref-A', expires_in: 86400 } };
 const accByOpen = (o) => Object.values(ACC).find((a) => a.open_id === o);
 
@@ -119,6 +123,7 @@ const ID = {
   N9: '7412345678901234710', N10: '7412345678901234711', N11: '7412345678901234712', N12: '7412345678901234713',
   R1: '7412345678901234721', R2: '7412345678901234722',
   N13: '7412345678901234714',
+  W1: '7412345678901234731', Z1: '7412345678901234741', Z2: '7412345678901234742',
 };
 const V = new Map();
 function vid(id, owner, o) {
@@ -188,7 +193,10 @@ vid(ID.P1, 'chan-P', { views: 2000, likes: 200 });
 for (const k of ['N0', 'N1', 'N2', 'N3', 'N4', 'N5', 'N6', 'N7', 'N9', 'N10', 'N11', 'N12', 'N13']) vid(ID[k], 'chan-N');
 vid(ID.R1, 'chan-R');
 vid(ID.R2, 'chan-R');
-const fresh0 = (id) => Object.assign(V.get(id), { views: 0, likes: 0, comments: 0, shares: 0 });
+vid(ID.W1, 'chan-W');
+vid(ID.Z1, 'chan-Z');
+vid(ID.Z2, 'chan-Z');
+const fresh0 =(id) => Object.assign(V.get(id), { views: 0, likes: 0, comments: 0, shares: 0 });
 /* Ролики, на которых площадка «задумывается» — для проверки гонки. */
 const SLOW = new Set();
 /* Ролики, на которых площадка падает (500) — сбой площадки, а не доступа. */
@@ -2075,6 +2083,73 @@ try {
   await sleep(300);
   ok(row(n9.body.video.id).paid === 300 && dmsTo(N, /Выплата за видео задерживается/).length - nDmP === 1,
     'на паузе по деньгам круг не платит и не пишет снова');
+  /* Бюджет кончился — обычный ход событий, а не поломка (аудит 16.10.2026):
+     заморозка задания открыта с нулём, «засчитать» без денег паузу снова не
+     ставит, пополнение снимает паузу и доплачивает само. Раньше заморозка
+     закрывалась (released) навсегда: пополнить — 409, недоплата висела. */
+  {
+  console.log('\n— бюджет задания кончился → пополнение → доплата');
+  const dPoor = () => dbx().prepare('SELECT * FROM deals WHERE id = ?').get('camp:' + camps.gpoor);
+  ok(dPoor().status === 'held' && dPoor().paid === 300 && dPoor().amount === 300,
+    'бюджет потрачен целиком, а заморозка задания открыта (held, остаток 0) — её можно пополнить', dPoor());
+  ok(dmsTo(ADV, /Бюджет задания закончился/).some((m) => /Тонкий бюджет/.test(m.text) && /Пополните бюджет задания/.test(m.text)),
+    'рекламодателю — «бюджет закончился, пополните»', dmsTo(ADV, /Бюджет/).map((m) => m.text));
+  ok(/Остальные 200 ₽ задерживаются: бюджет задания исчерпан — начислим, как только рекламодатель его пополнит/
+    .test(dmsTo(N, /Выплата за видео задерживается/).pop().text) && !dmsTo(N, /разбирается/).length,
+  'блогеру — «бюджет задания исчерпан», а не «администратор разбирается»', dmsTo(N, /задерживается/).map((m) => m.text));
+  ok(row(n9.body.video.id).earned === 800, 'пока ждём пополнения, начисленное растёт с просмотрами: 800 (выплачено 300)', row(n9.body.video.id));
+  const nDec = await adm('POST', '/api/admin/task-videos/decide', { id: n9.body.video.id, decision: 'count', note: 'Проверил' });
+  ok(nDec.status === 409 && nDec.body.code === 'no_budget' && row(n9.body.video.id).pay_hold === 1 && row(n9.body.video.id).paid === 300,
+    '«Засчитать» при пустом бюджете — 409 no_budget: паузу снова не ставит и блогеру не пишет', nDec.body);
+  const rpPoor = await api('POST', '/api/deals/refund', { dealId: 'camp:' + camps.gpoor, amount: 100, opKey: 'rppoor-' + tag }, ADV.token);
+  ok(rpPoor.status === 409 && rpPoor.body.code === 'no_free' && /не осталось денег/.test(rpPoor.body.error),
+    'вернуть часть пустого бюджета — 409 с честным текстом (не «держат видео»)', rpPoor.body);
+  const rfPoor = await api('POST', '/api/deals/refund', { dealId: 'camp:' + camps.gpoor, opKey: 'rfpoor-' + tag }, ADV.token);
+  ok(rfPoor.status === 409 && !rfPoor.body.code && /уже всё выплачено/.test(rfPoor.body.error),
+    '«Завершить» с пустым бюджетом — «уже всё выплачено» (приложение завершает задание), а не «видео в подсчёте»', rfPoor.body);
+  const nT0 = (await bal(N)).available, aT0 = await bal(ADV);
+  const nDmT = dmsTo(N, /Выплата за видео задерживается/).length;
+  const tuP1 = await api('POST', '/api/deals/topup', { dealId: 'camp:' + camps.gpoor, amount: 400, opKey: 'tupoor1-' + tag }, ADV.token);
+  const gA = row(n9.body.video.id);
+  ok(tuP1.status === 200 && tuP1.body.budget === 700 && tuP1.body.resumed && tuP1.body.resumed.videos === 1 && tuP1.body.resumed.paid === 400
+    && gA.paid === 700 && gA.pay_hold === 1 && gA.hold_kind === 'money' && (await bal(N)).available - nT0 === 400,
+  'пополнили на 400 ₽ — пауза снята и сразу доплачено 400 из 500; остальные 100 ждут следующего пополнения', { tu: tuP1.body, gA });
+  await sleep(300);
+  ok(dmsTo(N, /Выплата за видео задерживается/).length - nDmT === 1
+    && /выплачено 700 ₽\. Остальные 100 ₽ задерживаются: бюджет задания исчерпан/.test(dmsTo(N, /Выплата за видео задерживается/).pop().text),
+  'блогеру правда: выплачено 700, остальные 100 — после пополнения', dmsTo(N, /задерживается/).map((m) => m.text));
+  const tuP2 = await api('POST', '/api/deals/topup', { dealId: 'camp:' + camps.gpoor, amount: 300, opKey: 'tupoor2-' + tag }, ADV.token);
+  const gB = row(n9.body.video.id);
+  const bdP = (await board(ADV, 'gpoor')).body;
+  ok(tuP2.status === 200 && gB.paid === 800 && gB.pay_hold === 0 && gB.status === 'active' && (await bal(N)).available - nT0 === 500
+    && bdP.budget === 1000 && bdP.paid === 800 && bdP.left === 200,
+  'ещё 300 ₽ — недоплата ушла целиком (800), пауза снята, подсчёт идёт дальше; в бюджете осталось 200', { tu: tuP2.body, gB, bdP });
+  await sleep(300);
+  ok(dmsTo(N, /за просмотры: «Тонкий бюджет»/).some((m) => /Всего по видео начислено 800 ₽/.test(m.text) && /Рекламодатель пополнил бюджет задания/.test(m.text)),
+    'блогеру — что доплачено после пополнения', dmsTo(N).slice(-2).map((m) => m.text));
+  const aT1 = await bal(ADV);
+  const heldSum = dbx().prepare(`SELECT COALESCE(SUM(amount - paid), 0) AS s FROM deals WHERE payer_id = ? AND status = 'held'`).get(ADV.id).s;
+  ok(aT0.available - aT1.available === 700 && aT1.hold - aT0.hold === 700 - 500 && aT1.hold === heldSum,
+    'у рекламодателя: из кошелька 700, блогеру из заморозки 500; заморозка в кошельке = сумма открытых бюджетов', { aT0, aT1, heldSum });
+  const tuRep2 = await api('POST', '/api/deals/topup', { dealId: 'camp:' + camps.gpoor, amount: 300, opKey: 'tupoor2-' + tag }, ADV.token);
+  ok(tuRep2.status === 200 && tuRep2.body.repeated === true && row(n9.body.video.id).paid === 800 && (await bal(ADV)).available === aT1.available,
+    'повтор пополнения тем же ключом — без второго списания и без второй доплаты', tuRep2.body);
+  /* Бюджет, закрытый исчерпанием до 16.10.2026 (released, получатель —
+     последний блогер), пополнение открывает снова. */
+  ok(await camp('gold', Object.assign({}, tt, { name: 'Старое закрытие' }), 100, ADV), 'оффер «Старое закрытие» с бюджетом 100 ₽');
+  const relOld = await api('POST', '/api/deals/release', { dealId: 'camp:' + camps.gold, toUserId: N.id, amount: 100, opKey: 'relold-' + tag }, ADV.token);
+  ok(relOld.status === 200 && relOld.body.closed === true && dbx().prepare('SELECT status FROM deals WHERE id = ?').get('camp:' + camps.gold).status === 'held',
+    'ручная выплата всего бюджета задания — исчерпан (closed), но заморозка открыта', relOld.body);
+  dbx().prepare("UPDATE deals SET status = 'released', payee_id = ? WHERE id = ?").run(N.id, 'camp:' + camps.gold);
+  const tuOld = await api('POST', '/api/deals/topup', { dealId: 'camp:' + camps.gold, amount: 50, opKey: 'tuold-' + tag }, ADV.token);
+  const dOld = dbx().prepare('SELECT * FROM deals WHERE id = ?').get('camp:' + camps.gold);
+  ok(tuOld.status === 200 && dOld.status === 'held' && dOld.payee_id === null && dOld.amount === 150 && dOld.paid === 100,
+    'старое закрытие исчерпанием (released) — пополнение открывает бюджет снова, без «получателя»', { tu: tuOld.body, dOld });
+  const rfOld = await api('POST', '/api/deals/refund', { dealId: 'camp:' + camps.gold, opKey: 'rfold-' + tag }, N.token);
+  ok(rfOld.status === 403, 'блогер, ставший «получателем» при старом закрытии, бюджет задания не вернёт', rfOld.body);
+  const ovP = (await adm('GET', '/api/admin/overview')).body;
+  ok(ovP.сверка && ovP.сверка.сходится, 'сверка денег сходится после исчерпания и пополнений', ovP.сверка);
+  }
   /* Резерв = оценка по текущим просмотрам − выплаченное. */
   const n10 = await bind(N, 'grow', link('blogern', ID.N10));
   const gr0 = (await board(ADV, 'grow')).body;
@@ -2163,6 +2238,9 @@ try {
   await adm('POST', '/api/admin/task-videos/decide', { id: n13.body.video.id, decision: 'decline', note: 'Нет рекламы' });
   const bd4 = (await board(ADV, 'bud')).body;
   ok(bd4.free === 9000 && bd4.reserved === 0, 'ролик не засчитан — свободен весь остаток 9 000', bd4);
+  const rpOver = await api('POST', '/api/deals/refund', { dealId: 'camp:' + camps.bud, amount: 9500, opKey: 'rpo-' + tag }, ADV.token);
+  ok(rpOver.status === 409 && rpOver.body.code === 'no_free' && rpOver.body.error === 'В бюджете задания осталось 9000 ₽ — больше вернуть нельзя',
+    'роликов нет, просят больше остатка — «осталось 9000 ₽», без выдуманных «видео на проверке»', rpOver.body);
   const bb4 = await bal(ADV);
   const rp3 = await api('POST', '/api/deals/refund', { dealId: 'camp:' + camps.bud, amount: 9000, opKey: 'rp3-' + tag }, ADV.token);
   const bb5 = await bal(ADV);
@@ -2171,6 +2249,132 @@ try {
   'вернули всё свободное без живых роликов — заморозка закрыта (refunded)', { rp3: rp3.body, bb4, bb5 });
   const tuDone = await api('POST', '/api/deals/topup', { dealId: 'camp:' + camps.bud, amount: 100, opKey: 'tud-' + tag }, ADV.token);
   ok(tuDone.status === 409, 'закрытую заморозку пополнить нельзя', tuDone.body);
+  }
+
+  /* ── Аудит 16.10.2026: спор блогера по бюджету задания, блокировка
+     блогера, поздний финальный замер ──
+     Спор одного блогера держит только его начисления — возврат автору из
+     свободного он не запирает; /admin видит спор со сторонами, снимает его
+     и решает только часть этого блогера. Заблокированному блогеру деньги
+     не уходят (ни кругом, ни ручной выплатой), разблокировали — подсчёт
+     доплатил. Замер позже конца срока больше чем на сутки не считается. */
+  console.log('\n— спор блогера по бюджету задания, блокировка, поздний замер');
+  {
+  const W = await reg('blogerw', 'blogger');
+  const Z = await reg('blogerz', 'blogger');
+  ok(await linkTikTok(W, 'code-W') && await linkTikTok(Z, 'code-Z'), 'Дабл и Зет подтвердили TikTok');
+  await api('POST', '/api/topup', { amount: 50000, opKey: 'topw-' + tag }, ADV.token);
+  ok(await camp('wds', Object.assign({}, tt, { name: 'Спор', maxPayout: 500 }), 10000, ADV), 'оффер «Спор»: 10 000 ₽, максимум 500 за ролик');
+  const dW = 'camp:' + camps.wds;
+  fresh0(ID.W1);
+  const w1 = await bind(W, 'wds', link('blogerw', ID.W1));
+  await review(w1.body.video.id, ADV, true);
+  const W1 = w1.body.video.id;
+  setV(ID.W1, 1000);
+  ageRow(W1);
+  await syncDay();
+  ok(row(W1).paid === 100, 'Дабл: 1 000 просмотров — выплачено 100', row(W1));
+  const wo1 = await api('POST', '/api/deals/dispute/open', { dealId: dW }, W.token);
+  ok(wo1.status === 200, 'блогер открыл спор «по себе» по бюджету задания', wo1.body);
+  const wr1 = await api('POST', '/api/deals/refund', { dealId: dW, amount: 5000, opKey: 'wr1-' + tag }, ADV.token);
+  ok(wr1.status === 200 && wr1.body.refunded === 5000, 'спор блогера не запирает возврат свободного: вернули 5 000', wr1.body);
+  const wr2 = await api('POST', '/api/deals/refund', { dealId: dW, amount: 5000, opKey: 'wr2-' + tag }, ADV.token);
+  ok(wr2.status === 409 && !wr2.body.dispute && wr2.body.code === 'videos_reserved' && wr2.body.free === 4500,
+    'дальше держит резерв живого ролика (500 − 100), а не спор: свободно 4 500', wr2.body);
+  const wc1 = await api('POST', '/api/deals/dispute/close', { dealId: dW, payeeId: W.id }, ADV.token);
+  ok(wc1.status === 403, 'автор задания чужой спор не снимает', wc1.body);
+  setV(ID.W1, 3000);
+  ageRow(W1);
+  await syncDay();
+  const gW1 = (await getVid(W1, ADV.token)).body.video;
+  ok(gW1.paid === 100 && gW1.disputeHeld === true && gW1.status === 'active', 'спор держит начисления самого блогера', gW1);
+  const ad1 = (await adm('GET', '/api/admin/deals')).body;
+  const dsW = (ad1.disputes || []).find((x) => x.dealId === dW);
+  ok(!!dsW && dsW.payeeId === W.id && dsW.openedBy === W.id && dsW.camp === true && dsW.liveVideos === 1 && dsW.free === 4500
+    && dsW.blocksRefund === false && dsW.paidTo === 100 && (ad1.rows || []).some((r) => r.id === dW && r.disputes === 1),
+  '/admin: спор виден со сторонами — кто открыл, по кому, свободно, ролики, выплачено ему', dsW);
+  const wb0 = (await bal(W)).available;
+  const ws1 = await adm('POST', '/api/deals/settle', { dealId: dW, payeeId: W.id, amount: 200, opKey: 'ws1-' + tag });
+  const wdl = dbx().prepare('SELECT status, amount, paid FROM deals WHERE id = ?').get(dW);
+  ok(ws1.status === 200 && ws1.body.исполнителю === 200 && ws1.body.closed === 1 && (await bal(W)).available - wb0 === 200
+    && wdl.status === 'held' && wdl.paid === 300,
+  'арбитр решил только часть блогера: +200 ₽ из свободного, спор снят, бюджет открыт для остальных', { s: ws1.body, wdl });
+  const ws2 = await adm('POST', '/api/deals/settle', { dealId: dW, payeeId: W.id, amount: 200, opKey: 'ws1-' + tag });
+  ok(ws2.status === 200 && ws2.body.repeated === true && (await bal(W)).available - wb0 === 200, 'повтор решения с тем же ключом не платит дважды', ws2.body);
+  const ws3 = await adm('POST', '/api/deals/settle', { dealId: dW, payeeId: W.id, amount: 99999, opKey: 'ws3-' + tag });
+  ok(ws3.status === 409 && ws3.body.code === 'no_free', 'больше свободного (резервы роликов) арбитр не отдаёт', ws3.body);
+  ageRow(W1);
+  await syncDay();
+  ok(row(W1).paid === 300, 'спор снят — начисления пошли: 3 000 просмотров → 300', row(W1));
+  await api('POST', '/api/deals/dispute/open', { dealId: dW }, W.token);
+  const wc2 = await adm('POST', '/api/deals/dispute/close', { dealId: dW, payeeId: W.id });
+  ok(wc2.status === 200 && wc2.body.closed === 1, 'оператор снимает спор блогера', wc2.body);
+  await api('POST', '/api/deals/dispute/open', { dealId: dW }, W.token);
+  const wb1 = (await bal(W)).available;
+  const ws4 = await adm('POST', '/api/deals/settle', { dealId: dW, payeeId: W.id, amount: 0, opKey: 'ws4-' + tag });
+  ok(ws4.status === 200 && ws4.body.closed === 1 && (await bal(W)).available === wb1
+    && dbx().prepare('SELECT status FROM deals WHERE id = ?').get(dW).status === 'held',
+  'решение «0 ₽» — в претензии отказано, спор снят, денег не двигали', ws4.body);
+  await api('POST', '/api/deals/dispute/open', { dealId: dW }, ADV.token);
+  const wr3 = await api('POST', '/api/deals/refund', { dealId: dW, amount: 100, opKey: 'wr3-' + tag }, ADV.token);
+  ok(wr3.status === 409 && wr3.body.dispute === true, 'спор плательщика по всей заморозке держит возврат по-прежнему', wr3.body);
+  await adm('POST', '/api/deals/dispute/close', { dealId: dW });
+  const plain = 'wplain-' + tag;
+  await api('POST', '/api/deals/hold', { dealId: plain, amount: 1000, payeeId: W.id, opKey: 'wph-' + tag }, ADV.token);
+  await api('POST', '/api/deals/dispute/open', { dealId: plain }, W.token);
+  const wr4 = await api('POST', '/api/deals/refund', { dealId: plain, opKey: 'wr4-' + tag }, ADV.token);
+  ok(wr4.status === 409 && wr4.body.dispute === true, 'обычная сделка: спор назначенного исполнителя держит возврат, как раньше', wr4.body);
+  await adm('POST', '/api/deals/settle', { dealId: plain, bloggerShare: 0, opKey: 'wps-' + tag });
+
+  /* Блокировка: деньги заблокированному не уходят. */
+  const wbal = () => Number(dbx().prepare(`SELECT COALESCE(SUM(amount), 0) AS s FROM ledger WHERE user_id = ? AND bucket = 'available'`).get(W.id).s);
+  const wB0 = wbal();
+  const blk = await adm('POST', '/api/admin/users/block', { userId: W.id, blocked: true, reason: 'накрутка' });
+  ok(blk.status === 200, 'владелец заблокировал Дабла', blk.body);
+  setV(ID.W1, 4500);
+  ageRow(W1);
+  await syncDay();
+  const bd5 = (await board(ADV, 'wds')).body;
+  ok(row(W1).paid === 300 && row(W1).status === 'active' && wbal() === wB0 && bd5.paid === 500,
+    'заблокированному круг не платит: выплачено по ролику 300, на счёт ничего, «выплачено» на доске не растёт', { r: row(W1), bd5 });
+  const qW = (await adm('GET', '/api/admin/task-videos?status=queue')).body;
+  ok((qW.videos || []).some((v) => v.id === W1 && v.blockedHeld === true), 'ролик заблокированного — в очереди владельца с пометкой', qW.videos && qW.videos.length);
+  const wrl = await api('POST', '/api/deals/release', { dealId: dW, toUserId: W.id, amount: 100, opKey: 'wrl-' + tag }, ADV.token);
+  ok(wrl.status === 409 && wrl.body.code === 'payee_blocked' && wbal() === wB0, 'ручная выплата заблокированному — 409', wrl.body);
+  await adm('POST', '/api/admin/users/block', { userId: W.id, blocked: false });
+  ageRow(W1);
+  await syncDay();
+  ok(row(W1).paid === 450 && wbal() - wB0 === 150, 'разблокировали — следующий круг доплатил по правилам: 4 500 → 450 (+150)', row(W1));
+
+  /* Поздний финальный замер: пауза «нет доступа» за конец срока. */
+  ok(await camp('wlate', Object.assign({}, tt, { name: 'Поздний замер' }), 10000, ADV), 'оффер «Поздний замер»');
+  fresh0(ID.Z1); fresh0(ID.Z2);
+  const z1 = await bind(Z, 'wlate', link('blogerz', ID.Z1));
+  const z2 = await bind(Z, 'wlate', link('blogerz', ID.Z2));
+  await review(z1.body.video.id, ADV, true);
+  await review(z2.body.video.id, ADV, true);
+  const Z1 = z1.body.video.id, Z2 = z2.body.video.id;
+  setV(ID.Z1, 1000); setV(ID.Z2, 1000);
+  ageRow(Z1); ageRow(Z2);
+  await syncDay();
+  ok(row(Z1).paid === 100 && row(Z2).paid === 100, 'Зет: оба ролика по 1 000 — по 100');
+  delete TOKENS['tok-Z'];
+  setV(ID.Z1, 1500); setV(ID.Z2, 1500);
+  ageRow(Z1); ageRow(Z2);
+  await syncDay();
+  ok(row(Z1).hold_kind === 'access' && row(Z2).hold_kind === 'access', 'Зет отозвал доступ — оба ролика на паузе «нет доступа»');
+  setRow(Z1, { track_ends_at: Date.now() - 20 * DAY, last_try_at: Date.now() - 4 * 3600e3 });
+  setRow(Z2, { track_ends_at: Date.now() - 2 * 3600e3, last_try_at: Date.now() - 4 * 3600e3 });
+  setV(ID.Z1, 25000); setV(ID.Z2, 3000);
+  TOKENS['tok-Z'] = 'chan-Z';
+  await syncDay();
+  const rZ1 = row(Z1), rZ2 = row(Z2);
+  ok(rZ1.status === 'paid' && rZ1.paid === 100 && rZ1.pay_hold === 0 && rZ1.top_views === 1000 && /последнему замеру/.test(rZ1.pay_note || ''),
+    'доступ вернул через 20 дней после срока — подсчёт закрыт по последнему замеру, просмотры после срока не оплачены', rZ1);
+  ok(rZ2.status === 'paid' && rZ2.paid === 300,
+    'вернул через 2 часа после срока — финальный замер считается (3 000 → 300)', rZ2);
+  const ovW = (await adm('GET', '/api/admin/overview')).body;
+  ok(ovW.сверка && ovW.сверка.сходится === true, 'сверка денег сходится', ovW.сверка);
   }
 
   /* ── Сервер с ключом YouTube API ── */

@@ -29,7 +29,9 @@ function boot(port, env) {
   const dir = mkdtempSync(path.join(tmpdir(), 'bp-pay-'));
   const child = spawn(process.execPath, ['server.js'], {
     cwd: fileURLToPath(new URL('.', import.meta.url)),
-    env: { ...process.env, PORT: String(port), DB_PATH: path.join(dir, 'db.sqlite'), ADMIN_KEY: 'test-key', ...env },
+    /* бот и тревоги — выключены: иначе токен из server/.env поднял бы на
+       проверочном сервере настоящего бота (он забирает getUpdates у боевого) */
+    env: { ...process.env, PORT: String(port), DB_PATH: path.join(dir, 'db.sqlite'), ADMIN_KEY: 'test-key', BOT_TOKEN: '', ADMIN_CHAT_ID: '', ...env },
     stdio: 'ignore',
   });
   return child;
@@ -119,7 +121,36 @@ for (let n = 0; n < 11; n++) last = await regAs('10.7.7.7', n);
 ok(last === 429, '11-я регистрация подряд с одного IP отбита (429)', { last });
 const other = await regAs('10.8.8.8', 99);
 ok(other === 200, 'другой IP при этом регистрируется свободно', { other });
+/* TRUST_PROXY=1 и прокси передаёт адрес — совета в /admin нет */
+const ov4 = await fetch('http://127.0.0.1:8099/api/admin/overview', { headers: { 'X-Admin-Key': 'test-key', 'X-Forwarded-For': '10.9.9.9' } }).then((r) => r.json()).catch(() => ({}));
+ok(ov4.прокси && ov4.прокси.trust === true && ov4.прокси.заголовки_прокси === true && !ov4.прокси.совет, 'TRUST_PROXY=1 с X-Forwarded-For: /admin без совета', ov4.прокси);
 c4.kill();
+
+/* ── тестовые деньги на боевом адресе (аудит 16.10.2026) ──
+   Сервер виден снаружи и тестовое пополнение открыто всем: деньги
+   ненастоящие — вывод закрыт, /admin знает об этом, зачисления помечены.
+   Порт 8097 освободился (сервер с TEST_TOPUP=0 погашен выше). */
+const c5 = boot(8097, { PUBLIC_URL: 'https://bp-test-public.example.com', APP_URL: '', TEST_TOPUP: '1', TEST_TOPUP_OPEN: '1',
+  BOT_TOKEN: '', ADMIN_CHAT_ID: '', RESEND_API_KEY: '', TRUST_PROXY: '', YOOKASSA_SHOP_ID: '', YOOKASSA_SECRET_KEY: '' });
+const B5 = 'http://127.0.0.1:8097';
+ok(await waitUp(B5), 'сервер «публичный адрес + TEST_TOPUP_OPEN=1» поднялся');
+const cfg5 = await api(B5, 'GET', '/api/pay/config');
+ok(cfg5.body.mode === 'test' && cfg5.body.withdrawOpen === false, 'режим test, вывод закрыт (withdrawOpen:false)', cfg5.body);
+const r5 = await api(B5, 'POST', '/api/register', { email: 'pub' + tag + '@t.ru', name: 'Публичный', role: 'blogger', password: 'парольР12345' });
+const T5 = r5.body.token;
+const tu5 = await api(B5, 'POST', '/api/topup', { amount: 2000, opKey: randomUUID() }, T5);
+ok(tu5.status === 200, 'тестовое пополнение открыто всем', tu5.body);
+const wd5 = await api(B5, 'POST', '/api/withdraw', { amount: 1000, requisites: '2200 0000 0000 0000', opKey: randomUUID() }, T5);
+ok(wd5.status === 403 && wd5.body.code === 'test_money' && /^Вывод откроется после запуска оплаты/.test(wd5.body.error || ''),
+  'вывод закрыт: 403 «Вывод откроется после запуска оплаты»', wd5);
+const ov5 = await fetch(B5 + '/api/admin/overview', { headers: { 'X-Admin-Key': 'test-key', 'X-Forwarded-For': '10.5.5.5' } }).then((r) => r.json()).catch(() => ({}));
+const t5 = ov5.тестовые_деньги || {};
+ok(t5.открыто_всем === true && /TEST_TOPUP_OPEN/.test(t5.предупреждение || '') && t5.внесено === 2000 && t5.людей === 1,
+  '/admin: «тестовое пополнение открыто всем», тестовых 2 000 ₽ у 1 человека', t5);
+ok(ov5.сверка && ov5.сверка.сходится, 'сверка с тестовыми зачислениями сходится', ov5.сверка);
+ok(ov5.прокси && ov5.прокси.заголовки_прокси === true && /TRUST_PROXY=1/.test(ov5.прокси.совет || ''),
+  'прокси передаёт X-Forwarded-For, а TRUST_PROXY нет — /admin советует TRUST_PROXY=1', ov5.прокси);
+c5.kill();
 
 console.log(`\nИтого: ${passed} ok, ${failed} fail\n`);
 process.exit(failed ? 1 : 0);

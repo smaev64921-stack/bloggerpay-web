@@ -8,6 +8,7 @@
 import { spawn } from 'node:child_process';
 import http from 'node:http';
 import { mkdtempSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -196,6 +197,67 @@ try {
   const reg2 = await api('POST', '/api/register', { email: 'inv2@t.ru', name: 'Другой', role: 'advertiser', password: 'парольВ12345' });
   const other = await api('GET', '/api/topup/invoices', null, reg2.body.token);
   ok(other.status === 200 && other.body.rows.length === 0, 'другой человек чужих заявок не видит', other.body);
+
+  /* ── ключ зачисления не занять заранее (аудит 16.10.2026) ──
+     Было: ключ 'invoice:<номер>' строил сервер, номера идут подряд — любой
+     с 1 ₽ на балансе занимал будущие номера заморозкой, и оплаченный счёт
+     потом не зачислялся (409 «opKey уже занят»). Теперь ключ служебный
+     sys:invoice:<номер>, а обе приставки из приложения не принимаются.
+     Записи «до исправления» кладём прямо в базу сервера. */
+  const db = new DatabaseSync(path.join(dir, 'db.sqlite'));
+  db.exec('PRAGMA busy_timeout = 5000');
+  const uidOf = (email) => db.prepare('SELECT id FROM users WHERE email = ?').get(email).id;
+  const reg3 = await api('POST', '/api/register', { email: 'inv3@t.ru', name: 'ООО Лютик', role: 'advertiser', password: 'парольВ12345' });
+  const T3 = reg3.body.token, U1 = uidOf('inv1@t.ru'), U3 = uidOf('inv3@t.ru');
+  const balOf = async (tok) => (await api('GET', '/api/balance', null, tok)).body.available;
+  const NEXT = db.prepare('SELECT COALESCE(MAX(id), 0) + 1 AS n FROM invoice_requests').get().n;
+  const t0 = await balOf(T);
+  for (const k of ['invoice:' + NEXT, 'INVOICE:' + NEXT, ' invoice:' + NEXT, 'sys:invoice:' + NEXT]) {
+    const sq = await api('POST', '/api/deals/hold', { dealId: 'sq-' + Math.random().toString(36).slice(2), amount: 1, opKey: k }, T);
+    ok(sq.status === 400 && /служебн/.test(sq.body.error || ''), 'чужой не занимает заранее ключ «' + k + '»', sq.body);
+  }
+  ok(await balOf(T) === t0, 'попытки занять ключ денег не тронули');
+  const inv3 = await api('POST', '/api/topup/invoice', { amount: 20000, company: 'ООО Лютик', inn: INN10 }, T3);
+  ok(inv3.status === 200 && inv3.body.id === NEXT, 'заявка получила тот самый номер', inv3.body);
+  const cr4 = await api('POST', '/api/admin/invoices/credit', { id: NEXT }, null, true);
+  ok(cr4.status === 200 && cr4.body.amount === 20000 && !cr4.body.repeated && await balOf(T3) === 20000, 'счёт зачислен', cr4.body);
+  const op4 = db.prepare('SELECT user_id, kind FROM ops WHERE op_key = ?').get('sys:invoice:' + NEXT);
+  ok(!!op4 && op4.user_id === U3 && op4.kind === 'topup', 'ключ зачисления — служебный sys:invoice:<номер>', op4);
+
+  /* номер, занятый чужим ДО исправления, зачислению не мешает */
+  const inv4 = await api('POST', '/api/topup/invoice', { amount: 15000, company: 'ООО Лютик', inn: INN10 }, T3);
+  const ID4 = inv4.body.id;
+  db.prepare("INSERT INTO ops (op_key, user_id, kind, result) VALUES (?, ?, 'hold', '{}')").run('invoice:' + ID4, U1);
+  const v0 = await balOf(T3);
+  const cr5 = await api('POST', '/api/admin/invoices/credit', { id: ID4 }, null, true);
+  const v1 = await balOf(T3);
+  ok(cr5.status === 200 && !cr5.body.repeated && v1 - v0 === 15000, 'старая чужая запись invoice:<номер> не мешает зачислить', { cr5: cr5.body, d: v1 - v0 });
+  const cr6 = await api('POST', '/api/admin/invoices/credit', { id: ID4 }, null, true);
+  ok(cr6.status === 200 && cr6.body.repeated && await balOf(T3) === v1, 'повтор — без второго зачисления', cr6.body);
+
+  /* счёт, зачисленный ДО исправления прежним ключом: повтор не платит второй раз */
+  const inv5 = await api('POST', '/api/topup/invoice', { amount: 11000, company: 'ООО Лютик', inn: INN10 }, T3);
+  const ID5 = inv5.body.id, K5 = 'invoice:' + ID5;
+  db.exec('BEGIN IMMEDIATE');
+  db.prepare("INSERT INTO ops (op_key, user_id, kind, result) VALUES (?, ?, 'topup', ?)").run(K5, U3, JSON.stringify({ ok: true, id: ID5, amount: 11000, fee: 770, total: 11770 }));
+  db.prepare("INSERT INTO ledger (op_key, user_id, bucket, amount, kind, ref) VALUES (?, ?, 'available', 11000, 'topup', ?)").run(K5, U3, 'пополнение по счёту №' + ID5);
+  db.prepare("INSERT INTO ledger (op_key, user_id, bucket, amount, kind, ref) VALUES (?, 0, 'available', 770, 'topup-fee', ?)").run(K5, 'комиссия пополнения по счёту №' + ID5);
+  db.prepare("UPDATE invoice_requests SET status = 'paid', paid = 11000 WHERE id = ?").run(ID5);
+  db.exec('COMMIT');
+  const w0 = await balOf(T3);
+  const cr7 = await api('POST', '/api/admin/invoices/credit', { id: ID5 }, null, true);
+  ok(cr7.status === 200 && cr7.body.repeated && await balOf(T3) === w0 && !db.prepare('SELECT 1 FROM ops WHERE op_key = ?').get('sys:invoice:' + ID5),
+    'счёт, зачисленный прежним ключом, второй раз не платит', cr7.body);
+
+  /* «оплачен», а записи зачисления нет — не платим вслепую */
+  const inv6 = await api('POST', '/api/topup/invoice', { amount: 10000, company: 'ООО Лютик', inn: INN10 }, T3);
+  db.prepare("UPDATE invoice_requests SET status = 'paid', paid = 10000 WHERE id = ?").run(inv6.body.id);
+  const x0 = await balOf(T3);
+  const cr8 = await api('POST', '/api/admin/invoices/credit', { id: inv6.body.id }, null, true);
+  ok(cr8.status === 409 && await balOf(T3) === x0, '«оплачен» без записи зачисления — 409, без денег', cr8.body);
+  const ov3 = await api('GET', '/api/admin/overview', null, null, true);
+  ok(ov3.body.сверка && ov3.body.сверка.сходится === true, 'сверка денег сходится', ov3.body.сверка);
+  db.close();
 } catch (e) {
   failed++; console.log('  FAIL исключение: ' + (e && e.stack || e));
 } finally {

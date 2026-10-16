@@ -70965,6 +70965,20 @@ html.bp-onb .bp-testbar{ background:rgba(246,168,35,.14); }
         }, 1400);
       }).catch(function(err){
         btn.__bpBusy = 0; clearTimeout(btn.__bpBusyT);
+        /* need_email (аудит 16.10.2026): почта аккаунта служебная (вход
+           через Телеграм / Google), коду вывода некуда идти — сразу окно
+           «Почта и пароль»: в MV — bp-mv-set (с причиной), иначе шторка
+           bp-acclink. Деньги не тронуты, кнопка свободна. */
+        if(err && err.code === 'need_email'){
+          var mvOn = false;
+          try{ mvOn = typeof window.bpMvOn === 'function' ? !!window.bpMvOn() : document.documentElement.classList.contains('bp-mv'); }catch(_){}
+          var shown = false;
+          try{ if(mvOn && typeof window.bpMvMailOpen === 'function') shown = !!window.bpMvMailOpen('withdraw'); }catch(e2){ E(e2); }
+          if(shown) return;
+          toast(String(err.message || 'Сначала укажите почту — на неё придёт код вывода'), 'err');
+          try{ if(typeof window.bpAccLinkMail === 'function') window.bpAccLinkMail(); }catch(e3){ E(e3); }
+          return;
+        }
         toast(String(err.message || 'Заявка не создана'), 'err');
       });
     }catch(err){ E(err); }
@@ -79692,7 +79706,23 @@ function put(kind, rid, rec, peer, shared){
   var body = { kind: kind, rid: rid, data: w.data };
   if(to != null) body.to = to;
   srv().raw('POST', '/api/sync/put', body)
-    .catch(function(){ delete _sent[key]; });
+    .catch(function(e){
+      /* Предел сервера (аудит 16.10.2026: заданий «в работе», места
+         аккаунта). То же содержимое не повторяем каждым опросом — уйдёт,
+         когда изменится; человеку — понятный тост, не чаще раза в 10 мин. */
+      var code = e && e.code;
+      if(code === 'camp_limit' || code === 'sync_limit'){ limitToast(e); return; }
+      delete _sent[key];
+    });
+}
+var _limT = {};
+function limitToast(e){
+  try{
+    var c = String(e.code), now = Date.now();
+    if(_limT[c] && now - _limT[c] < 600000) return;
+    _limT[c] = now;
+    if(typeof showAuthToast === 'function') showAuthToast(String(e.message || 'Достигнут предел записей'), 'err');
+  }catch(x){}
 }
 
 function pushAll(){
@@ -80715,17 +80745,24 @@ window.bpAuthLetIn = function(token, who, how){ return letIn(token, who, how); }
    бы там платил и заводил карту, не заметив подмены), и чтобы код со
    страницы возврата было с чем сверить, если приложение успели закрыть. */
 var NKEY = 'bp_glogin_n', NLIFE = 15 * 60 * 1000;
-function keep(n){
-  try{ localStorage.setItem(NKEY, JSON.stringify({ n: String(n || ''), at: Date.now() })); }catch(e){}
+/* 16.10 (аудит): рядом с меткой — секрет pk. Сервер отдаёт вход только
+   тому, кто знает pk, то есть этому приложению; в ссылку Google он не
+   попадает. Без pk pending/claim отвечают «не найдено». */
+var _pk = '';
+function keep(n, pk){
+  _pk = String(pk || '');
+  try{ localStorage.setItem(NKEY, JSON.stringify({ n: String(n || ''), pk: _pk, at: Date.now() })); }catch(e){}
 }
 function mine(){
   try{
     var o = JSON.parse(localStorage.getItem(NKEY) || 'null');
     if(!o || !o.n || (Date.now() - (o.at || 0)) > NLIFE) return '';
+    if(o.pk) _pk = String(o.pk);
     return String(o.n);
   }catch(e){ return ''; }
 }
-function forget(){ try{ localStorage.removeItem(NKEY); }catch(e){} }
+function forget(){ _pk = ''; try{ localStorage.removeItem(NKEY); }catch(e){} }
+function pend(n){ return srv().raw('POST', '/api/auth/google/pending', { nonce: n, pk: _pk }); }
 
 /* ── Шторка ожидания ─────────────────────────────────────────────── */
 var _nonce = '', _timer = null, _tries = 0;
@@ -80789,7 +80826,7 @@ function byCode(){
   err('');
   var go = $('glgGo');
   if(go) go.disabled = true;
-  srv().raw('POST', '/api/auth/google/claim', { code: code, nonce: n })
+  srv().raw('POST', '/api/auth/google/claim', { code: code, nonce: n, pk: _pk })
     .then(function(j){
       if(j && j.token) letIn(j.token, j.user || {});
       else { err('Код не подошёл'); if(go) go.disabled = false; }
@@ -80809,6 +80846,19 @@ function offerCode(){
   var h = $('glgHint'), m = $('glgMore');
   if(h && m && m.hidden) h.hidden = false;
 }
+/* Возврат от Google пришёл в ДРУГОЙ браузер (мини-апп → внешний браузер,
+   приложение на телефоне → ссылка на компьютере): сервер ждёт код с той
+   страницы — поле показываем сразу. */
+function needCode(){
+  var h = $('glgHint'), m = $('glgMore');
+  if(m && m.hidden){
+    m.hidden = false;
+    if(h) h.hidden = true;
+    say('Вход подтверждён в другом браузере. Введите код с его страницы.');
+    var i = $('glgCode');
+    if(i){ try{ i.focus(); }catch(e){} }
+  }
+}
 
 function watch(){
   _tries = 0;
@@ -80824,11 +80874,14 @@ function watch(){
       offerCode();
       return;
     }
-    srv().raw('GET', '/api/auth/google/pending?nonce=' + encodeURIComponent(_nonce))
+    pend(_nonce)
       .then(function(j){
         if(j && j.state === 'ok' && j.token){
           clearInterval(_timer); _timer = null;
           letIn(j.token, j.user || {});
+        } else if(j && j.state === 'code'){
+          clearInterval(_timer); _timer = null;
+          needCode();
         }
       })
       .catch(function(){ /* метку могли уже забрать — не шумим */ });
@@ -80868,7 +80921,7 @@ window.loginGoogle = function(){
     .then(function(j){
       if(!j || !j.url) throw new Error('Сервер не дал ссылку входа');
       _nonce = j.nonce || '';
-      keep(_nonce);
+      keep(_nonce, j.pk);
       sheet();
       watch();
       if(win && !win.closed){ win.location = j.url; }
@@ -80892,8 +80945,11 @@ try{
   if(back && ready()){
     try{ history.replaceState(null, '', location.pathname); }catch(e){}
     if(back === own){
-      srv().raw('GET', '/api/auth/google/pending?nonce=' + encodeURIComponent(back))
-        .then(function(j){ if(j && j.state === 'ok' && j.token) letIn(j.token, j.user || {}); })
+      pend(back)
+        .then(function(j){
+          if(j && j.state === 'ok' && j.token) letIn(j.token, j.user || {});
+          else if(j && j.state === 'code'){ sheet(); needCode(); }
+        })
         .catch(function(){});
     } else {
       toast('Этот вход начинали не здесь. Откройте приложение там, где нажимали «Войти через Google».', 'err');
@@ -81121,17 +81177,28 @@ function ready(){
 }
 
 var NKEY = 'bp_tglogin_n', NLIFE = 15 * 60 * 1000;
-function keep(n){
-  try{ localStorage.setItem(NKEY, JSON.stringify({ n: String(n || ''), at: Date.now() })); }catch(e){}
+/* 16.10 (аудит): рядом с меткой — секрет pk (как у Google): сервер отдаёт
+   вход только с ним, а в ссылку Телеграма он не попадает. */
+var _pk = '';
+function keep(n, pk){
+  _pk = String(pk || '');
+  try{ localStorage.setItem(NKEY, JSON.stringify({ n: String(n || ''), pk: _pk, at: Date.now() })); }catch(e){}
 }
 function mine(){
   try{
     var o = JSON.parse(localStorage.getItem(NKEY) || 'null');
     if(!o || !o.n || (Date.now() - (o.at || 0)) > NLIFE) return '';
+    if(o.pk) _pk = String(o.pk);
     return String(o.n);
   }catch(e){ return ''; }
 }
-function forget(){ try{ localStorage.removeItem(NKEY); }catch(e){} }
+function forget(){ _pk = ''; try{ localStorage.removeItem(NKEY); }catch(e){} }
+function pend(n){ return srv().raw('POST', '/api/auth/telegram/pending', { nonce: n, pk: _pk }); }
+/* Метка привязки Телеграма (bp-acclink) — её возврат не «чужой вход». */
+function linkNonce(){
+  try{ var o = JSON.parse(localStorage.getItem('bp_tglink_n') || 'null'); return (o && o.n) ? String(o.n) : ''; }
+  catch(e){ return ''; }
+}
 
 var _nonce = '', _timer = null, _tries = 0, _url = '';
 
@@ -81163,12 +81230,55 @@ function sheet(){
        всегда просит номер и присылает подтверждение в само приложение.
        Человек, который этого не ждёт, читает паузу как «зависло». */
     + '<p id="tglgTxt">Подтвердите вход в открывшемся окне Телеграма. Если входите с этого браузера впервые, Телеграм спросит номер и пришлёт подтверждение в само приложение — дальше мы продолжим сами.</p></div>'
+    /* Код — только если Телеграм вернул человека в ДРУГОЙ браузер: тогда
+       сервер отдаёт вход лишь по коду со страницы возврата (аудит 16.10). */
+    + '<div class="glg-more" id="tglgMore" hidden>'
+    +   '<input class="glg-code" id="tglgCode" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code">'
+    +   '<div class="glg-err" id="tglgErr"></div>'
+    +   '<button type="button" class="glg-act" id="tglgGo">Войти по коду</button>'
+    + '</div>'
     + '<button type="button" class="glg-act" id="tglgAgain" hidden>Открыть Телеграм ещё раз</button>'
     + '<button type="button" class="glg-x" onclick="bpTgLoginClose()">Отмена</button>'
     + '</div>';
   document.body.appendChild(ov);
   var again = $('tglgAgain');
   if(again) again.addEventListener('click', function(){ if(_url) openLink(_url); });
+  var go = $('tglgGo');
+  if(go) go.addEventListener('click', byCode);
+  var inp = $('tglgCode');
+  if(inp) inp.addEventListener('keydown', function(e){ if(e.key === 'Enter') byCode(); });
+}
+
+function needCode(){
+  var m = $('tglgMore');
+  if(!m || !m.hidden) return;
+  m.hidden = false;
+  var a = $('tglgAgain'); if(a) a.hidden = true;
+  say('Вход подтверждён в другом браузере. Введите код с его страницы.');
+  var i = $('tglgCode');
+  if(i){ try{ i.focus(); }catch(e){} }
+}
+function codeErr(m){
+  var e = $('tglgErr'); if(e) e.textContent = m || '';
+  var i = $('tglgCode'); if(i && m) i.classList.add('bad');
+}
+function byCode(){
+  var i = $('tglgCode');
+  var code = String((i && i.value) || '').replace(/\D/g, '');
+  if(code.length !== 6){ codeErr('Код — шесть цифр со страницы возврата'); return; }
+  var n = _nonce || mine();
+  if(!n){ codeErr('Приложение не помнит эту попытку входа — начните вход заново'); return; }
+  codeErr('');
+  var go = $('tglgGo'); if(go) go.disabled = true;
+  srv().raw('POST', '/api/auth/telegram/claim', { code: code, nonce: n, pk: _pk })
+    .then(function(j){
+      if(j && j.token){ forget(); close(); letIn(j.token, j.user || {}); }
+      else { codeErr('Код не подошёл'); if(go) go.disabled = false; }
+    })
+    .catch(function(e2){
+      codeErr((e2 && e2.message) || 'Код не подошёл или устарел');
+      if(go) go.disabled = false;
+    });
 }
 
 function letIn(token, who){
@@ -81199,12 +81309,15 @@ function watch(){
       offerAgain();
       return;
     }
-    srv().raw('GET', '/api/auth/telegram/pending?nonce=' + encodeURIComponent(_nonce))
+    pend(_nonce)
       .then(function(j){
         if(j && j.state === 'ok' && j.token){
           clearInterval(_timer); _timer = null;
           forget(); close();
           letIn(j.token, j.user || {});
+        } else if(j && j.state === 'code'){
+          clearInterval(_timer); _timer = null;
+          needCode();
         }
       })
       .catch(function(){ /* метку могли уже забрать — не шумим */ });
@@ -81229,7 +81342,7 @@ function warm(){
   if(!ready() || _warm) return;
   try{
     srv().raw('GET', '/api/auth/telegram/start')
-      .then(function(j){ if(j && j.url) _warm = { url: j.url, nonce: j.nonce || '', at: Date.now() }; })
+      .then(function(j){ if(j && j.url) _warm = { url: j.url, nonce: j.nonce || '', pk: j.pk || '', at: Date.now() }; })
       .catch(function(){});
   }catch(e){ E(e); }
 }
@@ -81265,7 +81378,7 @@ window.loginTelegram = function(){
     _warm = null;
     _nonce = hot.nonce;
     _url = hot.url;
-    keep(_nonce);
+    keep(_nonce, hot.pk);
     sheet();
     watch();
     if(win && !win.closed){ win.location = hot.url; }
@@ -81278,7 +81391,7 @@ window.loginTelegram = function(){
       if(!j || !j.url) throw new Error('Сервер не дал ссылку входа');
       _nonce = j.nonce || '';
       _url = j.url;
-      keep(_nonce);
+      keep(_nonce, j.pk);
       sheet();
       watch();
       if(win && !win.closed){ win.location = j.url; }
@@ -81306,9 +81419,14 @@ try{
   if(back && ready()){
     try{ history.replaceState(null, '', location.pathname); }catch(e){}
     if(back === own){
-      srv().raw('GET', '/api/auth/telegram/pending?nonce=' + encodeURIComponent(back))
-        .then(function(j){ if(j && j.state === 'ok' && j.token){ forget(); letIn(j.token, j.user || {}); } })
+      pend(back)
+        .then(function(j){
+          if(j && j.state === 'ok' && j.token){ forget(); letIn(j.token, j.user || {}); }
+          else if(j && j.state === 'code'){ sheet(); needCode(); }
+        })
         .catch(function(){});
+    } else if(back === linkNonce()){
+      /* возврат привязки Телеграма — его доводит bp-acclink */
     } else {
       toast('Этот вход начинали не здесь. Откройте приложение там, где нажимали «Войти через Telegram».', 'err');
     }
@@ -82019,6 +82137,11 @@ function nonceOf(way){
     return String(o.n);
   }catch(e){ return ''; }
 }
+/* Секрет выдачи (16.10): без него сервер вход не отдаёт. */
+function pkOf(way){
+  try{ var o = JSON.parse(localStorage.getItem(way.key) || 'null'); return (o && o.pk) ? String(o.pk) : ''; }
+  catch(e){ return ''; }
+}
 function waiting(way){ return !!document.getElementById(way.ov); }
 
 var busy = false, done = false;
@@ -82032,10 +82155,13 @@ function shut(way){
 function grab(kind, nonce){
   if(done || busy || logged()) return;
   var way = WAY[kind]; if(!way) return;
-  var n = String(nonce || '') || nonceOf(way);
-  if(!n || !ready()) return;
+  /* Только СВОЙ вход: метка из сообщения должна совпасть с меткой, которую
+     это приложение получило на старте (вместе с секретом pk). */
+  var own = nonceOf(way), pk = pkOf(way);
+  var n = String(nonce || '') || own;
+  if(!n || n !== own || !pk || !ready()) return;
   busy = true;
-  srv().raw('GET', way.path + '?nonce=' + encodeURIComponent(n))
+  srv().raw('POST', way.path, { nonce: n, pk: pk })
     .then(function(j){
       busy = false;
       if(!j || j.state !== 'ok' || !j.token) return;
@@ -83483,9 +83609,12 @@ window.bpAccLinkTg = function(){
   srv().raw('GET', '/api/auth/telegram/start?link=1')
     .then(function(j){
       if(!j || !j.url) throw new Error('Сервер не дал ссылку');
+      /* Метку и секрет держим на устройстве: если окно не открылось и
+         привязка ушла этой же вкладкой, после возврата её доведём. */
+      lkKeep(j.nonce, j.pk);
       if(win && !win.closed) win.location = j.url;
       else { try{ location.href = j.url; }catch(e){} }
-      wait(j.nonce);
+      wait(j.nonce, j.pk);
     })
     .catch(function(e2){
       try{ if(win && !win.closed) win.close(); }catch(_){}
@@ -83493,24 +83622,108 @@ window.bpAccLinkTg = function(){
     });
 };
 
-function wait(nonce){
-  if(!nonce) return;
+/* ── Привязка доводится ЗДЕСЬ (аудит 16.10) ──
+   Сервер больше не привязывает Телеграм на возврате: иначе ссылка,
+   начатая чужим аккаунтом, привязывала Телеграм жертвы к нему. Привязку
+   подтверждает этот же аккаунт (Bearer) с секретом pk; если Телеграм
+   подтвердили в другом браузере — ещё и кодом с той страницы. */
+var LKEY = 'bp_tglink_n', LLIFE = 15 * 60 * 1000;
+function lkKeep(n, pk){
+  try{ localStorage.setItem(LKEY, JSON.stringify({ n: String(n || ''), pk: String(pk || ''), at: Date.now() })); }catch(e){}
+}
+function lkMine(){
+  try{
+    var o = JSON.parse(localStorage.getItem(LKEY) || 'null');
+    if(!o || !o.n || !o.pk || (Date.now() - (o.at || 0)) > LLIFE) return null;
+    return o;
+  }catch(e){ return null; }
+}
+function lkForget(){ try{ localStorage.removeItem(LKEY); }catch(e){} }
+
+var _lkT = null;
+function linked(){
+  lkForget();
+  toast('Телеграм привязан к этому аккаунту', 'ok');
+  load(true);
+  try{ if(typeof window.bpAccLinkLoad === 'function') window.bpAccLinkLoad(); }catch(e){}
+}
+function confirmLink(nonce, pk, code){
+  return srv().raw('POST', '/api/auth/telegram/link-confirm', { nonce: nonce, pk: pk, code: code || '' })
+    .then(function(j){ if(j && j.linked){ linked(); return true; } return false; });
+}
+function wait(nonce, pk){
+  if(!nonce || !pk) return;
   var n = 0;
-  var t = setInterval(function(){
+  if(_lkT) clearInterval(_lkT);
+  _lkT = setInterval(function(){
     n++;
-    if(n > 60){ clearInterval(t); return; }
-    srv().raw('GET', '/api/auth/telegram/pending?nonce=' + encodeURIComponent(nonce))
+    if(n > 60){ clearInterval(_lkT); _lkT = null; return; }
+    if(!ready()) return;
+    srv().raw('POST', '/api/auth/telegram/pending', { nonce: nonce, pk: pk })
       .then(function(j){
-        if(!j || j.state !== 'ok') return;
-        clearInterval(t);
-        if(j.linked){
-          toast('Телеграм привязан к этому аккаунту', 'ok');
-          load(true);
+        if(!j || (j.state !== 'ok' && j.state !== 'code')) return;
+        clearInterval(_lkT); _lkT = null;
+        if(j.state === 'code'){ askCode(nonce, pk); return; }
+        if(j.link){
+          confirmLink(nonce, pk).catch(function(e2){
+            lkForget();
+            toast((e2 && e2.message) || 'Не вышло привязать Телеграм', 'err');
+          });
         }
       })
-      .catch(function(){});
+      .catch(function(e2){
+        if(e2 && e2.status === 404){ clearInterval(_lkT); _lkT = null; lkForget(); }
+      });
   }, 2000);
 }
+
+/* Телеграм подтвердили в другом браузере: код с той страницы. */
+function askCode(nonce, pk){
+  var old = document.getElementById('alkCodeOv'); if(old) old.remove();
+  var ov = document.createElement('div');
+  ov.id = 'alkCodeOv'; ov.className = 'glg-ov';
+  ov.innerHTML = '<div class="glg-sheet" role="dialog" aria-label="Привязка Телеграма">'
+    + '<div class="h"></div><b>Привязка Телеграма</b>'
+    + '<p>Телеграм подтвердили в другом браузере. Введите код с его страницы.</p>'
+    + '<input class="glg-code" id="alkCodeIn" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code">'
+    + '<div class="glg-err" id="alkCodeErr"></div>'
+    + '<button type="button" class="glg-act" id="alkCodeGo">Привязать</button>'
+    + '<button type="button" class="glg-x" id="alkCodeNo">Отмена</button>'
+    + '</div>';
+  document.body.appendChild(ov);
+  function shut(){ try{ ov.remove(); }catch(e){} }
+  ov.addEventListener('click', function(e){ if(e.target === ov){ lkForget(); shut(); } });
+  document.getElementById('alkCodeNo').addEventListener('click', function(){ lkForget(); shut(); });
+  var go = document.getElementById('alkCodeGo'), inp = document.getElementById('alkCodeIn'), er = document.getElementById('alkCodeErr');
+  function send(){
+    var code = String(inp.value || '').replace(/\D/g, '');
+    if(code.length !== 6){ er.textContent = 'Код — шесть цифр со страницы Телеграма'; return; }
+    er.textContent = ''; go.disabled = true;
+    confirmLink(nonce, pk, code).then(function(ok){
+      if(ok) shut(); else { go.disabled = false; er.textContent = 'Код не подошёл'; }
+    }, function(e2){
+      go.disabled = false;
+      er.textContent = (e2 && e2.message) || 'Код не подошёл или устарел';
+      if(e2 && (e2.status === 404 || e2.status === 410 || e2.status === 429 || e2.status === 409)){ lkForget(); }
+    });
+  }
+  go.addEventListener('click', send);
+  inp.addEventListener('keydown', function(e){ if(e.key === 'Enter') send(); });
+  setTimeout(function(){ try{ inp.focus(); }catch(e){} }, 80);
+}
+
+/* Привязка ушла этой же вкладкой (окно не открылось) или приложение
+   перезапустили посреди неё — доводим по сохранённой метке. */
+(function resume(left){
+  setTimeout(function(){
+    try{
+      var o = lkMine();
+      if(!o || _lkT) return;
+      if(ready()) wait(o.n, o.pk);
+      else if(left > 0) resume(left - 1);     /* сессия ещё поднимается */
+    }catch(e){ E(e); }
+  }, 1800);
+})(5);
 
 /* ── подключение ─────────────────────────────────────────────────── */
 try{
@@ -95541,7 +95754,7 @@ function vcard(v, c){
   else if(v.riskHold) line = '<div class="vb-line warn">Просмотры растут необычно — BloggerPay проверяет их. Начисления продолжатся после проверки.</div>';
   else if(v.payHold && hk === 'access') line = '<div class="vb-line warn">Нет доступа к аккаунту — переподключите ' + PN[p] + ', и начисления продолжатся.</div>'
     + '<button type="button" class="vb-mini" style="margin-top:10px" data-vb="act" data-act="refix:' + p + ':' + esc(v.campId) + '">' + pi(p) + 'Переподключить ' + PN[p] + '</button>';
-  else if(v.payHold && hk === 'money') line = '<div class="vb-line warn">Начисления на паузе: в бюджете задания не хватило денег — BloggerPay разбирается.</div>';
+  else if(v.payHold && hk === 'money') line = '<div class="vb-line warn">Бюджет задания исчерпан — остаток начислим, как только рекламодатель его пополнит.</div>';
   else if(v.payHold) line = '<div class="vb-line warn">Начисления на паузе — BloggerPay разбирается.</div>';
   else if(v.status === 'review') line = '<div class="vb-line">После зачёта 30 дней сайт сам обновляет просмотры и начисляет деньги — делать ничего не нужно.</div>';
   else if(v.status === 'declined') line = '<div class="vb-line bad">Видео не засчитано' + (v.decisionNote ? ': ' + esc(v.decisionNote) : '') + '.</div>';
@@ -96154,7 +96367,7 @@ function advHold(v){
   var hk = String(v.holdKind || '');
   if(v.riskHold) return 'BloggerPay проверяет просмотры этого ролика — начисления подождут решения.';
   if(hk === 'access') return 'Блогер потерял доступ к аккаунту — начисления на паузе, пока он не переподключит его.';
-  if(hk === 'money') return 'В бюджете задания не хватило денег на начисление — BloggerPay разбирается, начисления подождут решения.';
+  if(hk === 'money') return 'Бюджет задания исчерпан — начисления этому ролику стоят. Пополните бюджет, и недоплата уйдёт блогеру сама.';
   return 'Начисления на паузе — BloggerPay разбирается.';
 }
 /* засчитанный ролик в подсчёте: «Выплачено N ₽ · считаем ещё X дн.» */
@@ -98318,8 +98531,20 @@ function sendOne(c, m, peer){
             /* 4xx кроме «часто» и «нужен вход» — не повторять вечно */
             var st = e && e.status;
             if(st && st >= 400 && st < 500 && st !== 429 && st !== 401) { m._dm = 'x'; save(); }
+            /* пределы сервера (аудит 16.10.2026): новых диалогов за сутки —
+               сообщение ждёт и уйдёт само; места аккаунта — «!». Причину
+               говорим словами, не чаще раза в 10 минут. */
+            var code = e && e.code;
+            if(code === 'dm_new_limit' || code === 'sync_limit'){
+              var now = Date.now();
+              if(!limT[code] || now - limT[code] > 600000){
+                limT[code] = now;
+                try{ if(typeof showAuthToast === 'function') showAuthToast(String(e.message || 'Сообщение пока не отправлено'), 'err'); }catch(x){}
+              }
+            }
           });
 }
+var limT = {};
 /* всё неотправленное из прямых чатов (после обрыва связи или закрытия) */
 function flush(){
   if(!ready()) return;
@@ -102197,6 +102422,18 @@ html.bp-mv .wd2-btn{ position:relative; isolation:isolate; height:54px!important
 html.bp-mv .wd2-x{ color:var(--mx-t3)!important; font-size:14px!important; font-weight:500!important }
 
 html.bp-mv #kycSheet .kyc-inp:focus, html.bp-mv #kycSheet .kyc-inp:focus-visible{ outline:none!important }
+
+/* ═══ режим кассы off (аудит 16.10.2026): карта «скоро», дорога — «По счёту» ═══ */
+html.bp-mv .mvm-opt.mvm-soon:disabled{ opacity:1; cursor:default }
+html.bp-mv .mvm-opt.mvm-soon .mvm-ico, html.bp-mv .mvm-opt.mvm-soon b, html.bp-mv .mvm-opt.mvm-soon i{ opacity:.55 }
+html.bp-mv .mvm-soonpl{ margin-top:12px }
+html.bp-mv #mvTuOff{ display:none }
+html.bp-mv #pg-topup .bw2.mvtuo-on > :not(#mvTuOff), html.bp-mv.bp-paytuoff #bw2TuCta{ display:none!important }
+html.bp-mv #pg-topup .bw2.mvtuo-on > #mvTuOff{ display:flex; flex-direction:column; align-items:center; gap:12px; box-sizing:border-box; width:100%; padding:24px 18px; border-radius:24px; background:var(--mx-s1); text-align:center }
+html.bp-mv .mvtuo-ic{ display:grid; place-items:center; width:64px; height:64px }
+html.bp-mv .mvtuo-ic svg{ width:64px; height:64px }
+html.bp-mv #mvTuOff h3{ margin:0; font-size:20px; line-height:26px; font-weight:600; color:#fff; letter-spacing:0 }
+html.bp-mv #mvTuOff p{ margin:0 0 6px; font-size:15px; line-height:22px; color:var(--mx-t3) }
 </style>
 <script id="bp-mv-me">
 /* ══ ПРОФИЛЬ «КАК У MORE VIEWS» · поведение (bp-mv-me, 13.10.2026) ════
@@ -103790,6 +104027,24 @@ function openOp(it){
 var SUPPORT = 'support@bloggerpay.ru';
 /* пополнение по счёту (14.10.2026): минимум и бот приходят с сервера */
 var INV = { min:10000, bot:'BloggerPay_bot' };
+/* Режим кассы (аудит 16.10.2026, GET /api/pay/config): mode 'off' — ни
+   ЮKassa, ни тестового пополнения: карта «скоро», пополнить можно по счёту
+   (раньше «Банковская карта» вела на экран «Тестовое зачисление» с кнопкой,
+   которая только говорила «недоступно»); withdrawOpen:false — вывод закрыт,
+   пока пополнение на боевом адресе тестовое. Кэш минуту, на свой вход. */
+var PCFG = null, PCFG_AT = 0, PCFG_TOK = '', PCFG_P = null;
+function payCfg(){
+  var s = srv();
+  if(!s || typeof s.configured !== 'function' || !s.configured() || typeof s.raw !== 'function') return Promise.resolve({});
+  var tk = token() || '';
+  if(PCFG && PCFG_TOK === tk && Date.now() - PCFG_AT < 60000) return Promise.resolve(PCFG);
+  if(PCFG_P) return PCFG_P;
+  PCFG_P = s.raw('GET', '/api/pay/config').then(function(j){
+    PCFG = j && typeof j === 'object' ? j : {}; PCFG_AT = Date.now(); PCFG_TOK = tk; PCFG_P = null; return PCFG;
+  }, function(){ PCFG_P = null; return PCFG || {}; });
+  return PCFG_P;
+}
+function payOff(c){ return !!(c && c.mode === 'off'); }
 function innOk(d){
   d = String(d || '');
   var k = function(w){ var t = 0; for(var i = 0; i < w.length; i++) t += w[i] * Number(d.charAt(i)); return t % 11 % 10; };
@@ -103810,17 +104065,33 @@ function invFld(id, label, ph, val, attrs, suf){
     + '<input id="' + id + '" data-bp-kind="none" type="text" placeholder="' + esc(ph) + '" value="' + esc(val) + '" ' + (attrs || '') + '>'
     + (suf ? '<span class="mx-suf">' + suf + '</span>' : '') + '</div></div>';
 }
-function openTopup(){
+function openTopup(want){
   if(!mv()){ if(typeof window.goTo === 'function') window.goTo('topup'); return; }
-  var step1 = '<p class="mx-q">Как вы хотите пополнить кошелёк?</p><div class="mvm-opts">'
-    + '<button type="button" class="mvm-opt" data-tu="card"><span class="mvm-ico">' + I.card64 + '</span><span><b>Банковская карта (₽)</b><i>Физ. лица</i></span></button>'
+  /* аудит 16.10.2026: в режиме off карта — «скоро» (не нажимается, с
+     пояснением), дорога одна — «По счёту» */
+  var off = payOff(PCFG);
+  function step1Html(){
+    return '<p class="mx-q">Как вы хотите пополнить кошелёк?</p><div class="mvm-opts">'
+    + (off
+      ? '<button type="button" class="mvm-opt mvm-soon" data-tu="card" disabled aria-describedby="mvTuSoon"><span class="mvm-tag">Скоро</span><span class="mvm-ico">' + I.card64 + '</span><span><b>Банковская карта (₽)</b><i>Оплата картой скоро</i></span></button>'
+      : '<button type="button" class="mvm-opt" data-tu="card"><span class="mvm-ico">' + I.card64 + '</span><span><b>Банковская карта (₽)</b><i>Физ. лица</i></span></button>')
     + '<button type="button" class="mvm-opt" data-tu="bill"><span class="mvm-ico">' + I.bank64 + '</span><span><b>По счёту (₽)</b><i>Компании, ИП и ООО</i></span></button>'
     + '</div>'
+    + (off ? '<div class="mx-pl blue mvm-soonpl" id="mvTuSoon"><b>Оплата картой скоро</b><span>' + esc(nbsp('Подключаем приём платежей картой и через СБП. Пока пополнить кошелёк можно по счёту — менеджер пришлёт счёт в Telegram.')) + '</span></div>' : '')
     /* 14.10.2026: комиссия пополнения — сверху суммы (ставка с сервера, bp-fees) */
     + (function(){ var f = window.bpFees, p = f && f.topup != null ? Number(f.topup) || 0 : 7; if(!p) return '';
         return '<p class="mvm-feenote">' + I.info + '<span>' + esc(nbsp('Комиссия сервиса — ' + p + ' % сверху суммы: пополняете на 10 000 ₽ — оплачиваете ' + int(10000 + p * 100) + ' ₽, на баланс приходят все 10 000 ₽.')) + '</span></p>'; })();
+  }
+  var step1 = step1Html();
   var m = modal('mvTu', { title:'Пополнение кошелька', body:step1 });
   if(!m) return;
+  /* режим кассы пришёл позже открытия — перерисуем выбор, пока он на экране */
+  payCfg().then(function(c){
+    var o2 = payOff(c);
+    if(o2 === off) return;
+    off = o2; step1 = step1Html();
+    if(m.el.isConnected && m.bd.querySelector('.mvm-opts [data-tu=card]')) m.bd.innerHTML = step1;
+  });
   function bill(){
     m.title('Пополнение по счёту'); m.backBtn(true);
     var u = me() || {}, d = invMem();
@@ -103928,6 +104199,8 @@ function openTopup(){
     var bk = e.target.closest ? e.target.closest('[data-mx="back"]') : null;
     if(bk){ m.backBtn(false); m.bd.innerHTML = step1; }
   });
+  /* сразу к заявке на счёт (кнопка «Пополнить по счёту» на экране карты в режиме off) */
+  if(want === 'bill') bill();
 }
 window.bpMvTopupOpen = openTopup;
 
@@ -103951,8 +104224,11 @@ function openWithdraw(){
       + '<div style="display:flex;gap:12px;flex-wrap:wrap"><button type="button" class="mx-b mx-bg mx-bs" data-wd="cancel">Отмена</button><button type="button" class="mx-b mx-bp mx-bs" data-wd="verify">' + (k.st === 'pending' && k.sent ? 'Открыть верификацию' : 'Пройти верификацию') + '</button></div></div>';
     else if(kind === 'min') g.innerHTML = '<div class="mx-pl orange"><b>Пока нечего выводить</b><span>' + esc(nbsp('Минимальная сумма вывода — 1 000 ₽. Сейчас доступно ' + rub(avail) + '.')) + '</span></div>';
     else if(kind === 'srv') g.innerHTML = '<div class="mx-pl orange"><b>Вывод здесь недоступен</b><span>' + esc(nbsp('Эта версия открыта без сервера BloggerPay. Откройте приложение через бота в Телеграме.')) + '</span></div>';
+    /* аудит 16.10.2026: пока пополнение на боевом адресе тестовое, сервер вывод не примет */
+    else if(kind === 'test') g.innerHTML = '<div class="mx-pl orange"><b>Вывод откроется после запуска оплаты</b><span>' + esc(nbsp('Сейчас пополнение тестовое — деньги на балансах ненастоящие, поэтому вывести их нельзя. Как только подключим приём платежей, вывод откроется.')) + '</span></div>';
     try{ g.scrollIntoView({ block:'nearest', behavior:'smooth' }); }catch(e){}
   }
+  payCfg();   /* к нажатию «Рубли» режим кассы уже известен */
   m.el.addEventListener('click', function(e){
     var b = e.target.closest ? e.target.closest('[data-wd]') : null; if(!b) return;
     var a = b.getAttribute('data-wd');
@@ -103960,11 +104236,15 @@ function openWithdraw(){
     if(a === 'verify'){ m.close(true); later(openVerify, 30); return; }
     if(a !== 'rub') return;
     if(k.srv === 'none'){ gate('srv'); return; }
-    if(!k.phone || k.st !== 'verified'){ gate('kyc'); return; }
-    if(!k.pay){ m.close(true); later(function(){ call('bpKycPayout'); }, 30); return; }
-    if(avail < MIN_WD){ gate('min'); return; }
-    m.close(true);
-    later(function(){ if(typeof window.goTo === 'function') window.goTo('withdraw'); }, 30);
+    payCfg().then(function(c){
+      if(!m.el.isConnected) return;
+      if(c && c.withdrawOpen === false){ gate('test'); return; }
+      if(!k.phone || k.st !== 'verified'){ gate('kyc'); return; }
+      if(!k.pay){ m.close(true); later(function(){ call('bpKycPayout'); }, 30); return; }
+      if(avail < MIN_WD){ gate('min'); return; }
+      m.close(true);
+      later(function(){ if(typeof window.goTo === 'function') window.goTo('withdraw'); }, 30);
+    });
   });
 }
 window.bpMvWithdrawOpen = openWithdraw;
@@ -104008,6 +104288,39 @@ function decorateTopup(){
   if(!mv() || !onPage('pg-topup')) return;
   var k = document.querySelector('#pg-topup .bw2-amt-card .bw2-k');
   if(k && !k.__mv){ k.__mv = 1; k.lastChild && (k.lastChild.textContent = 'Сумма пополнения'); }
+  paintTopupOff();
+}
+/* Режим off (аудит 16.10.2026): ни кассы, ни тестового пополнения. Экран
+   оплаты картой сюда попадает и мимо «Пополнения кошелька» (кнопки
+   «Пополнить» в задании и мастере) — вместо формы с «Тестовым зачислением»
+   и кнопки, которая только отвечала «недоступно», честная карточка:
+   «Оплата картой скоро» и дорога «По счёту». Форма и id прежние — только
+   скрыты классом, пока режим off. */
+function paintTopupOff(){
+  payCfg().then(function(c){
+    var body = document.querySelector('#pg-topup .sp-body.bw2'); if(!body) return;
+    var off = payOff(c) && mv();
+    var box = $('mvTuOff');
+    if(off && !box){
+      box = document.createElement('div'); box.id = 'mvTuOff'; box.className = 'mvtuo';
+      box.innerHTML = '<span class="mvtuo-ic">' + I.card64 + '</span>'
+        + '<h3>Оплата картой скоро</h3>'
+        + '<p>' + esc(nbsp('Подключаем приём платежей картой и через СБП. Пока пополнить кошелёк можно по счёту — для компаний, ИП и ООО: менеджер пришлёт счёт в Telegram.')) + '</p>'
+        + '<button type="button" class="mx-b mx-bp mx-bfull" data-mvtuoff="bill">Пополнить по счёту</button>'
+        + '<button type="button" class="mx-b mx-bg mx-bfull" data-mvtuoff="back">Вернуться в кошелёк</button>';
+      box.addEventListener('click', function(e){
+        var b = e.target.closest ? e.target.closest('[data-mvtuoff]') : null; if(!b) return;
+        if(b.getAttribute('data-mvtuoff') === 'bill') openTopup('bill');
+        else if(typeof window.goTo === 'function') window.goTo('balance');
+      });
+      body.insertBefore(box, body.firstChild);
+    }
+    if(body.classList.contains('mvtuo-on') !== off) body.classList.toggle('mvtuo-on', off);
+    /* кнопка «Пополнить» (#bw2TuCta) живёт не в форме, а у body (липкий низ) —
+       прячем её меткой на html; без перемен класс не трогаем */
+    var de = document.documentElement;
+    if(de.classList.contains('bp-paytuoff') !== off) de.classList.toggle('bp-paytuoff', off);
+  });
 }
 /* 2FA: шторка кода без id — системная «Назад» прятала её display:none
    навсегда. В MV даём ей имя и закрывашку, а display снимаем при показе. */
@@ -104045,7 +104358,7 @@ function wrapGo(){
       }
     }
     var r = og.apply(this, arguments);
-    if(p === 'balance'){ later(renderWal, 0); later(function(){ pullLed(false).then(walSoon, walSoon); }, 60); }
+    if(p === 'balance'){ later(renderWal, 0); later(function(){ pullLed(false).then(walSoon, walSoon); }, 60); later(payCfg, 120); }
     if(p === 'withdraw'){ later(decorateWithdraw, 60); later(decorateWithdraw, 400); later(fix2fa, 500); }
     if(p === 'topup') later(decorateTopup, 60);
     return r;
@@ -109291,7 +109604,8 @@ function plural(n, a, b, c){ n = Math.abs(Math.round(n)) % 100; var d = n % 10; 
 function nbsp(s){ return String(s).replace(/(^|[\s«(])(в|во|с|со|к|о|об|у|и|а|не|на|по|за|из|от|до|без|для)\s/gi, '$1$2' + NB); }
 function modal(id, o){ return typeof window.bpMvModal === 'function' ? window.bpMvModal(id, o) : null; }
 function botName(){ try{ var c = typeof window.bpLinkCfg === 'function' ? window.bpLinkCfg() : null; if(c && c.bot) return String(c.bot).replace(/[^\w]/g, ''); }catch(e){} return 'BloggerPay_bot'; }
-function tempMail(u){ return /@telegram\.local$/i.test(String((u && u.email) || '')); }
+/* служебная почта: вход через Телеграм (tg…@telegram.local) или Google без почты (g…@google.local) */
+function tempMail(u){ return /@(telegram|google)\.local$/i.test(String((u && u.email) || '')); }
 
 /* ── значки: общий набор bpMvIco + недостающие в том же рисунке ── */
 var IC0 = window.bpMvIco || {};
@@ -109491,7 +109805,9 @@ function pageHtml(){
   h += sec('login', 'Вход и безопасность', [
     needs ? row('mail', 'blue', X.mail, 'Почта и пароль', { st:'Не заданы', sub:'Чтобы входить в этот аккаунт с компьютера' })
           : row('mailinfo', 'blue', X.mail, 'Почта', { info:true, sub:mail || '—', sel:true }),
-    needs ? '' : row('pass', 'purple', X.key, 'Пароль', { sub:'Сменить пароль для входа по почте' }),
+    needs ? '' : (m && m.hasPassword === false
+      ? row('pass', 'purple', X.key, 'Пароль', { st:'Не задан', sub:'Задать пароль для входа по почте' })
+      : row('pass', 'purple', X.key, 'Пароль', { sub:'Сменить пароль для входа по почте' })),
     m && m.canTelegram ? (m.telegram ? row('tginfo', 'cyan', ic('tg'), 'Телеграм', { info:true, st:'Привязан', cls:'ok', sub:'Вход из бота ведёт в этот аккаунт' })
                                      : row('tg', 'cyan', ic('tg'), 'Телеграм', { st:'Не привязан', sub:'Чтобы входить в этот аккаунт из бота' })) : '',
     m && m.google ? row('ginfo', 'gray', X.google, 'Google', { info:true, st:'Привязан', cls:'ok', sub:'Вход через Google ведёт в этот аккаунт' }) : '',
@@ -109684,17 +110000,26 @@ function errOf(e, fb){ return String((e && e.message) || fb || 'Не получ�
 /* «Смена пароля» */
 function openPass(){
   if(!me()) return;
-  if(tempMail(me()) || (M.v && M.v.needsEmail)){ openMail(); return; }
+  /* ответ сервера главнее копии в браузере: после «Почты и пароля» у
+     currentUser остаётся служебный адрес, а почта на сервере уже есть */
+  if(M.v ? M.v.needsEmail : tempMail(me())){ openMail(); return; }
+  /* 16.10.2026: аккаунт из Google/Телеграма с настоящей почтой — своего
+     пароля нет (сервер: hasPassword:false). «Текущий» не спрашиваем — пароль
+     ЗАДАЁТСЯ (раньше просили несуществующий и после пяти попыток запирали). */
+  var noPw = !!(M.v && M.v.hasPassword === false);
+  var goTxt = noPw ? 'Задать пароль' : 'Сменить пароль';
   var fld = function(id, lbl, ac, extra){ return '<label class="mx-fld"><span class="mx-lbl">' + lbl + '</span><span class="mx-ctl"><input id="' + id + '" type="password" autocomplete="' + ac + '" maxlength="200" spellcheck="false" autocapitalize="off">' + eyeBtn(id) + '</span>' + (extra || '') + '</label>'; };
-  var m = modal('mvsPass', { title:'Смена пароля', focus:'#mvsOld',
+  var mailNow = String((M.v && M.v.email) || (me() && me().email) || '');
+  var m = modal('mvsPass', { title: noPw ? 'Задать пароль' : 'Смена пароля', focus: noPw ? '#mvsNew' : '#mvsOld',
     body:'<form class="mvs-form" id="mvsPassF" novalidate>'
-      + fld('mvsOld', 'Текущий пароль', 'current-password')
-      + fld('mvsNew', 'Новый пароль', 'new-password', '<span class="mvs-meter" id="mvsMeter" data-s="0" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="mx-hint" id="mvsNewH">Минимум 8 символов. Надёжнее — буквы разного регистра, цифры и знаки.</span>')
-      + fld('mvsNew2', 'Повторите новый пароль', 'new-password')
+      + (noPw ? '<p class="mx-txt">' + nbsp('Вы входили через Google или Телеграм — своего пароля у аккаунта пока нет. Задайте его, чтобы входить по почте ' + esc(mailNow) + ' с любого устройства.') + '</p>'
+              : fld('mvsOld', 'Текущий пароль', 'current-password'))
+      + fld('mvsNew', noPw ? 'Пароль' : 'Новый пароль', 'new-password', '<span class="mvs-meter" id="mvsMeter" data-s="0" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="mx-hint" id="mvsNewH">Минимум 8 символов. Надёжнее — буквы разного регистра, цифры и знаки.</span>')
+      + fld('mvsNew2', noPw ? 'Повторите пароль' : 'Повторите новый пароль', 'new-password')
       + '<div class="mx-err" id="mvsPassE" role="alert"></div>'
-      + '<p class="mx-txt">' + nbsp('После смены на других устройствах нужно будет войти заново — с новым паролем. Этот телефон останется в аккаунте.') + '</p>'
+      + (noPw ? '' : '<p class="mx-txt">' + nbsp('После смены на других устройствах нужно будет войти заново — с новым паролем. Этот телефон останется в аккаунте.') + '</p>')
       + '<button type="submit" hidden></button></form>',
-    foot:'<button type="button" class="mx-b mx-bg" data-mx="x">Отмена</button><button type="button" class="mx-b mx-bp mx-bgrow" id="mvsPassGo">Сменить пароль</button>' });
+    foot:'<button type="button" class="mx-b mx-bg" data-mx="x">Отмена</button><button type="button" class="mx-b mx-bp mx-bgrow" id="mvsPassGo">' + goTxt + '</button>' });
   if(!m) return;
   wireEyes(m.el);
   var nw = $('mvsNew'), meter = $('mvsMeter'), err = $('mvsPassE'), go = $('mvsPassGo');
@@ -109731,11 +110056,17 @@ function openPass(){
 }
 window.bpMvPassOpen = openPass;
 
-/* «Почта и пароль» — аккаунту из Телеграма (как шторка bp-acclink) */
-function openMail(){
+/* «Почта и пароль» — аккаунту из Телеграма (как шторка bp-acclink).
+   why === 'withdraw' — пришли из вывода: сервер ответил need_email (код
+   вывода на служебный адрес не дойдёт, аудит 16.10.2026) — говорим, зачем
+   почта и что делать после. Возвращает true, если окно открылось. */
+function openMail(why){
+  var wd = why === 'withdraw';
+  var via = /@google\.local$/i.test(String((me() && me().email) || '')) ? 'Google' : 'Телеграм';
   var m = modal('mvsMail', { title:'Почта и пароль', focus:'#mvsMailIn',
     body:'<form class="mvs-form" id="mvsMailF" novalidate>'
-      + '<p class="mx-txt">' + nbsp('Вы вошли через Телеграм, и у аккаунта нет почты. Задайте её — и сможете входить в этот же аккаунт с компьютера. Баланс, задания и видео останутся те же.') + '</p>'
+      + (wd ? '<div class="mx-pl orange" id="mvsMailWhy"><b>Сначала укажите почту</b><span>' + esc(nbsp('На неё придёт код подтверждения вывода. Сохраните почту и пароль — и нажмите «Вывести» ещё раз.')) + '</span></div>' : '')
+      + '<p class="mx-txt">' + nbsp('Вы вошли через ' + via + ', и у аккаунта нет почты. Задайте её — и сможете входить в этот же аккаунт с компьютера. Баланс, задания и видео останутся те же.') + '</p>'
       + '<label class="mx-fld"><span class="mx-lbl">Почта</span><span class="mx-ctl"><input id="mvsMailIn" type="email" inputmode="email" autocomplete="email" maxlength="160" spellcheck="false" autocapitalize="off" placeholder="name@example.ru"></span></label>'
       + '<label class="mx-fld"><span class="mx-lbl">Пароль</span><span class="mx-ctl"><input id="mvsMailPw" type="password" autocomplete="new-password" maxlength="200" spellcheck="false" autocapitalize="off">' + eyeBtn('mvsMailPw') + '</span><span class="mx-hint">Минимум 8 символов</span></label>'
       + '<div class="mx-err" id="mvsMailE" role="alert"></div><button type="submit" hidden></button></form>',
@@ -109752,14 +110083,17 @@ function openMail(){
     go.disabled = true;
     srv().raw('POST', '/api/account/email', { email:mail, password:pw }).then(function(){
       m.close();
-      toast('Готово: теперь можно входить по почте', 'ok');
+      toast(wd ? 'Почта сохранена — нажмите «Вывести» ещё раз' : 'Готово: теперь можно входить по почте', 'ok');
       try{ if(typeof window.bpAccLinkLoad === 'function') window.bpAccLinkLoad(); }catch(e){}
       pullMethods(true).then(function(){ _key = ''; soon(); });
     }, function(e){ go.disabled = false; err.textContent = errOf(e, 'Не получилось сохранить'); });
   }
   go.addEventListener('click', submit);
   $('mvsMailF').addEventListener('submit', function(e){ e.preventDefault(); submit(); });
+  return true;
 }
+/* вывод (bp-money) по ответу need_email открывает это окно с причиной */
+window.bpMvMailOpen = function(why){ if(!mv()) return false; try{ return !!openMail(why); }catch(e){ E(e); return false; } };
 
 /* привязка Телеграма — прежний путь bp-acclink; ждём, пока сервер скажет «привязан» */
 var _tgT = null;

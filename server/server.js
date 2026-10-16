@@ -188,6 +188,23 @@ if (TEST_TOPUP && !TEST_TOPUP_OPEN) {
     + ' сервер виден снаружи (' + PUBLIC_URL + '). Остальным пополнение отвечает,'
     + ' что оплата идёт через кассу. Открыть всем — TEST_TOPUP_OPEN=1.');
 }
+/* Тестовые деньги на боевом адресе (аудит 16.10.2026). Пока сервер виден
+   снаружи и тестовое пополнение открыто всем, любой вошедший «пополняет»
+   баланс без оплаты — балансы ненастоящие. Тогда вывод закрыт (иначе
+   напечатанное уходило бы наружу настоящими рублями), /admin показывает
+   красную плашку, владельцу при запуске — тревога. Перед запуском:
+   TEST_TOPUP=0 и пустой TEST_TOPUP_OPEN (ЗАПУСК.md). */
+const TEST_MONEY_PUBLIC = TEST_TOPUP && TEST_TOPUP_OPEN_SET && SERVER_IS_PUBLIC;
+const TEST_MONEY_MSG = 'Тестовое пополнение открыто всем — перед запуском убрать TEST_TOPUP_OPEN, TEST_TOPUP=0';
+/* Метка тестовых зачислений в журнале: kind остаётся 'topup' (сверка
+   «внесено − выплачено = в системе» обязана сходиться и с ними), а по ref
+   их видно и считают отдельно — /admin показывает «из них тестовых». */
+const TEST_TOPUP_REF = 'тестовое пополнение';
+const TEST_TOPUP_FEE_REF = 'комиссия тестового пополнения';
+if (TEST_MONEY_PUBLIC) {
+  console.error('[BloggerPay] ВНИМАНИЕ: ' + TEST_MONEY_MSG + '. Сервер виден снаружи ('
+    + PUBLIC_URL + '): любой вошедший пополняет баланс без оплаты, поэтому вывод закрыт.');
+}
 
 /* Кавычки и пробелы вокруг значения — самая частая причина «неизвестный
    client_key»: площадка получает ключ вместе с ними и не узнаёт его. */
@@ -285,11 +302,20 @@ const APP_BASE = (SERVER_IS_PUBLIC
    другой формат подписи и другой ключ. */
 const TG_WIDGET_AUTH = 'https://oauth.telegram.org/auth';
 const TG_BOT_ID = String(BOT_TOKEN).split(':')[0] || '';
-/* Ответ старше суток не принимаем: перехваченная ссылка не должна
-   работать вечно. */
-const TG_AUTH_MAX_AGE = 86400;
+/* Срок годности подписанного ответа виджета. Было сутки: ответ лежит в
+   адресе возврата (история браузера, журналы прокси), и кто его увидел,
+   сутки заводил сессии чужого аккаунта на СВОЕЙ метке. Теперь
+   (аудит 16.10): десять минут, ответ не старше начала ЭТОГО входа
+   (since) и каждый ответ срабатывает ОДИН раз — использованные hash
+   помним до конца их срока. */
+const TG_AUTH_MAX_AGE = 10 * 60;
+const tgUsedHash = new Map();     /* hash → когда можно забыть (мс) */
+function tgUsedSweep() {
+  const now = Date.now();
+  for (const [k, v] of tgUsedHash) if (v <= now) tgUsedHash.delete(k);
+}
 
-function tgWidgetCheck(fields) {
+function tgWidgetCheck(fields, since) {
   if (!BOT_TOKEN) return { ok: false, why: 'Вход через Телеграм не настроен: нет токена бота' };
   const got = {};
   for (const k of Object.keys(fields || {})) {
@@ -313,6 +339,16 @@ function tgWidgetCheck(fields) {
   if (!(age >= -60 && age <= TG_AUTH_MAX_AGE)) {
     return { ok: false, why: 'Ответ Телеграма просрочен — начните вход заново' };
   }
+  /* Ответ выдан раньше, чем начался этот вход, — значит, он чужой или
+     старый (две минуты — на расхождение часов с Телеграмом). */
+  if (since && Number(got.auth_date) < Math.floor(Number(since) / 1000) - 120) {
+    return { ok: false, why: 'Ответ Телеграма просрочен — начните вход заново' };
+  }
+  tgUsedSweep();
+  if (tgUsedHash.has(given)) {
+    return { ok: false, why: 'Этот ответ Телеграма уже использован — начните вход заново' };
+  }
+  tgUsedHash.set(given, Date.now() + (TG_AUTH_MAX_AGE + 180) * 1000);
   return {
     ok: true,
     tg: {
@@ -324,6 +360,31 @@ function tgWidgetCheck(fields) {
   };
 }
 
+/* Служебная почта — не ящик: её ставят аккаунтам, заведённым входом через
+   Телеграм (tg<id>@telegram.local) или через Google без почты
+   (g<sub>@google.local). Писем на неё не доставить, войти по ней нельзя
+   (аудит 16.10.2026: код вывода уходил на tg…@telegram.local). */
+function isServiceEmail(e) { return /@(telegram|google)\.local$/i.test(String(e || '')); }
+/* Предел длины почты — 254 знака (RFC 5321). Без него регистрация
+   принимала адрес на 60 000 знаков: мусор в users, в /admin, в тревогах и
+   письмах (аудит 16.10.2026). Имя режется до 120, пароль — до 200. */
+const EMAIL_MAX = 254;
+const PASS_MAX = 200;
+
+/* Аккаунт без своего пароля (16.10.2026): заведён входом через Телеграм
+   или Google, в поле хеша — случайный мусор. Такой соли даём метку
+   «nopw:» — по ней «Настройки» позволяют ЗАДАТЬ пароль без «текущего»
+   (раньше аккаунт Google с настоящей почтой просили ввести текущий
+   пароль, которого нет, и после пяти попыток запирали). Свой пароль
+   (регистрация, сброс по коду, «Почта и пароль», смена) пишется с
+   обычной солью — метка уходит сама. Аккаунты, заведённые до метки,
+   считаются «с паролем»: для них есть «Забыли пароль?». */
+const NOPW_SALT = 'nopw:';
+function deadSalt() { return NOPW_SALT + crypto.randomBytes(16).toString('hex'); }
+function hasOwnPass(u) {
+  return !!u && !isServiceEmail(u.email) && String(u.pass_salt || '').indexOf(NOPW_SALT) !== 0;
+}
+
 function tgAccount(tgId, name, role) {
   let u = q.userByTg.get(String(tgId));
   if (u) return u;
@@ -331,7 +392,7 @@ function tgAccount(tgId, name, role) {
      поля хеша кладём случайный мусор, которым войти нельзя. */
   let email = 'tg' + tgId + '@telegram.local';
   if (q.userByEmail.get(email)) email = 'tg' + tgId + '.' + crypto.randomBytes(3).toString('hex') + '@telegram.local';
-  const salt = crypto.randomBytes(16).toString('hex');
+  const salt = deadSalt();   /* метка «своего пароля нет» — см. hasOwnPass */
   const dead = crypto.randomBytes(32).toString('hex');
   try {
     q.insTgUser.run(email, String(name || '').trim().slice(0, 120) || ('Пользователь ' + tgId),
@@ -380,6 +441,92 @@ const OAUTH = {
    и избранное (mine), свободные дни (slot). Такой конверт человек
    пишет только сам себе — проверка в POST /api/sync/put. */
 const SELF_KINDS = new Set(['prof', 'mine', 'slot']);
+/* ── Пределы обмена /api/sync (аудит 16.10.2026) ──
+   Было: ограничены только размер одной записи (400 КБ) и частота
+   (240/мин). Любой вошедший клал общие конверты-задания без счёта —
+   каждый из них уезжал в ленту КАЖДОГО вошедшего и в его хранилище, а
+   база росла без границы (проверено: 80 «заданий» блогера подряд — все
+   приняты и все у постороннего в первой синхронизации).
+   Стало:
+     · заданий «в работе» (active/paused) у автора — не больше 50,
+       всего заданий у автора — не больше 500 (409 camp_limit);
+     · записей человека (последний писавший, from_id) — не больше 100 000,
+       их объём — не больше 100 МБ (409 / 413 sync_limit); переписать своё
+       меньшим можно всегда;
+     · новых «холодных» личных диалогов (нет ни прежней переписки, ни
+       общего задания, ни иной записи на двоих) — не больше 30 в сутки
+       (429 dm_new_limit): адресный спам по номерам людей.
+   Числа можно поднять переменными окружения. */
+const SYNC_CAMP_LIVE = Math.max(1, Math.floor(Number(ENV.SYNC_CAMP_LIVE) || 50));
+const SYNC_CAMP_ALL = Math.max(SYNC_CAMP_LIVE, Math.floor(Number(ENV.SYNC_CAMP_ALL) || 500));
+const SYNC_USER_ROWS = Math.max(10, Math.floor(Number(ENV.SYNC_USER_ROWS) || 100000));
+const SYNC_USER_BYTES = Math.max(1, Number(ENV.SYNC_USER_MB) || 100) * 1024 * 1024;
+const DM_NEW_PER_DAY = Math.max(1, Math.floor(Number(ENV.DM_NEW_PER_DAY) || 30));
+const CAMP_LIVE_ST = new Set(['active', 'paused']);
+/* Занятое человеком: счёт из базы раз в 10 минут, между ними — по каждой
+   записи (+ новое, − то, что переписано). Удаления в обход put (стирание
+   данных по обращению) сойдутся при следующем пересчёте. */
+const syncUseCache = new Map();
+function syncUseOf(uid) {
+  const now = Date.now();
+  let e = syncUseCache.get(uid);
+  if (!e || now - e.at > 10 * 60000) {
+    if (syncUseCache.size > 20000) syncUseCache.clear();
+    const r = q.syncUse.get(uid) || {};
+    e = { n: Number(r.n) || 0, b: Number(r.b) || 0, at: now };
+    syncUseCache.set(uid, e);
+  }
+  return e;
+}
+function syncUseAdd(uid, dn, dbytes) {
+  const e = syncUseCache.get(uid);
+  if (e) { e.n = Math.max(0, e.n + dn); e.b = Math.max(0, e.b + dbytes); }
+}
+function campLiveStatus(s) { return CAMP_LIVE_ST.has(String(s == null ? '' : s)); }
+function campLiveCount(uid, exceptRid) {
+  try { return Number((q.campCountLive.get(uid, String(exceptRid || '')) || {}).n) || 0; }
+  catch (e) { return 0; }
+}
+const campLimitBody = { error: 'Одновременно можно вести не больше ' + SYNC_CAMP_LIVE
+  + ' заданий — завершите одно из запущенных', code: 'camp_limit' };
+/* Новые «холодные» личные диалоги: связь двух людей запоминаем (она не
+   исчезает), счёт новых — по своим часам за последние сутки. */
+const dmTieKnown = new Set();
+const dmNewLog = new Map();
+function dmTied(x, y) {
+  const k = Math.min(x, y) + ':' + Math.max(x, y);
+  if (dmTieKnown.has(k)) return true;
+  if (!q.syncTie.get(x, y, y, x, x, y, y, x, y, x, x, y)) return false;
+  if (dmTieKnown.size > 100000) dmTieKnown.clear();
+  dmTieKnown.add(k);
+  return true;
+}
+function dmNewAllowed(uid) {
+  const now = Date.now();
+  const arr = (dmNewLog.get(uid) || []).filter((t) => now - t < 864e5);
+  if (arr.length >= DM_NEW_PER_DAY) { dmNewLog.set(uid, arr); return false; }
+  arr.push(now);
+  if (dmNewLog.size > 20000) dmNewLog.clear();
+  dmNewLog.set(uid, arr);
+  return true;
+}
+/* Конверт переписывается тем же содержимым с новым ver: лента отдаст его
+   ещё раз (нужно, когда бюджет задания заморозили после записи). */
+function syncBump(kind, rid) {
+  try {
+    const ex = q.syncGet.get(kind, rid);
+    if (!ex) return;
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      q.syncDel.run(kind, rid);
+      q.syncIns.run(kind, rid, ex.a_id, ex.b_id, ex.from_id, ex.data, ex.created_at);
+      db.exec('COMMIT');
+    } catch (e) {
+      try { db.exec('ROLLBACK'); } catch (_) {}
+      throw e;
+    }
+  } catch (e) { console.error('[sync] не удалось обновить конверт', kind, rid, e && e.message); }
+}
 /* Комиссии сервиса (14.10.2026, решение владельца):
    · пополнение — 7% СВЕРХУ суммы: просит 10 000 ₽ на баланс — платит 10 700 ₽;
    · задание — 7% сверху бюджета с рекламодателя (бюджет 10 000 ₽ — со счёта
@@ -552,6 +699,10 @@ CREATE TABLE IF NOT EXISTS sync (
 );
 CREATE INDEX IF NOT EXISTS sync_a ON sync(a_id, ver);
 CREATE INDEX IF NOT EXISTS sync_b ON sync(b_id, ver);
+/* Пределы обмена (аудит 16.10.2026): «есть ли уже связь двух людей» и
+   «сколько места занял человек» — без обхода всей таблицы. */
+CREATE INDEX IF NOT EXISTS sync_ab ON sync(a_id, b_id);
+CREATE INDEX IF NOT EXISTS sync_from ON sync(from_id);
 
 /* Подписки на уведомления. Одна строка — один браузер одного человека:
    у него может быть телефон и ноутбук, и уведомление должно прийти на
@@ -963,14 +1114,41 @@ const qm = {
   ins: db.prepare('INSERT INTO media (id, user_id, mime, data, size) VALUES (?,?,?,?,?)'),
   get: db.prepare('SELECT mime, data FROM media WHERE id = ?'),
   stat: db.prepare('SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS bytes FROM media WHERE user_id = ?'),
+  /* уборка (аудит 16.10.2026): старые файлы человека и где на них ссылки */
+  old: db.prepare(`SELECT id FROM media WHERE user_id = ? AND created_at < datetime('now', ?)`),
+  del: db.prepare('DELETE FROM media WHERE id = ? AND user_id = ?'),
+  refSync: db.prepare('SELECT data FROM sync WHERE a_id = ? OR from_id = ?'),
+  refCards: db.prepare('SELECT data FROM cards WHERE user_id = ?'),
 };
+/* Место человека кончилось — убираем ЕГО файлы старше 30 дней, на которые
+   не ссылается ни одна его запись (задания, профиль, личное) и ни одна его
+   карточка: заменённые обложки, картинки брошенных черновиков. Раньше
+   предел 300 файлов / 150 МБ был навсегда: активный рекламодатель упирался
+   в него и больше не мог загрузить ни одной картинки, а совет «удалите
+   старые задания» места не освобождал. Свежие (до 30 дней) не трогаем —
+   черновик живёт только в браузере, и ссылки на его картинки сервер не видит. */
+function mediaGc(uid) {
+  let freed = 0;
+  try {
+    const old = qm.old.all(uid, '-30 days');
+    if (!old.length) return 0;
+    const refs = new Set();
+    const re = /\/media\/([a-f0-9]{32})/g;
+    const scan = (s) => { let m; re.lastIndex = 0; while ((m = re.exec(String(s || '')))) refs.add(m[1]); };
+    for (const r of qm.refSync.iterate(uid, uid)) scan(r.data);
+    for (const r of qm.refCards.iterate(uid)) scan(r.data);
+    for (const r of old) if (!refs.has(r.id)) freed += Number(qm.del.run(r.id, uid).changes) || 0;
+  } catch (e) { console.error('[media] уборка не удалась', e && e.message); }
+  return freed;
+}
 /* Пополнение по счёту (14.10.2026). Рекламодатель оставляет заявку в
    приложении (компания, ИНН, сумма) и продолжает в Телеграме: бот по
    ссылке t.me/<бот>?start=inv_<code> связывает чат с заявкой, сообщает
    владельцу и передаёт переписку в обе стороны (tg_relay: сообщение в
    чате владельца → чат клиента). Деньги после оплаты зачисляет владелец
-   в /admin → «Счета» — через журнал, ключ операции invoice:<id>, повтор
-   не зачислит второй раз. */
+   в /admin → «Счета» — через журнал, ключ операции sys:invoice:<id> (до
+   16.10 — invoice:<id>, такие узнаются при повторе), повтор не зачислит
+   второй раз. */
 db.exec(`CREATE TABLE IF NOT EXISTS invoice_requests (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id    INTEGER NOT NULL,
@@ -1209,8 +1387,8 @@ const MEDIA_MAX = 1024 * 1024;              /* JPEG — до 1 МБ: прило�
 /* Анимированный баннер (GIF, анимированные PNG и WebP) и видео-баннер
    пережимать нельзя — анимация пропадёт. Им до 6 МБ (05.10.2026). */
 const MEDIA_MAX_RICH = 6 * 1024 * 1024;
-const MEDIA_USER_FILES = 300;
-const MEDIA_USER_BYTES = 150 * 1024 * 1024;
+const MEDIA_USER_FILES = Math.max(1, Math.floor(Number(ENV.MEDIA_USER_FILES) || 300));
+const MEDIA_USER_BYTES = Math.max(1, Number(ENV.MEDIA_USER_MB) || 150) * 1024 * 1024;
 /* Тип проверяем по первым байтам, а не по подписи в data:-адресе:
    иначе под видом картинки можно было бы положить что угодно. */
 function mediaKind(buf) {
@@ -1316,17 +1494,50 @@ const q = {
      все. Раньше без адресата раздавалось что угодно, и любой вошедший
      мог положить конверт вида «сообщение в чужой сделке» — оно доезжало
      до всех приложений и вклеивалось в переписку от чужого имени. */
+  /* Чужое задание (аудит 16.10.2026) уезжает в ленту, только если автор
+     хоть раз замораживал под него бюджет (сделка camp:<номер> с ним же
+     плательщиком; любой её статус — чтобы «завершено» и пауза тоже
+     доезжали до тех, кто задание уже видел). Без денег «задание» мог
+     опубликовать кто угодно, в том числе блогер: текст с чужой ссылкой
+     видели все. Своё автор получает всегда (второе устройство, черновой
+     запуск). Когда бюджет заморозят ПОСЛЕ записи конверта, заморозка
+     переписывает конверт новым ver (syncBump) — лента его отдаст. */
   syncPull: db.prepare(`SELECT ver, kind, rid, a_id, b_id, from_id, data, created_at, updated_at
     FROM sync WHERE ver > ? AND (a_id = ? OR b_id = ?
-      OR (b_id IS NULL AND kind = 'camp' AND a_id NOT IN (SELECT id FROM users WHERE is_blocked = 1)))
+      OR (b_id IS NULL AND kind = 'camp' AND a_id NOT IN (SELECT id FROM users WHERE is_blocked = 1)
+        AND EXISTS (SELECT 1 FROM deals d WHERE d.id = 'camp:' || sync.rid AND d.payer_id = sync.a_id)))
     ORDER BY ver ASC LIMIT ?`),
   syncMax: db.prepare('SELECT COALESCE(MAX(ver), 0) AS v FROM sync'),
   /* Задания — единственные конверты без адресата: их и так видит каждый
      вошедший. Для витрины гостя берём те же строки. */
-  /* Задания заблокированного автора в общую ленту не попадают. */
+  /* Задания заблокированного автора в общую ленту не попадают.
+     Витрина гостя (аудит 16.10.2026) — только задания с бюджетом,
+     замороженным сейчас (held): без денег объявление — просто текст. */
   publicCamps: db.prepare(`SELECT rid, data, updated_at FROM sync
     WHERE kind = 'camp' AND b_id IS NULL AND a_id NOT IN (SELECT id FROM users WHERE is_blocked = 1)
+      AND EXISTS (SELECT 1 FROM deals d WHERE d.id = 'camp:' || sync.rid AND d.payer_id = sync.a_id AND d.status = 'held')
     ORDER BY ver DESC LIMIT ?`),
+  /* пределы обмена (см. SYNC_CAMP_LIVE): занятое человеком — по последнему
+     писавшему, задания — по автору; связь двух людей — для лимита новых
+     личных диалогов */
+  syncUse: db.prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(length(CAST(data AS BLOB))), 0) AS b
+    FROM sync WHERE from_id = ?`),
+  campCountAll: db.prepare(`SELECT COUNT(*) AS n FROM sync WHERE a_id = ? AND b_id IS NULL AND kind = 'camp'`),
+  campCountLive: db.prepare(`SELECT COUNT(*) AS n FROM sync WHERE a_id = ? AND b_id IS NULL AND kind = 'camp' AND rid <> ?
+    AND (CASE WHEN json_valid(data) THEN json_extract(data, '$.status') END) IN ('active', 'paused')`),
+  syncTie: db.prepare(`SELECT 1 AS x FROM sync WHERE a_id = ? AND b_id = ?
+    UNION ALL SELECT 1 FROM sync WHERE a_id = ? AND b_id = ?
+    UNION ALL SELECT 1 FROM task_videos WHERE owner_id = ? AND blogger_id = ?
+    UNION ALL SELECT 1 FROM task_videos WHERE owner_id = ? AND blogger_id = ?
+    UNION ALL SELECT 1 FROM sync s JOIN task_members m ON m.camp_id = s.rid AND m.user_id = ?
+      WHERE s.a_id = ? AND s.b_id IS NULL AND s.kind = 'camp'
+    UNION ALL SELECT 1 FROM sync s JOIN task_members m ON m.camp_id = s.rid AND m.user_id = ?
+      WHERE s.a_id = ? AND s.b_id IS NULL AND s.kind = 'camp'
+    LIMIT 1`),
+  /* ведёт задания = хоть одно своё задание с замороженным когда-либо бюджетом
+     (конверт без денег положить может кто угодно) */
+  syncHasCamp: db.prepare(`SELECT 1 AS x FROM sync s WHERE s.a_id = ? AND s.b_id IS NULL AND s.kind = 'camp'
+    AND EXISTS (SELECT 1 FROM deals d WHERE d.id = 'camp:' || s.rid AND d.payer_id = s.a_id) LIMIT 1`),
   cardGet: db.prepare('SELECT * FROM cards WHERE id = ?'),
   cardsMine: db.prepare('SELECT id FROM cards WHERE user_id = ?'),
   cardIns: db.prepare('INSERT INTO cards (id, user_id, data, hidden) VALUES (?,?,?,?)'),
@@ -1378,6 +1589,11 @@ const q = {
   /* бюджет задания: пополнение и частичный возврат (11.10.2026) */
   growDeal: db.prepare(`UPDATE deals SET amount = amount + ?, updated_at = datetime('now') WHERE id = ? AND status = 'held'`),
   cutDeal: db.prepare(`UPDATE deals SET amount = amount - ?, updated_at = datetime('now') WHERE id = ? AND status = 'held'`),
+  /* Бюджет задания, закрытый исчерпанием до 16.10.2026 (released, выплачено
+     всё): пополнение открывает его снова. Денег в нём 0 — открывать безопасно;
+     получателя у бюджета задания нет (его ставило старое закрытие). */
+  reopenCampDeal: db.prepare(`UPDATE deals SET status = 'held', payee_id = NULL, updated_at = datetime('now')
+    WHERE id = ? AND id LIKE 'camp:%' AND status = 'released' AND paid >= amount`),
   /* комиссии задания (14.10.2026) */
   setDealFees: db.prepare('UPDATE deals SET fee_pct = ?, pay_fee_pct = ?, fee_in = ? WHERE id = ?'),
   addFeeIn: db.prepare('UPDATE deals SET fee_in = fee_in + ? WHERE id = ?'),
@@ -1401,10 +1617,21 @@ const q = {
   /* внесено снаружи: зачисления на баланс И комиссия пополнения сверху —
      её человек тоже заплатил, она лежит на счёте сервиса (сверка) */
   toppedUp: db.prepare(`SELECT COALESCE(SUM(amount),0) AS s FROM ledger WHERE kind IN ('topup','topup-fee')`),
+  /* из них ТЕСТОВЫЕ (аудит 16.10.2026): деньги «из воздуха» по кнопке
+     тестового пополнения. В сверке они остаются (иначе она разойдётся
+     ровно на них), но /admin показывает их отдельно — не как доход. */
+  testTopped: db.prepare(`SELECT
+      COALESCE(SUM(CASE WHEN kind = 'topup' THEN amount END), 0) AS amount,
+      COALESCE(SUM(CASE WHEN kind = 'topup-fee' THEN amount END), 0) AS fee,
+      COUNT(DISTINCT CASE WHEN kind = 'topup' THEN user_id END) AS people
+    FROM ledger WHERE (kind = 'topup' AND (ref = ? OR ref LIKE ? || ' · %'))
+      OR (kind = 'topup-fee' AND ref = ?)`),
+  testToppedBy: db.prepare(`SELECT COALESCE(SUM(amount),0) AS s FROM ledger
+    WHERE user_id = ? AND kind = 'topup' AND (ref = ? OR ref LIKE ? || ' · %')`),
   openDeals: db.prepare(`SELECT d.id, d.amount, d.paid, d.payer_id, d.payee_id, d.created_at,
       u.name AS payer_name
     FROM deals d JOIN users u ON u.id = d.payer_id
-    WHERE d.status = 'held' ORDER BY d.created_at DESC LIMIT 100`),
+    WHERE d.status = 'held' AND d.amount > d.paid ORDER BY d.created_at DESC LIMIT 100`),
   userLedger: db.prepare(`SELECT id, bucket, amount, kind, ref, created_at
     FROM ledger WHERE user_id = ? ORDER BY id DESC LIMIT 60`),
   /* Пульт · «Пользователи». Поиск делаем в JS: LIKE в SQLite не знает
@@ -1516,14 +1743,36 @@ const q = {
     WHERE ref = ? AND user_id = ? AND kind IN ('payout','settle-payout') LIMIT 1`),
   /* Споры, которые держат возврат: спор плательщика (payee_id пуст),
      спор назначенного исполнителя и спор того, кому по сделке уже
-     платили. Спор постороннего «по себе» возврату не помеха. */
+     платили. Спор постороннего «по себе» возврату не помеха.
+     Бюджет задания (camp:<id>, аудит 16.10.2026): спор ОДНОГО блогера
+     держит только его начисления (vidSettle, ручную выплату ему), а не
+     возврат автору — иначе блогер одним запросом запирал весь бюджет.
+     Его будущие выплаты и так не вернуть: живые ролики держат свою часть
+     (vidReturnable/vidOwed), полный возврат ждёт конца их подсчёта. */
   refundBlocked: db.prepare(`SELECT 1 AS x FROM disputes d
     WHERE d.deal_id = ? AND d.status = 'open' AND (
       d.payee_id IS NULL
-      OR d.payee_id = ?
-      OR EXISTS (SELECT 1 FROM ledger l WHERE l.ref = ? AND l.user_id = d.payee_id
-                 AND l.kind IN ('payout','settle-payout'))
+      OR (d.deal_id NOT LIKE 'camp:%' AND (
+        d.payee_id = ?
+        OR EXISTS (SELECT 1 FROM ledger l WHERE l.ref = ? AND l.user_id = d.payee_id
+                   AND l.kind IN ('payout','settle-payout'))))
     ) LIMIT 1`),
+  /* /admin · «Спорные деньги»: открытые споры со сторонами (аудит 16.10.2026). */
+  openDisputesAdmin: db.prepare(`SELECT ds.id, ds.deal_id, ds.payee_id, ds.opened_by, ds.created_at,
+      d.status AS deal_status, d.amount, d.paid, d.payer_id, d.payee_id AS deal_payee_id,
+      pu.name AS payer_name, pu.email AS payer_email,
+      ou.name AS opener_name, ou.email AS opener_email,
+      eu.name AS payee_name, eu.email AS payee_email
+    FROM disputes ds
+    LEFT JOIN deals d ON d.id = ds.deal_id
+    LEFT JOIN users pu ON pu.id = d.payer_id
+    LEFT JOIN users ou ON ou.id = ds.opened_by
+    LEFT JOIN users eu ON eu.id = ds.payee_id
+    WHERE ds.status = 'open' ORDER BY ds.id DESC LIMIT 200`),
+  paidToSum: db.prepare(`SELECT COALESCE(SUM(amount), 0) AS s FROM ledger
+    WHERE ref = ? AND user_id = ? AND kind IN ('payout','settle-payout')`),
+  vidLiveOf: db.prepare(`SELECT COUNT(*) AS n FROM task_videos
+    WHERE camp_id = ? AND blogger_id = ? AND status IN ('review','active','rejected')`),
   openDisputeFor: db.prepare(`SELECT id, opened_by FROM disputes
     WHERE deal_id = ? AND status = 'open' AND (payee_id IS NULL OR payee_id = ?) LIMIT 1`),
   openDisputeAny: db.prepare(`SELECT id, opened_by FROM disputes WHERE deal_id = ? AND status = 'open' LIMIT 1`),
@@ -1641,6 +1890,13 @@ const q = {
     WHERE id = ? AND status = 'active' AND COALESCE(pay_hold, 0) = 0`),
   vidUnhold: db.prepare(`UPDATE task_videos SET pay_hold = 0, hold_kind = NULL, pay_why = NULL, pay_tries = 0,
       updated_at = ? WHERE id = ? AND status = 'active' AND hold_kind IN ('measure','access')`),
+  /* Пауза «в бюджете не хватило денег» снимается, когда в заморозке задания
+     снова есть деньги (пополнение — vidBudgetResume, или круг — vidSettle). */
+  vidUnholdMoney: db.prepare(`UPDATE task_videos SET pay_hold = 0, hold_kind = NULL, pay_why = NULL,
+      updated_at = ? WHERE id = ? AND status = 'active' AND pay_hold = 1 AND hold_kind = 'money'`),
+  vidMoneyHeld: db.prepare(`SELECT id FROM task_videos WHERE camp_id = ? AND status = 'active'
+      AND pay_hold = 1 AND hold_kind = 'money' AND COALESCE(risk_hold, 0) = 0
+    ORDER BY COALESCE(approved_at, created_at) ASC, id ASC LIMIT 200`),
   /* Замер не удался по вине доступа (блогер отвязал канал или отозвал
      доступ, канал отключил владелец): ролик, может быть, уже удалён, и
      начислять по старым цифрам нельзя. Пауза 'access' — в очереди
@@ -1698,12 +1954,16 @@ const q = {
       OR (v.status IN ('review','active') AND (v.risk_hold = 1
         OR (v.pay_hold = 1 AND COALESCE(v.hold_kind, '') <> 'measure')))
       OR (v.status = 'active' AND EXISTS (SELECT 1 FROM disputes d WHERE d.deal_id = 'camp:' || v.camp_id
-        AND d.status = 'open' AND (d.payee_id IS NULL OR d.payee_id = v.blogger_id)))`),
+        AND d.status = 'open' AND (d.payee_id IS NULL OR d.payee_id = v.blogger_id)))
+      OR (v.status = 'active' AND EXISTS (SELECT 1 FROM users bu WHERE bu.id = v.blogger_id AND bu.is_blocked = 1))`),
   /* Пульт: ролик вместе с тем, что владельцу нужно для решения, — чей
-     оффер, кто блогер, что за канал и как его оценили. */
+     оффер, кто блогер, что за канал и как его оценили. Заблокированный
+     блогер (аудит 16.10.2026): засчитанные ролики — в очереди, деньги по
+     ним стоят (vidSettle), решение — «Не засчитывать» или разблокировать. */
   vidAdmin: db.prepare(`SELECT v.*,
       COALESCE(json_extract(s.data, '$.name'), json_extract(s.data, '$.title')) AS camp_name,
       o.email AS owner_email, o.name AS owner_name, b.email AS blogger_email, b.name AS blogger_name,
+      b.is_blocked AS blogger_blocked,
       c.title AS channel_title, c.risk_level AS channel_risk_level
     FROM task_videos v
     LEFT JOIN sync s ON s.kind = 'camp' AND s.rid = v.camp_id
@@ -1715,7 +1975,8 @@ const q = {
         OR (v.status IN ('review','active') AND (v.risk_hold = 1
           OR (v.pay_hold = 1 AND COALESCE(v.hold_kind, '') <> 'measure')))
         OR (v.status = 'active' AND EXISTS (SELECT 1 FROM disputes d WHERE d.deal_id = 'camp:' || v.camp_id
-          AND d.status = 'open' AND (d.payee_id IS NULL OR d.payee_id = v.blogger_id)))))
+          AND d.status = 'open' AND (d.payee_id IS NULL OR d.payee_id = v.blogger_id)))
+        OR (v.status = 'active' AND b.is_blocked = 1)))
       OR ($st = 'rejected' AND v.status = 'rejected')
       OR ($st = 'review' AND v.status = 'review')
       OR ($st = 'active' AND v.status = 'active')
@@ -1935,7 +2196,16 @@ function amountOk(x) {
    Без неё в этом списке человек мог заранее занять ключ своего будущего
    платежа: касса потом отвечала «эта операция уже проведена», и деньги
    не зачислялись вовсе. */
-const RESERVED_OP = /^\s*(sys:|bp-op-|yk:)/i;
+/* Приставка invoice: (16.10.2026) — так до этого дня назывался ключ
+   зачисления счёта из /admin ('invoice:' + номер). Номера идут подряд, и
+   кто угодно мог заранее занять сотни будущих ключей обычной заморозкой
+   на 1 ₽: оплаченный компанией счёт потом не зачислялся (409). Сейчас
+   счёт зачисляется ключом sysKey('invoice', id); старую приставку тоже
+   держим закрытой — по ней узнаются прежние зачисления. Других ключей,
+   которые сервер строит сам, без sys: нет (yk: — выше; комиссии
+   task-fee/payout-fee/topup-fee — строки журнала внутри той же операции,
+   а не отдельные ключи). */
+const RESERVED_OP = /^\s*(sys:|bp-op-|yk:|invoice:)/i;
 function userKey(raw) {
   const k = String(raw || '');
   return RESERVED_OP.test(k) ? '' : k;
@@ -2050,8 +2320,15 @@ function dealPayMoves(add, d, payeeId, sum, fee) {
   if (sum - cut > 0) add(payeeId, 'available', sum - cut, 'payout', d.id);   /* 1 ₽ при комиссии 1 ₽ — строки «+0» нет */
   if (cut > 0) add(0, 'available', cut, 'payout-fee', d.id);
   const done = (d.paid + sum) >= d.amount;
-  q.payDeal.run(sum, done ? 'released' : 'held', d.id);
-  if (done) q.updDeal.run('released', d.payee_id != null ? d.payee_id : payeeId, d.id);
+  /* Бюджет задания (camp:<id>) при исчерпании НЕ закрываем (аудит 16.10.2026):
+     остаток 0, но заморозка открыта — рекламодатель её пополнит
+     (/api/deals/topup), и недоплата роликам уйдёт сама (vidBudgetResume).
+     Раньше она становилась released навсегда: пополнить было нельзя, а
+     недоплата блогерам висела без выхода. Закрывают её только возврат
+     (refund) и решение арбитра (settle). Обычная сделка — как прежде. */
+  const keep = /^camp:/.test(String(d.id));
+  q.payDeal.run(sum, done && !keep ? 'released' : 'held', d.id);
+  if (done && !keep) q.updDeal.run('released', d.payee_id != null ? d.payee_id : payeeId, d.id);
   /* бюджет задания потрачен весь — сверх % от потраченного комиссии не держим
      (рубль-другой от округления вверх при запуске и пополнениях — назад) */
   if (done && Number(d.fee_pct) > 0) dealFeeBackAll(add, Object.assign({}, d, { paid: d.paid + sum }));
@@ -2427,8 +2704,63 @@ function clientIp(req) {
     const parts = String(req.headers['x-forwarded-for'] || '')
       .split(',').map((s) => s.trim()).filter(Boolean);
     if (parts.length) return parts[parts.length - 1];
+    /* Прокси, который X-Forwarded-For не пишет, обычно ставит X-Real-IP
+       (nginx: proxy_set_header X-Real-IP $remote_addr) — он его
+       перезаписывает, а не дописывает. */
+    const real = String(req.headers['x-real-ip'] || '').trim();
+    if (/^[0-9a-f:.]{2,45}$/i.test(real)) return real;
   }
   return String((req.socket && req.socket.remoteAddress) || '');
+}
+/* Ставить ли TRUST_PROXY (аудит 16.10.2026). Bothost сам снимает TLS и
+   проксирует на контейнер — тогда адрес сокета у всех людей один (адрес
+   прокси), и лимиты частоты, и замок владельца после 8 промахов ключом
+   срабатывают на весь сайт сразу. Значения панели читать нельзя (там
+   секреты), поэтому сервер сам один раз пишет в журнал, что видит: адрес
+   сокета и есть ли X-Forwarded-For / X-Real-IP. Две строки на запуск
+   максимум — первый запрос без заголовков прокси (проверка живости
+   хостинга) и первый с ними. То же — в /admin (overview.прокси). */
+const proxySeen = { plain: null, fwd: null };
+function proxyProbe(req) {
+  if (proxySeen.plain && proxySeen.fwd) return;
+  try {
+    const h = req.headers || {};
+    const xff = String(h['x-forwarded-for'] || '').trim().slice(0, 200);
+    const xri = String(h['x-real-ip'] || '').trim().slice(0, 64);
+    const fwd = !!(xff || xri);
+    const slot = fwd ? 'fwd' : 'plain';
+    if (proxySeen[slot]) return;
+    const sock = String((req.socket && req.socket.remoteAddress) || '');
+    proxySeen[slot] = { at: new Date().toISOString(), socket: sock, xff: !!xff, xri: !!xri, ip: clientIp(req) };
+    let verdict;
+    if (fwd && !TRUST_PROXY) verdict = 'прокси передаёт адрес человека, а TRUST_PROXY не включён: для лимитов частоты все люди — один адрес '
+      + sock + '. Поставьте TRUST_PROXY=1 в переменные хостинга.';
+    else if (fwd) verdict = 'TRUST_PROXY=1: адрес человека — ' + proxySeen[slot].ip
+      + (xff ? ' (последняя запись X-Forwarded-For)' : ' (X-Real-IP)') + '.';
+    else if (TRUST_PROXY) verdict = 'TRUST_PROXY=1, а заголовков прокси нет. Если так у ВСЕХ запросов — прокси адрес не передаёт:'
+      + ' снимите TRUST_PROXY, иначе адрес можно подделать своим X-Forwarded-For.';
+    else verdict = isLoopback(sock) ? 'запрос с этой же машины.' : 'заголовков прокси нет — адрес сокета и есть адрес человека.';
+    console.log('[BloggerPay] адрес клиента: сокет ' + (sock || '?')
+      + ', X-Forwarded-For: ' + (xff || 'нет') + ', X-Real-IP: ' + (xri || 'нет') + ' — ' + verdict);
+  } catch (e) { /* диагностика не обязана удаться */ }
+}
+/* Для ОТКРЫТЫХ ручек чтения («Главная» гостя: /api/tasks/public, /summary).
+   Без TRUST_PROXY за прокси хостинга все люди — один адрес, и лимит 60/мин
+   отвечал бы 429 всему сайту. Здесь подмешиваем последнюю запись
+   X-Forwarded-For: подделать её — значит лишь прочитать витрину чаще, а
+   для входа, денег и ключа владельца по-прежнему действует clientIp. */
+function softKey(req) {
+  if (TRUST_PROXY) return '';
+  const parts = String((req.headers && req.headers['x-forwarded-for']) || '').split(',').map((s) => s.trim()).filter(Boolean);
+  return parts.length ? '~' + parts[parts.length - 1].slice(0, 45) : '';
+}
+/* Совет для /admin: показываем только вывод, без адресов людей. */
+function proxyAdvice() {
+  const f = proxySeen.fwd, p = proxySeen.plain;
+  let совет = '';
+  if (f && !TRUST_PROXY) совет = 'Прокси хостинга передаёт адрес человека (X-Forwarded-For), а TRUST_PROXY не включён — лимиты частоты и замок ключа владельца общие на всех. Поставьте TRUST_PROXY=1.';
+  else if (!f && p && TRUST_PROXY && !isLoopback(p.socket)) совет = 'TRUST_PROXY=1, а прокси адрес человека не передаёт — адрес можно подделать заголовком. Снимите TRUST_PROXY.';
+  return { trust: TRUST_PROXY, заголовки_прокси: f ? true : (p ? false : null), совет };
 }
 /* Запрос пришёл с этой же машины. Нужно там, где внешний адрес сервера
    определить не удалось и приходится решать по адресу собеседника. */
@@ -2464,7 +2796,7 @@ function rateLimit(req, key, limit, windowMs) {
      где 127.0.0.1 действительно свой. За прокси (TRUST_PROXY=1) петля
      означает сам прокси, и поблажка выключила бы защиту для всех. */
   if (!TRUST_PROXY && (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1')) return true;
-  const k = key + '|' + ip;
+  const k = key + '|' + ipBucket(ip);
   const now = Date.now();
   let arr = rlMap.get(k);
   if (!arr) { arr = []; rlMap.set(k, arr); }
@@ -2474,6 +2806,74 @@ function rateLimit(req, key, limit, windowMs) {
   return true;
 }
 const tooOften = { status: 429, body: { error: 'Слишком часто — подождите минуту и попробуйте снова' } };
+/* Ключ лимита для IPv6 — сеть /64, а не адрес (аудит 16.10.2026): одному
+   абоненту провайдер выдаёт целую /64, это миллиарды адресов, и лимит «на
+   адрес» перебор не держал. IPv4 и ::ffff:a.b.c.d — как есть. */
+function ipBucket(ip) {
+  ip = String(ip || '');
+  const v4 = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(ip);
+  if (v4) return v4[1];
+  if (ip.indexOf(':') < 0) return ip;
+  const bare = ip.split('%')[0].toLowerCase();
+  const parts = bare.split('::');
+  const head = parts[0] ? parts[0].split(':') : [];
+  let all = head;
+  if (parts.length > 1) {
+    const tail = parts[1] ? parts[1].split(':') : [];
+    all = head.concat(new Array(Math.max(0, 8 - head.length - tail.length)).fill('0'), tail);
+  }
+  return all.slice(0, 4).map((x) => (parseInt(x, 16) || 0).toString(16)).join(':') + '::/64';
+}
+
+/* ── Перебор пароля к ОДНОЙ почте (аудит 16.10.2026) ──
+   Лимит /api/login считается по адресу, и с тысяч адресов (ботнет, IPv6)
+   одну почту можно было перебирать без конца. Теперь промахи считаются и
+   по почте: LOGIN_MISS_MAX за четверть часа — вход паролем для неё на
+   паузе LOGIN_PAUSE_MS и одна тревога владельцу. Пауза короткая и
+   проходит сама — навсегда никого не запереть; «Забыли пароль?»
+   (успешный сброс снимает паузу), вход Телеграмом и Google работают и во
+   время неё. Почты без аккаунта считаются так же: по ответу не понять,
+   есть ли аккаунт. */
+const LOGIN_MISS_MAX = 10;
+const LOGIN_MISS_WIN_MS = 15 * 60 * 1000;
+const LOGIN_PAUSE_MS = 15 * 60 * 1000;
+const loginMiss = new Map();   /* почта → { n, at, until } */
+function loginPausedFor(email) {
+  if (RL_OFF) return 0;
+  const m = loginMiss.get(email);
+  if (!m || !m.until) return 0;
+  const left = m.until - Date.now();
+  if (left > 0) return left;
+  loginMiss.delete(email);
+  return 0;
+}
+function loginMissed(email, u) {
+  if (RL_OFF || !email) return;
+  const now = Date.now();
+  let m = loginMiss.get(email);
+  if (!m || now - m.at > LOGIN_MISS_WIN_MS) m = { n: 0, at: now };
+  m.n += 1;
+  if (m.n >= LOGIN_MISS_MAX) {
+    m.until = now + LOGIN_PAUSE_MS;
+    m.n = 0; m.at = now;
+    if (u) {
+      tgAlert('loginbrute:' + u.id,
+        '🔐 Похоже на подбор пароля\n\nАккаунт: ' + String(email).slice(0, 120) + ' (#' + u.id + ')'
+        + '\nНеверных паролей: ' + LOGIN_MISS_MAX + ' за 15 минут.'
+        + '\nВход паролем для этой почты — на паузе 15 минут.', 'server');
+    }
+  }
+  loginMiss.delete(email); loginMiss.set(email, m);         /* свежие — в конец */
+  if (loginMiss.size > 20000) loginMiss.delete(loginMiss.keys().next().value);
+}
+function loginPausedReply(ms) {
+  const min = Math.max(1, Math.ceil(ms / 60000));
+  return { status: 429, body: {
+    error: 'Слишком много неверных паролей для этой почты. Вход паролем — на паузе ' + min + ' мин. '
+      + 'Не помните пароль — нажмите «Забыли пароль?»: код придёт на почту.',
+    code: 'login_paused', wait: Math.ceil(ms / 1000),
+  } };
+}
 /* ── Что из карточки блогера попадает в общий каталог ──
    Белый список, а не чёрный: клиент кладёт в карточку и служебное
    (почту владельца, местный id, отметку админа), и всё это уехало бы
@@ -2814,8 +3214,142 @@ function glogSweep() {
   const now = Date.now();
   for (const [k, v] of glog) if (now - v.at > GLOG_TTL) glog.delete(k);
   for (const [k, v] of tglog) if (now - v.at > GLOG_TTL) tglog.delete(k);
+  tgUsedSweep();
 }
 setInterval(glogSweep, 60000).unref();
+
+/* ── ВХОД ПРИВЯЗАН К БРАУЗЕРУ, КОТОРЫЙ ЕГО НАЧАЛ (аудит 16.10) ──
+   Было: метка (nonce) уходит наружу — это state у Google и return_to у
+   Телеграма, — а pending отдавал готовую сессию любому, кто её знает.
+   Злоумышленник брал start, присылал жертве НАСТОЯЩУЮ ссылку Google или
+   Телеграма, жертва входила — и её сессию забирал он. С ?link=1 так же
+   чужой Телеграм прирастал к его аккаунту. Теперь:
+   1) start выдаёт ещё и секрет pk. В ссылку он не попадает, сервер помнит
+      только sha256(pk); pending, claim и link-confirm без него отвечают
+      «не найдено» — утёкшая метка сама по себе бесполезна.
+   2) Тот же pk start кладёт в куку bpal_<метка> (HttpOnly, SameSite=Lax,
+      путь /api/auth/). Возврат от площадки с этой кукой — тот же браузер
+      (bound): приложение забирает вход само, как раньше. Без куки (вход
+      закончили в другом браузере — или это ссылка злоумышленника) вход
+      выдаётся только по 6-значному коду, который показан ОДИН раз — на
+      странице этого возврата: его видит лишь тот, кто сам входил.
+   3) Сессия заводится в момент выдачи, а не на возврате: брошенный или
+      чужой вход не оставляет в базе живой сессии. */
+function loginKeyHash(pk) { return crypto.createHash('sha256').update(String(pk || '')).digest('hex'); }
+function loginKeyOk(rec, pk) {
+  const s = String(pk || '');
+  if (!rec || !rec.pkh || !/^[0-9a-f]{32,64}$/.test(s)) return false;
+  const a = Buffer.from(loginKeyHash(s), 'utf8');
+  const b = Buffer.from(String(rec.pkh), 'utf8');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+function loginCookieName(nonce) { return 'bpal_' + String(nonce || '').slice(0, 16); }
+function loginCookie(req, nonce, pk) {
+  const https = /^https:/i.test(PUBLIC_URL)
+    || /^https:/i.test(String(ENV.PUBLIC_URL || ''))
+    || String(req.headers['x-forwarded-proto'] || '') === 'https';
+  return loginCookieName(nonce) + '=' + (pk || '') + '; Path=/api/auth/; HttpOnly; SameSite=Lax; Max-Age='
+    + (pk ? Math.floor(GLOG_TTL / 1000) : 0) + (https ? '; Secure' : '');
+}
+function loginNew(map, extra) {
+  const nonce = crypto.randomBytes(24).toString('hex');
+  const pk = crypto.randomBytes(24).toString('hex');
+  map.set(nonce, Object.assign({
+    at: Date.now(), code: '', token: '', user: null, uid: 0, done: false, bound: false,
+    tries: 0, pkh: loginKeyHash(pk),
+  }, extra || {}));
+  return { nonce, pk };
+}
+function loginSameBrowser(req, rec, nonce) {
+  let c = '';
+  try { c = cookieOf(req, loginCookieName(nonce)); } catch (e) { c = ''; }
+  return loginKeyOk(rec, c);
+}
+/* Возврат от площадки: человек найден/заведён. Тот же браузер — будим
+   ждущую вкладку, как раньше; другой — показываем код (один раз). */
+function loginDone(req, res, kind, map, state, rec, u) {
+  /* Два возврата с одной меткой (обмен кода у Google асинхронный) —
+     второй не перезаписывает первый. */
+  if (rec.done) {
+    return verifyPage(res, 'Вход уже подтверждён',
+      'Вернитесь в приложение. Если оно вас не впустило, начните вход заново.', false);
+  }
+  rec.done = true;
+  rec.uid = u ? u.id : 0;
+  rec.user = u ? { id: u.id, email: u.email, name: u.name, role: u.role } : null;
+  rec.code = String(crypto.randomInt(100000, 1000000));
+  rec.bound = loginSameBrowser(req, rec, state);
+  map.set(state, rec);
+  if (rec.bound) {
+    return authRelayPage(res, kind, state,
+      APP_BASE + '?' + (kind === 'g' ? 'glogin' : 'tglogin') + '=' + encodeURIComponent(state));
+  }
+  return verifyPage(res, rec.linkUser ? 'Телеграм подтверждён' : 'Вход подтверждён',
+    (rec.linkUser
+      ? 'Привязку начинали в другом браузере. Вернитесь в BloggerPay, где нажимали «Привязать», и введите там этот код.'
+      : 'Вход начинали в другом браузере или приложении. Вернитесь туда и введите этот код.')
+    + ' Никому его не сообщайте — даже поддержке BloggerPay.', true, rec.code);
+}
+function loginIssue(rec) {
+  if (rec.token) return rec.token;
+  const u = rec.uid ? q.userById.get(rec.uid) : null;
+  if (!u || u.is_blocked) return '';
+  const token = newToken();
+  q.insSession.run(token, u.id, new Date(Date.now() + SESSION_DAYS * 864e5).toISOString());
+  rec.token = token;
+  return token;
+}
+const LOGIN_LOST = { status: 404, body: { error: 'Вход не найден или просрочен' } };
+function loginPending(map, nonce, pk) {
+  nonce = String(nonce || '').slice(0, 64);
+  const rec = map.get(nonce);
+  if (!rec || !loginKeyOk(rec, pk)) return LOGIN_LOST;
+  if (Date.now() - rec.at > GLOG_TTL) { map.delete(nonce); return LOGIN_LOST; }
+  if (!rec.done) return { status: 200, body: { state: 'waiting' } };
+  /* Возврат пришёл без куки этого браузера: только код со страницы возврата. */
+  if (!rec.bound) return { status: 200, body: { state: 'code' } };
+  /* Привязку делает link-confirm от того же аккаунта, не опрос. */
+  if (rec.linkUser) return { status: 200, body: { state: 'ok', link: true } };
+  /* Отдаём и помечаем выданной, но не стираем сразу — см. AUTH_GRACE. */
+  if (!rec.taken) rec.taken = Date.now();
+  else if (Date.now() - rec.taken > AUTH_GRACE) { map.delete(nonce); return LOGIN_LOST; }
+  const token = loginIssue(rec);
+  if (!token) { map.delete(nonce); return { status: 403, body: { error: 'Аккаунт заблокирован — напишите в поддержку' } }; }
+  return { status: 200, body: { state: 'ok', token, user: rec.user } };
+}
+/* Код со страницы возврата. Сверяем ТОЛЬКО со своей меткой и только с
+   секретом начавшего: подобрать шесть цифр вслепую нельзя, пять ошибок
+   сжигают метку. */
+function loginCodeCheck(map, nonce, rec, code) {
+  if (Date.now() - rec.at > GLOG_TTL) {
+    map.delete(nonce);
+    return { status: 410, body: { error: 'Ссылка входа живёт 15 минут — начните заново' } };
+  }
+  if (rec.tries >= 5) {
+    map.delete(nonce);
+    return { status: 429, body: { error: 'Слишком много попыток — начните вход заново' } };
+  }
+  if (code.length !== 6) return { status: 400, body: { error: 'Код — шесть цифр' } };
+  if (!rec.done || code !== rec.code) {
+    rec.tries++;
+    return { status: 400, body: { error: 'Код не подошёл', left: Math.max(0, 5 - rec.tries) } };
+  }
+  return null;
+}
+function loginClaim(map, body) {
+  const nonce = String(body.nonce || '').slice(0, 64);
+  const code = String(body.code || '').replace(/\D/g, '');
+  const rec = map.get(nonce);
+  if (!rec || rec.linkUser || !loginKeyOk(rec, body.pk)) {
+    return { status: 404, body: { error: 'Вход не найден — начните заново' } };
+  }
+  const bad = loginCodeCheck(map, nonce, rec, code);
+  if (bad) return bad;
+  map.delete(nonce);
+  const token = loginIssue(rec);
+  if (!token) return { status: 403, body: { error: 'Аккаунт заблокирован — напишите в поддержку' } };
+  return { status: 200, body: { token, user: rec.user } };
+}
 
 const vfy = new Map();            /* nonce → {userId, platform, at, channel, code, tries} */
 const VFY_TTL = 15 * 60 * 1000;
@@ -2852,12 +3386,17 @@ setInterval(sweepSessions, 3600000).unref();
        человека нельзя);
      · пять кодов в час на адрес (потолок перебора — 25 догадок в час
        против миллиона вариантов);
-     · пятьдесят неверных попыток в сутки на адрес — дальше час паузы
-       и тревога владельцу. Это тот самый случай, когда счётчик суточный:
-       он ловит долгий тихий перебор, который часовые потолки пропускают.
+     · пятьдесят неверных попыток в сутки на адрес — дальше новые коды
+       не выдаются до конца суточного окна, и тревога владельцу. Это тот
+       самый случай, когда счётчик суточный: он ловит долгий тихий
+       перебор, который часовые потолки пропускают. (Аудит 16.10.2026:
+       раньше после 50-й ошибки ставился лишь час паузы, а дальше счёт
+       шёл 51, 52… без новой паузы — около 575 догадок в сутки вместо 50.
+       Вход паролем, Телеграмом и Google при этом работает как прежде.)
 
    Ни один обруч не запирает человека навсегда: худшее, что может сделать
-   чужой, — заставить подождать час. */
+   чужой, — оставить его без кода восстановления до конца суток (вход
+   паролем, Телеграмом и Google это не трогает). */
 const PW_SECRET = crypto.randomBytes(32);
 const PW_TTL_MS = 10 * 60 * 1000;
 const PW_RESEND_MS = 60 * 1000;
@@ -2930,6 +3469,8 @@ function pwIssue(email) {
   const now = Date.now();
   const rec = pwRec(email);
   if (rec.pauseUntil && now < rec.pauseUntil) return { error: 'paused' };
+  /* суточный потолок: pwRec уже прокрутил окно, если сутки прошли */
+  if ((rec.dayFails || 0) >= PW_MAX_FAILS_DAY) return { error: 'paused' };
   if (rec.hourN >= PW_MAX_PER_HOUR) return { error: 'too_many' };
   if (rec.sentAt && now - rec.sentAt < PW_RESEND_MS) {
     return { error: 'cooldown', wait: Math.ceil((PW_RESEND_MS - (now - rec.sentAt)) / 1000) };
@@ -2965,6 +3506,8 @@ function pwCommit(email, code, token) {
 function pwVerify(email, code, consume) {
   const rec = pwCodes.get(email);
   const now = Date.now();
+  /* суточный потолок перебора исчерпан — до конца окна ни одна проверка */
+  if (rec) { pwRec(email); if ((rec.dayFails || 0) >= PW_MAX_FAILS_DAY) return { ok: false, reason: 'locked' }; }
   if (!rec || !rec.hash || now > rec.expires) return { ok: false, reason: 'expired' };
   if (rec.attempts >= PW_MAX_ATTEMPTS) return { ok: false, reason: 'locked' };
   const good = crypto.timingSafeEqual(
@@ -2973,12 +3516,17 @@ function pwVerify(email, code, consume) {
     rec.attempts += 1;
     pwRec(email);                      /* прокрутит суточное окно, если пора */
     rec.dayFails = (rec.dayFails || 0) + 1;
-    if (rec.dayFails === PW_MAX_FAILS_DAY) {
-      rec.pauseUntil = now + PW_ABUSE_PAUSE_MS;
-      tgAlert('pwbrute:' + email,
-        '🔐 Похоже на перебор кода восстановления\n\nАдрес: ' + email
-        + '\nНеверных попыток за сутки: ' + rec.dayFails
-        + '\nНовые коды на этот адрес — через час.', 'server');
+    if (rec.dayFails >= PW_MAX_FAILS_DAY) {
+      /* дальше — ни новых кодов (pwIssue), ни проверок (выше) до конца
+         суточного окна; час паузы — на случай, если окно вот-вот кончится */
+      rec.pauseUntil = Math.max(rec.pauseUntil || 0, now + PW_ABUSE_PAUSE_MS);
+      if (rec.dayFails === PW_MAX_FAILS_DAY) {
+        tgAlert('pwbrute:' + email,
+          '🔐 Похоже на перебор кода восстановления\n\nАдрес: ' + email
+          + '\nНеверных попыток за сутки: ' + rec.dayFails
+          + '\nНовые коды на этот адрес — не раньше чем через сутки от первой попытки.'
+          + '\nВойти паролем, Телеграмом или Google человек по-прежнему может.', 'server');
+      }
     }
     return { ok: false, reason: 'wrong', left: Math.max(0, PW_MAX_ATTEMPTS - rec.attempts) };
   }
@@ -3271,7 +3819,7 @@ const routes = {
       body = Object.assign({}, body); delete body.to;
     }
     if (body.data == null || typeof body.data !== 'object') return { status: 400, body: { error: 'Нет содержимого' } };
-    const data = JSON.stringify(body.data);
+    let data = JSON.stringify(body.data);
     if (data.length > 400 * 1024) return { status: 413, body: { error: 'Запись слишком большая' } };
     const ex = q.syncGet.get(kind, rid);
     let a = u.id, b = null, created = null;
@@ -3289,6 +3837,50 @@ const routes = {
       if (!Number.isInteger(to) || to === u.id || !q.userById.get(to)) return { status: 400, body: { error: 'Адресат не найден' } };
       b = to;
     }
+    /* ЗАДАНИЯ (аудит 16.10.2026): не больше SYNC_CAMP_LIVE «в работе» и
+       SYNC_CAMP_ALL всего у одного автора. Пауза, «завершено» и правка
+       уже запущенного проходят всегда. */
+    if (kind === 'camp' && a === u.id) {
+      if (!ex && (Number((q.campCountAll.get(u.id) || {}).n) || 0) >= SYNC_CAMP_ALL) {
+        return { status: 409, body: { error: 'Заданий в аккаунте больше ' + SYNC_CAMP_ALL + ' — напишите в поддержку', code: 'camp_limit' } };
+      }
+      if (campLiveStatus(body.data.status)) {
+        let was = false;
+        if (ex) { try { was = campLiveStatus((JSON.parse(ex.data) || {}).status); } catch (e) { was = false; } }
+        if (!was && campLiveCount(u.id, rid) >= SYNC_CAMP_LIVE) return { status: 409, body: campLimitBody };
+      }
+    }
+    /* ЛИЧНОЕ СООБЩЕНИЕ (аудит 16.10.2026): имя отправителя — из его
+       аккаунта, а не из письма. Раньше получатель видел то имя, что
+       написал отправитель («BloggerPay Поддержка», имя другого человека),
+       и чат с ним так и заводился. Роль «рекламодатель» — только у того,
+       кто им зарегистрирован или ведёт задания (роль в приложении
+       переключается, поэтому «блогер» принимаем от любого). */
+    if (kind === 'dm' && a === u.id && b != null) {
+      if (!ex && !dmTied(u.id, b) && !dmNewAllowed(u.id)) {
+        return { status: 429, body: { error: 'Сегодня вы начали слишком много новых диалогов — сообщение уйдёт позже', code: 'dm_new_limit' } };
+      }
+      const d = Object.assign({}, body.data);
+      d.n = String(u.name || '').trim().slice(0, 60);
+      const advLike = u.role === 'advertiser' || !!q.syncHasCamp.get(u.id);
+      d.r = d.r === 'adv' ? (advLike ? 'adv' : 'blogger') : (d.r === 'blogger' || !advLike ? 'blogger' : 'adv');
+      data = JSON.stringify(d);
+      if (data.length > 400 * 1024) return { status: 413, body: { error: 'Запись слишком большая' } };
+    }
+    /* ЗАНЯТОЕ ЧЕЛОВЕКОМ: записи и их объём по последнему писавшему.
+       Переписать своё тем же или меньшим можно и сверх предела. */
+    const bytes = Buffer.byteLength(data);
+    const own = !!(ex && ex.from_id === u.id);
+    const oldBytes = ex ? Buffer.byteLength(ex.data) : 0;
+    const use = syncUseOf(u.id);
+    if (!own && use.n + 1 > SYNC_USER_ROWS) {
+      return { status: 409, body: { error: 'В аккаунте слишком много записей — напишите в поддержку', code: 'sync_limit' } };
+    }
+    const grow = bytes - (own ? oldBytes : 0);
+    if (grow > 0 && use.b + grow > SYNC_USER_BYTES) {
+      return { status: 413, body: { error: 'Место для переписки и записей аккаунта закончилось ('
+        + Math.round(SYNC_USER_BYTES / 1048576) + ' МБ) — напишите в поддержку', code: 'sync_limit' } };
+    }
     let ver = 0;
     db.exec('BEGIN IMMEDIATE');
     try {
@@ -3300,6 +3892,8 @@ const routes = {
       try { db.exec('ROLLBACK'); } catch (_) {}
       throw e;
     }
+    syncUseAdd(u.id, own ? 0 : 1, grow);
+    if (ex && !own) syncUseAdd(ex.from_id, -1, -oldBytes);
     /* задание включили, поставили на паузу или завели — сводка «Главной» устарела */
     if (kind === 'camp') tsumCache.at = 0;
     return { status: 200, body: { ok: true, ver, a, b } };
@@ -3314,7 +3908,7 @@ const routes = {
      внутренних полей, ни черновиков — они сюда не попадают, потому что
      черновики вообще не уезжают на сервер. */
   'GET /api/tasks/public': async (req) => {
-    if (!rateLimit(req, 'tasks:pub', 60, 60000)) return tooOften;
+    if (!rateLimit(req, 'tasks:pub' + softKey(req), 60, 60000)) return tooOften;
     const rows = q.publicCamps.all(60);
     const out = [];
     for (const r of rows) {
@@ -3370,7 +3964,7 @@ const routes = {
      Кэш общий на 60 секунд (tsumCache). Ключи — Object.create(null):
      номер задания пишет клиент, и «__proto__» иначе ушёл бы в прототип. */
   'GET /api/tasks/summary': async (req) => {
-    if (!rateLimit(req, 'tsum', 120, 60000)) return tooOften;
+    if (!rateLimit(req, 'tsum' + softKey(req), 120, 60000)) return tooOften;
     const now = Date.now();
     if (!tsumCache.body || now - tsumCache.at >= 60000) {
       const camps = Object.create(null);
@@ -3572,15 +4166,18 @@ const routes = {
     const name = String(body.name || '').trim().slice(0, 120);
     const role = body.role === 'advertiser' ? 'advertiser' : 'blogger';
     const pass = String(body.password || '');
+    if (email.length > EMAIL_MAX) return { status: 400, body: { error: 'Слишком длинный адрес почты' } };
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { status: 400, body: { error: 'Некорректный email' } };
     /* Служебный домен входа по Телеграму. Живых ящиков там нет, а занятый
        заранее адрес позволял перехватить чужой аккаунт при первом входе
-       из мини-аппа. Регистрация на него закрыта. */
-    if (/@telegram\.local$/i.test(email)) {
-      return { status: 400, body: { error: 'Этот адрес занят служебным входом по Телеграму' } };
+       из мини-аппа. Регистрация на него закрыта (и на google.local — тоже
+       служебный, для входа через Google без почты). */
+    if (isServiceEmail(email)) {
+      return { status: 400, body: { error: /@google\.local$/i.test(email) ? 'Этот адрес занят служебным входом через Google' : 'Этот адрес занят служебным входом по Телеграму' } };
     }
     if (!name) return { status: 400, body: { error: 'Введите имя' } };
     if (pass.length < 8) return { status: 400, body: { error: 'Пароль — минимум 8 символов' } };
+    if (pass.length > PASS_MAX) return { status: 400, body: { error: 'Слишком длинный пароль — не больше ' + PASS_MAX + ' символов' } };
     /* АДРЕС ВЛАДЕЛЬЦА ЗАНИМАЕТ ТОЛЬКО ВЛАДЕЛЕЦ.
        Аккаунт с почтой из ADMIN_EMAIL получает права на всю площадку
        (syncAdminFlag). Адрес этот не секрет — он стоит в политике и в
@@ -3608,13 +4205,23 @@ const routes = {
   'POST /api/login': async (req, body) => {
     if (!rateLimit(req, 'login', 20, 60000)) return tooOften;
     const email = String(body.email || '').trim().toLowerCase();
-    const u = q.userByEmail.get(email);
     /* Одинаковый ответ для «нет такого» и «пароль не тот» — чтобы по
        ответам нельзя было перебирать, кто зарегистрирован. */
     const bad = { status: 401, body: { error: 'Неверный email или пароль' } };
-    if (!u) { scrypt('заглушка-для-ровного-времени', 'соль'); return bad; }
+    if (email.length > EMAIL_MAX) { scrypt('заглушка-для-ровного-времени', 'соль'); return bad; }
+    /* пауза после череды промахов по этой почте — до сверки пароля, иначе
+       перебор шёл бы дальше (аудит 16.10.2026, loginMissed) */
+    const paused = loginPausedFor(email);
+    if (paused) return loginPausedReply(paused);
+    const u = q.userByEmail.get(email);
+    if (!u) { scrypt('заглушка-для-ровного-времени', 'соль'); loginMissed(email, null); return bad; }
     const hash = scrypt(String(body.password || ''), u.pass_salt);
-    if (!crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(u.pass_hash))) return bad;
+    const stored = String(u.pass_hash || '');
+    if (hash.length !== stored.length || !crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(stored))) {
+      loginMissed(email, u);
+      return bad;
+    }
+    loginMiss.delete(email);
     if (u.is_blocked) return { status: 403, body: { error: 'Аккаунт заблокирован' } };
     syncAdminFlag(u);
     const token = newToken();
@@ -3629,7 +4236,7 @@ const routes = {
   'POST /api/password/forgot': async (req, body) => {
     if (!rateLimit(req, 'pwf', 5, 60000)) return tooOften;
     const email = String(body.email || '').trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { status: 400, body: { error: 'Некорректный email' } };
+    if (email.length > EMAIL_MAX || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { status: 400, body: { error: 'Некорректный email' } };
 
     /* Ответ ОДИН И ТОТ ЖЕ во всех случаях: есть аккаунт или нет, ушло
        письмо или нет, сработал лимит или нет. Иначе страница входа
@@ -3729,6 +4336,7 @@ const routes = {
     const code = String(body.code || '').replace(/\D/g, '');
     const pass = String(body.password || '');
     if (pass.length < 8) return { status: 400, body: { error: 'Пароль — минимум 8 символов' } };
+    if (pass.length > PASS_MAX) return { status: 400, body: { error: 'Слишком длинный пароль — не больше ' + PASS_MAX + ' символов' } };
     /* Сначала проверяем код НЕ тратя его, потом пишем в базу одной
        транзакцией, и только после успешной записи гасим код. Иначе
        падение на середине (например, база только для чтения) оставляло
@@ -3757,6 +4365,7 @@ const routes = {
       throw e;                                  /* наверх: 500 и тревога */
     }
     pwVerify(email, code, true);                /* код потрачен — пароль уже сменён */
+    loginMiss.delete(email);                    /* пауза входа паролем снята: человек доказал почту */
     return { status: 200, body: { ok: true, token, user: { id: u.id, email: u.email, name: u.name, role: u.role } } };
   },
 
@@ -3777,13 +4386,16 @@ const routes = {
   'GET /api/account/methods': async (req) => {
     const u = auth(req);
     if (!u) return { status: 401, body: { error: 'Нужен вход' } };
-    const temp = /@telegram\.local$/i.test(String(u.email || ''));
+    const temp = isServiceEmail(u.email);
     return {
       status: 200,
       body: {
         /* Служебная почта — не почта: войти по ней нельзя, пароля нет. */
         email: temp ? '' : String(u.email || ''),
         needsEmail: temp,
+        /* свой пароль есть? нет (вход был Google/Телеграмом) — «Настройки»
+           предложат «Задать пароль» без «текущего» */
+        hasPassword: hasOwnPass(u),
         telegram: !!u.tg_id,
         google: !!u.google_sub,
         canTelegram: !!(BOT_TOKEN && TG_BOT_ID),
@@ -3815,16 +4427,20 @@ const routes = {
     const u = auth(req);
     if (!u) return { status: 401, body: { error: 'Нужен вход' } };
     if (!rateLimit(req, 'accmail', 10, 60000)) return tooOften;
-    if (!/@telegram\.local$/i.test(String(u.email || ''))) {
+    /* служебная почта — и Телеграма, и Google без почты: без настоящей
+       не дойдёт код вывода (need_email в /api/withdraw, 16.10.2026) */
+    if (!isServiceEmail(u.email)) {
       return { status: 400, body: { error: 'У аккаунта уже есть почта' } };
     }
     const email = String(body.email || '').trim().toLowerCase();
     const pass = String(body.password || '');
+    if (email.length > EMAIL_MAX) return { status: 400, body: { error: 'Слишком длинный адрес почты' } };
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { status: 400, body: { error: 'Некорректный email' } };
-    if (/@telegram\.local$/i.test(email)) {
-      return { status: 400, body: { error: 'Этот адрес занят служебным входом по Телеграму' } };
+    if (isServiceEmail(email)) {
+      return { status: 400, body: { error: 'Это служебный адрес — укажите свою настоящую почту' } };
     }
     if (pass.length < 8) return { status: 400, body: { error: 'Пароль — минимум 8 символов' } };
+    if (pass.length > PASS_MAX) return { status: 400, body: { error: 'Слишком длинный пароль — не больше ' + PASS_MAX + ' символов' } };
     /* АДРЕС ВЛАДЕЛЬЦА ЗАНИМАЕТ ТОЛЬКО ВЛАДЕЛЕЦ.
        Аккаунт с почтой из ADMIN_EMAIL получает права на всю площадку
        (syncAdminFlag). Адрес этот не секрет — он стоит в политике и в
@@ -3863,9 +4479,10 @@ const routes = {
       return { status: 503, body: { error: 'Вход через Google ещё не настроен: на сервере нет ключей Google' } };
     }
     glogSweep();
-    const nonce = crypto.randomBytes(24).toString('hex');
     const role = url.searchParams.get('role') === 'advertiser' ? 'advertiser' : 'blogger';
-    glog.set(nonce, { at: Date.now(), code: '', token: '', user: null, done: false, tries: 0, role });
+    /* pk — секрет выдачи: только приложению и в куку этого браузера (см.
+       «ВХОД ПРИВЯЗАН К БРАУЗЕРУ»). В ссылку Google идёт лишь метка. */
+    const { nonce, pk } = loginNew(glog, { role });
     const q1 = new URLSearchParams({
       response_type: 'code',
       client_id: cfg.id,
@@ -3877,23 +4494,21 @@ const routes = {
       /* пусть человек сам выберет, каким аккаунтом входит */
       prompt: 'select_account',
     });
-    return { status: 200, body: { url: 'https://accounts.google.com/o/oauth2/v2/auth?' + q1.toString(), nonce } };
+    return { status: 200, body: { url: 'https://accounts.google.com/o/oauth2/v2/auth?' + q1.toString(), nonce, pk },
+      headers: { 'Set-Cookie': loginCookie(req, nonce, pk) } };
   },
 
-  /* Приложение спрашивает: вход уже случился? Возвращаем сессию один раз. */
+  /* Приложение спрашивает: вход уже случился? Сессию отдаём только тому,
+     кто знает секрет pk (начавшему вход), и только если возврат от Google
+     пришёл в ТОТ ЖЕ браузер; иначе — state 'code'. Приложение шлёт POST
+     (секрет в теле, не в адресе); GET с ?pk= оставлен для совместимости. */
+  'POST /api/auth/google/pending': async (req, body) => {
+    if (!rateLimit(req, 'glogpend', 120, 60000)) return tooOften;
+    return loginPending(glog, body.nonce, body.pk);
+  },
   'GET /api/auth/google/pending': async (req, body, url) => {
     if (!rateLimit(req, 'glogpend', 120, 60000)) return tooOften;
-    const nonce = String(url.searchParams.get('nonce') || '');
-    const rec = glog.get(nonce);
-    if (!rec) return { status: 404, body: { error: 'Вход не найден или просрочен' } };
-    if (!rec.done) return { status: 200, body: { state: 'waiting' } };
-    /* Отдаём и помечаем выданной, но не стираем сразу — см. AUTH_GRACE. */
-    if (!rec.taken) { rec.taken = Date.now(); glog.set(nonce, rec); }
-    else if (Date.now() - rec.taken > AUTH_GRACE) {
-      glog.delete(nonce);
-      return { status: 404, body: { error: 'Вход не найден или просрочен' } };
-    }
-    return { status: 200, body: { state: 'ok', token: rec.token, user: rec.user } };
+    return loginPending(glog, url.searchParams.get('nonce'), url.searchParams.get('pk'));
   },
 
   /* Возврат из другого браузера: человек видит код на странице возврата
@@ -3906,25 +4521,7 @@ const routes = {
      сжигают — тот же порядок, что и в подтверждении канала. */
   'POST /api/auth/google/claim': async (req, body) => {
     if (!rateLimit(req, 'glogclaim', 30, 60000)) return tooOften;
-    const nonce = String(body.nonce || '').slice(0, 64);
-    const code = String(body.code || '').replace(/\D/g, '');
-    const rec = glog.get(nonce);
-    if (!rec) return { status: 404, body: { error: 'Вход не найден — начните заново' } };
-    if (Date.now() - rec.at > GLOG_TTL) {
-      glog.delete(nonce);
-      return { status: 410, body: { error: 'Ссылка входа живёт 15 минут — начните заново' } };
-    }
-    if (rec.tries >= 5) {
-      glog.delete(nonce);
-      return { status: 429, body: { error: 'Слишком много попыток — начните вход заново' } };
-    }
-    if (code.length !== 6) return { status: 400, body: { error: 'Код — шесть цифр' } };
-    if (!rec.done || code !== rec.code) {
-      rec.tries++;
-      return { status: 400, body: { error: 'Код не подошёл', left: Math.max(0, 5 - rec.tries) } };
-    }
-    glog.delete(nonce);
-    return { status: 200, body: { token: rec.token, user: rec.user } };
+    return loginClaim(glog, body);
   },
 
   /* ── Вход через Телеграм в браузере ──
@@ -3938,18 +4535,19 @@ const routes = {
       return { status: 503, body: { error: 'Вход через Телеграм ещё не настроен: на сервере нет токена бота' } };
     }
     glogSweep();
-    const nonce = crypto.randomBytes(24).toString('hex');
     const role = url.searchParams.get('role') === 'advertiser' ? 'advertiser' : 'blogger';
     /* Привязка, а не вход: человек уже внутри и добавляет Телеграм как
        второй способ попасть в ЭТОТ аккаунт. Метка помнит, к кому
-       привязывать; без входа привязывать не к кому. */
+       привязывать; без входа привязывать не к кому. Сама привязка — не на
+       возврате, а по POST /api/auth/telegram/link-confirm от этого же
+       аккаунта с секретом pk (и кодом, если возврат был в другом браузере). */
     let linkUser = null;
     if (url.searchParams.get('link') === '1') {
       const me = auth(req);
       if (!me) return { status: 401, body: { error: 'Нужен вход' } };
       linkUser = me.id;
     }
-    tglog.set(nonce, { at: Date.now(), code: '', token: '', user: null, done: false, tries: 0, role, linkUser });
+    const { nonce, pk } = loginNew(tglog, { role, linkUser });
     /* origin обязан совпадать с доменом, прописанным у бота в BotFather,
        иначе Телеграм откажет. return_to — куда вернуть человека. */
     const q1 = new URLSearchParams({
@@ -3959,50 +4557,62 @@ const routes = {
       request_access: 'write',
       return_to: OAUTH_BASE + '/api/auth/telegram/callback?n=' + nonce,
     });
-    return { status: 200, body: { url: TG_WIDGET_AUTH + '?' + q1.toString(), nonce } };
+    return { status: 200, body: { url: TG_WIDGET_AUTH + '?' + q1.toString(), nonce, pk },
+      headers: { 'Set-Cookie': loginCookie(req, nonce, pk) } };
   },
 
+  /* Как у Google: только с секретом pk и только при возврате в тот же
+     браузер. Привязка сессию не выдаёт — отвечает link:true, и приложение
+     подтверждает её через link-confirm. */
+  'POST /api/auth/telegram/pending': async (req, body) => {
+    if (!rateLimit(req, 'tglogpend', 120, 60000)) return tooOften;
+    return loginPending(tglog, body.nonce, body.pk);
+  },
   'GET /api/auth/telegram/pending': async (req, body, url) => {
     if (!rateLimit(req, 'tglogpend', 120, 60000)) return tooOften;
-    const nonce = String(url.searchParams.get('nonce') || '');
-    const rec = tglog.get(nonce);
-    if (!rec) return { status: 404, body: { error: 'Вход не найден или просрочен' } };
-    if (!rec.done) return { status: 200, body: { state: 'waiting' } };
-    /* Отдаём и помечаем выданной, но не стираем сразу — см. AUTH_GRACE. */
-    if (!rec.taken) { rec.taken = Date.now(); tglog.set(nonce, rec); }
-    else if (Date.now() - rec.taken > AUTH_GRACE) {
-      tglog.delete(nonce);
-      return { status: 404, body: { error: 'Вход не найден или просрочен' } };
-    }
-    /* Привязка сессию не выдаёт: человек уже вошёл, ему нужен только
-       ответ «получилось». */
-    if (rec.linkUser) return { status: 200, body: { state: 'ok', linked: true } };
-    return { status: 200, body: { state: 'ok', token: rec.token, user: rec.user } };
+    return loginPending(tglog, url.searchParams.get('nonce'), url.searchParams.get('pk'));
   },
 
   /* Возврат открылся в другом браузере: код со страницы возврата.
-     Как и у Google, код сверяется ТОЛЬКО со своей меткой. */
+     Как и у Google, код сверяется ТОЛЬКО со своей меткой и секретом. */
   'POST /api/auth/telegram/claim': async (req, body) => {
     if (!rateLimit(req, 'tglogclaim', 30, 60000)) return tooOften;
+    return loginClaim(tglog, body);
+  },
+
+  /* Привязка Телеграма — только отсюда: тот же аккаунт, что начинал
+     (Bearer), тот же секрет pk, и если Телеграм подтвердили в другом
+     браузере — код с той страницы. Раньше привязка делалась прямо на
+     возврате, и чужой Телеграм по присланной ссылке прирастал к аккаунту
+     злоумышленника (жертва потом входила из бота в ЕГО кабинет). */
+  'POST /api/auth/telegram/link-confirm': async (req, body) => {
+    if (!rateLimit(req, 'tglogclaim', 30, 60000)) return tooOften;
+    const me = auth(req);
+    if (!me) return { status: 401, body: { error: 'Нужен вход' } };
     const nonce = String(body.nonce || '').slice(0, 64);
-    const code = String(body.code || '').replace(/\D/g, '');
     const rec = tglog.get(nonce);
-    if (!rec) return { status: 404, body: { error: 'Вход не найден — начните заново' } };
+    if (!rec || !rec.linkUser || Number(rec.linkUser) !== Number(me.id) || !loginKeyOk(rec, body.pk)) {
+      return { status: 404, body: { error: 'Привязка не найдена — начните заново' } };
+    }
     if (Date.now() - rec.at > GLOG_TTL) {
       tglog.delete(nonce);
-      return { status: 410, body: { error: 'Ссылка входа живёт 15 минут — начните заново' } };
+      return { status: 410, body: { error: 'Ссылка привязки живёт 15 минут — начните заново' } };
     }
-    if (rec.tries >= 5) {
-      tglog.delete(nonce);
-      return { status: 429, body: { error: 'Слишком много попыток — начните вход заново' } };
-    }
-    if (code.length !== 6) return { status: 400, body: { error: 'Код — шесть цифр' } };
-    if (!rec.done || code !== rec.code) {
-      rec.tries++;
-      return { status: 400, body: { error: 'Код не подошёл', left: Math.max(0, 5 - rec.tries) } };
+    if (!rec.done || !rec.tg) return { status: 200, body: { state: 'waiting' } };
+    if (!rec.bound) {
+      const bad = loginCodeCheck(tglog, nonce, rec, String(body.code || '').replace(/\D/g, ''));
+      if (bad) { bad.body.needCode = true; return bad; }
     }
     tglog.delete(nonce);
-    return { status: 200, body: { token: rec.token, user: rec.user } };
+    const taken = q.userByTg.get(String(rec.tg.id));
+    if (taken && Number(taken.id) !== Number(me.id)) {
+      return { status: 409, body: { error: 'Этот Телеграм уже привязан к другому аккаунту BloggerPay' } };
+    }
+    if (!taken) {
+      try { q.linkTg.run(String(rec.tg.id), me.id); }
+      catch (e) { return { status: 409, body: { error: 'Не вышло привязать — попробуйте ещё раз через минуту' } }; }
+    }
+    return { status: 200, body: { state: 'ok', linked: true } };
   },
 
   'POST /api/auth/telegram': async (req, body) => {
@@ -4055,8 +4665,20 @@ const routes = {
     const u = auth(req);
     if (!u) return { status: 401, body: { error: 'Нужен вход' } };
     if (!rateLimit(req, 'pwchg:' + u.id, 10, 60000)) return tooOften;
-    if (/@telegram\.local$/i.test(String(u.email || ''))) {
+    if (isServiceEmail(u.email)) {
       return { status: 400, body: { error: 'У аккаунта ещё нет пароля — сначала задайте почту и пароль', code: 'no_password' } };
+    }
+    /* Своего пароля нет — вход был через Google или Телеграм, почта
+       настоящая (16.10.2026). «Текущий» спрашивать не у чего: пароль
+       ЗАДАЁТСЯ. Другие входы не гасим — менять в них нечего. */
+    if (!hasOwnPass(u)) {
+      const np = String(body.password || '');
+      if (np.length < 8) return { status: 400, body: { error: 'Пароль — минимум 8 символов' } };
+      if (np.length > PASS_MAX) return { status: 400, body: { error: 'Слишком длинный пароль — не больше ' + PASS_MAX + ' символов' } };
+      const salt0 = crypto.randomBytes(16).toString('hex');
+      q.updPass.run(salt0, scrypt(np, salt0), u.id);
+      pwChgMiss.delete(u.id);
+      return { status: 200, body: { ok: true, set: true, email: String(u.email || '') } };
     }
     const now = Date.now();
     const miss = pwChgMiss.get(u.id);
@@ -4065,7 +4687,7 @@ const routes = {
     }
     const old = String(body.old || ''), pass = String(body.password || '');
     if (pass.length < 8) return { status: 400, body: { error: 'Новый пароль — минимум 8 символов' } };
-    if (pass.length > 200) return { status: 400, body: { error: 'Слишком длинный пароль' } };
+    if (pass.length > PASS_MAX) return { status: 400, body: { error: 'Слишком длинный пароль' } };
     const hash = scrypt(old, u.pass_salt);
     if (!crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(u.pass_hash))) {
       const m = miss && now - miss.at < 15 * 60000 ? miss : { n: 0, at: now };
@@ -4176,6 +4798,8 @@ const routes = {
      можно выключить руками: TEST_TOPUP=0). На боевом сервере кнопки,
      рисующей деньги, быть не должно. */
   'POST /api/topup': async (req, body) => {
+    /* лимит частоты, как у настоящей кассы: печать денег циклом не нужна никому */
+    if (!rateLimit(req, 'topup', 20, 60000)) return tooOften;
     const u = auth(req);
     if (!u) return { status: 401, body: { error: 'Нужен вход' } };
     if (!TEST_TOPUP) {
@@ -4190,8 +4814,8 @@ const routes = {
     if (!userKey(body.opKey)) return badKey;
     const fee = pctOf(amount, TOPUP_FEE_PCT);
     return moneyOp(String(body.opKey || ''), u.id, 'topup', (add) => {
-      add(u.id, 'available', amount, 'topup', 'тестовое пополнение' + (fee > 0 ? ' · оплачено ' + (amount + fee) + ', комиссия ' + fee : ''));
-      if (fee > 0) add(0, 'available', fee, 'topup-fee', 'комиссия тестового пополнения');
+      add(u.id, 'available', amount, 'topup', TEST_TOPUP_REF + (fee > 0 ? ' · оплачено ' + (amount + fee) + ', комиссия ' + fee : ''));
+      if (fee > 0) add(0, 'available', fee, 'topup-fee', TEST_TOPUP_FEE_REF);
       return { ok: true, amount, fee, total: amount + fee, balance: q.balance.get(u.id) };
     });
   },
@@ -4278,6 +4902,8 @@ const routes = {
     return {
       status: 200,
       body: { mode: YK_ON ? 'yookassa' : (test ? 'test' : 'off'), min: 1000,
+        /* вывод закрыт, пока на боевом адресе пополнение тестовое (аудит 16.10.2026) */
+        withdrawOpen: !TEST_MONEY_PUBLIC,
         /* комиссии — приложению для честного «к оплате / на баланс» (14.10.2026) */
         topupFeePct: TOPUP_FEE_PCT, taskFeePct: TASK_FEE_PCT, payoutFeePct: PAYOUT_FEE_PCT, withdrawFeePct: FEE_PCT },
     };
@@ -4421,8 +5047,11 @@ const routes = {
        идёт на выплаты, комиссия списывается отдельной строкой. У обычной
        сделки комиссии нет. Ставки записываем в заморозку: дальше по ним
        считаются пополнения бюджета, выплаты блогерам и возврат остатка. */
+    /* предел заданий «в работе» (аудит 16.10.2026) — до заморозки денег:
+       иначе бюджет 51-го задания замёрз бы, а само задание никто не увидел */
+    if (asCamp && campLiveCount(u.id, asCamp[1]) >= SYNC_CAMP_LIVE) return { status: 409, body: campLimitBody };
     const fee = asCamp ? pctUp(amount, TASK_FEE_PCT) : 0;
-    return moneyOp(String(body.opKey || ''), u.id, 'hold', (add) => {
+    const held = moneyOp(String(body.opKey || ''), u.id, 'hold', (add) => {
       add(u.id, 'available', -amount, 'hold', dealId);
       add(u.id, 'hold', amount, 'hold', dealId);
       if (fee > 0) {
@@ -4433,6 +5062,11 @@ const routes = {
       if (asCamp) q.setDealFees.run(TASK_FEE_PCT, PAYOUT_FEE_PCT, fee, dealId);
       return { ok: true, dealId, payeeId, fee, feePct: asCamp ? TASK_FEE_PCT : 0, total: amount + fee, balance: q.balance.get(u.id) };
     });
+    /* Конверт задания мог лечь раньше заморозки — тогда чужая лента его
+       пропустила (без бюджета задание в неё не попадает). Новый ver — и
+       лента отдаст его всем при следующем опросе. */
+    if (asCamp && held && held.status === 200 && !(held.body && held.body.repeated)) syncBump('camp', asCamp[1]);
+    return held;
   },
 
   /* Выплата по сделке: hold плательщика → available исполнителя.
@@ -4450,6 +5084,11 @@ const routes = {
     const payee = q.userById.get(toUserId);
     if (!payee) return { status: 404, body: { error: 'Получатель не найден' } };
     if (payee.id === u.id) return { status: 400, body: { error: 'Нельзя выплатить самому себе' } };
+    /* Получатель заблокирован владельцем (аудит 16.10.2026): деньги ему не
+       уходят ни прибавками за видео (vidSettle), ни ручной выплатой. */
+    if (payee.is_blocked) {
+      return { status: 409, body: { error: 'Получатель заблокирован — выплата ему закрыта', code: 'payee_blocked' } };
+    }
     /* Получателя назвали при заморозке — значит деньги предназначались
        именно ему. Подмена получателя перед выплатой закрыта.
        У бюджета кампании получателя не называют: из него платят многим. */
@@ -4535,11 +5174,17 @@ const routes = {
     /* Тревогу шлём только по спорам, которые действительно держат деньги:
        иначе посторонний десятком «споров по себе» выжигает часовой лимит
        тревог, и настоящие сообщения до владельца не доходят. */
-    const holds = isPayer || (d.payee_id != null && d.payee_id === u.id) || !!q.paidTo.get(dealId, u.id);
+    const campD = /^camp:/.test(dealId);
+    const holds = isPayer || (d.payee_id != null && d.payee_id === u.id) || !!q.paidTo.get(dealId, u.id)
+      || (campD && Number((q.vidLiveOf.get(dealId.slice(5), u.id) || {}).n) > 0);
     if (holds) {
+      /* бюджет задания: спор одного блогера держит только его начисления,
+         возврат автору он не запирает (refundBlocked) */
       tgAlert('dispute:' + dealId + ':' + info.lastInsertRowid,
         '⚖️ Открыт спор по сделке ' + dealId + '\n\nОткрыл: ' + u.email
-        + (scope != null ? '\nИсполнитель id ' + scope : '') + '\n\nДеньги заморожены до решения.', 'server');
+        + (scope != null ? '\nИсполнитель id ' + scope : '')
+        + (campD && scope != null ? '\n\nНачисления этому блогеру по заданию стоят до решения.' : '\n\nДеньги заморожены до решения.')
+        + '\nСнять или решить: ' + PUBLIC_URL + '/admin → «Спорные деньги»', 'server');
     }
     return { status: 200, body: { ok: true, id: Number(info.lastInsertRowid) } };
   },
@@ -4565,7 +5210,13 @@ const routes = {
        (/api/deals/settle) снимает замок само. */
     if (asOperator) {
       const infoA = payeeId == null ? q.closeDisputesAll.run(dealId) : q.closeDisputesFor.run(dealId, payeeId);
-      return { status: 200, body: { ok: true, closed: Number(infoA.changes || 0) } };
+      const nA = Number(infoA.changes || 0);
+      if (nA) {
+        adminLog(req, 'dispute-close', 'сделка ' + dealId, payeeId == null ? 'все споры' : 'исполнитель id ' + payeeId);
+        /* начисления за видео, которые держал спор, пойдут со следующего круга */
+        if (/^camp:/.test(dealId)) vidBoardDrop(dealId.slice(5));
+      }
+      return { status: 200, body: { ok: true, closed: nA } };
     }
     const info = payeeId == null
       ? q.closeDisputesByOpener.run(dealId, u.id)
@@ -4637,12 +5288,16 @@ const routes = {
       const live = q.vidLive.all(cid).length;
       const free = vidReturnable(cid);
       if (sum > free) {
+        /* Текст — по правде (аудит 16.10.2026): «держат видео» — только когда
+           живые ролики есть; без них свободен весь остаток, и просили больше
+           него; бюджет исчерпан (заморозка открыта с нулём) — вернуть нечего. */
+        const noLeft = left <= 0;
         return { status: 409, body: {
-          error: free > 0
-            ? 'Свободно в бюджете задания ' + free + ' ₽ — остальное держат видео на проверке и в подсчёте просмотров'
-            : (live ? 'Весь остаток бюджета держат видео на проверке и в подсчёте просмотров — вернуть можно, когда подсчёт закончится'
-                    : 'Свободного остатка в бюджете задания нет'),
-          code: live ? (free > 0 ? 'videos_reserved' : 'videos_live') : 'no_free', free } };
+          error: noLeft ? 'В бюджете задания не осталось денег — возвращать нечего'
+            : !live ? 'В бюджете задания осталось ' + free + ' ₽ — больше вернуть нельзя'
+            : free > 0 ? 'Свободно в бюджете задания ' + free + ' ₽ — остальное держат видео на проверке и в подсчёте просмотров'
+            : 'Весь остаток бюджета держат видео на проверке и в подсчёте просмотров — вернуть можно, когда подсчёт закончится',
+          code: noLeft || !live ? 'no_free' : (free > 0 ? 'videos_reserved' : 'videos_live'), free } };
       }
       if (!userKey(body.opKey)) return badKey;
       const all = sum >= left && !live;
@@ -4661,15 +5316,17 @@ const routes = {
        это их будущие выплаты: вернув его себе, рекламодатель оставил бы
        блогера без денег за загруженную работу. Так же держится и
        «Завершить задание» — оно возвращает остаток этим же запросом.
-       Оператор может. */
+       Оператор может. Бюджет исчерпан (остаток 0, заморозка задания
+       открыта — см. dealPayMoves) — держать нечего: «уже всё выплачено»
+       раньше «видео в подсчёте», иначе «Завершить» не проходило бы. */
+    /* Возвращаем ОСТАТОК: часть могла уже уйти исполнителям. */
+    const rest = d.amount - d.paid;
+    if (rest <= 0) return { status: 409, body: { error: 'Из этой заморозки уже всё выплачено' } };
     if (!isAdmin(req) && dealId.startsWith('camp:') && q.vidLive.all(dealId.slice(5)).length) {
       return { status: 409, body: {
         error: 'По заданию есть видео на проверке или в подсчёте просмотров — вернуть бюджет можно, когда подсчёт закончится',
         code: 'videos_live' } };
     }
-    /* Возвращаем ОСТАТОК: часть могла уже уйти исполнителям. */
-    const rest = d.amount - d.paid;
-    if (rest <= 0) return { status: 409, body: { error: 'Из этой заморозки уже всё выплачено' } };
     if (!userKey(body.opKey)) return badKey;
     return moneyOp(String(body.opKey || ''), u.id, 'refund', (add) => {
       add(d.payer_id, 'hold', -rest, 'refund', dealId);
@@ -4702,10 +5359,14 @@ const routes = {
     const d = q.deal.get(dealId);
     if (!d) return { status: 404, body: { error: 'Бюджет задания ещё не заморожен — сначала запустите задание', code: 'no_deal' } };
     if (d.payer_id !== u.id) return { status: 403, body: { error: 'Это бюджет чужой кампании' } };
-    if (d.status !== 'held') return { status: 409, body: { error: 'Сделка уже закрыта: ' + d.status } };
+    /* Бюджет, закрытый исчерпанием до 16.10.2026 (released, выплачено всё,
+       денег в нём 0), пополнение открывает снова — как и открытый с нулём. */
+    const reopen = d.status === 'released' && d.paid >= d.amount;
+    if (d.status !== 'held' && !reopen) return { status: 409, body: { error: 'Сделка уже закрыта: ' + d.status } };
     if (!userKey(body.opKey)) return badKey;
     const fee = pctUp(amount, d.fee_pct || 0);
-    return moneyOp(String(body.opKey || ''), u.id, 'hold', (add) => {
+    const r = moneyOp(String(body.opKey || ''), u.id, 'hold', (add) => {
+      if (reopen && !q.reopenCampDeal.run(dealId).changes) throw httpError(409, 'Сделка уже закрыта: ' + d.status);
       add(u.id, 'available', -amount, 'hold', dealId);
       add(u.id, 'hold', amount, 'hold', dealId);
       if (fee > 0) {
@@ -4713,10 +5374,20 @@ const routes = {
         add(0, 'available', fee, 'task-fee', dealId);
         q.addFeeIn.run(fee, dealId);
       }
-      q.growDeal.run(amount, dealId);
+      if (!q.growDeal.run(amount, dealId).changes) throw httpError(409, 'Бюджет задания закрыт — пополнить нельзя');
       vidBoardDrop(m[1]);
       return { ok: true, dealId, added: amount, fee, total: amount + fee, budget: d.amount + amount, balance: q.balance.get(u.id) };
     });
+    /* В бюджете снова есть деньги — недоплата роликам на паузе «не хватило
+       денег» уходит сразу, без владельца и без суток ожидания. Сбой здесь
+       пополнение не отменяет: круг доплатит сам (vidSettle). */
+    if (r.status === 200) {
+      try {
+        const res = await vidBudgetResume(m[1]);
+        if (!r.body.repeated) r.body.resumed = res;
+      } catch (e) { console.error('[видео] доплата после пополнения не прошла:', (e && e.message) || e); }
+    }
+    return r;
   },
 
   /* ── РЕШЕНИЕ СПОРА ────────────────────────────────────────────────
@@ -4735,6 +5406,59 @@ const routes = {
     const d = q.deal.get(dealId);
     if (!d) return { status: 404, body: { error: 'Сделка не найдена' } };
     if (d.status !== 'held') return { status: 409, body: { error: 'Сделка уже закрыта: ' + d.status } };
+
+    /* Бюджет задания и спор ОДНОГО блогера (аудит 16.10.2026): арбитр
+       решает только его часть — amount ₽ блогеру из свободного остатка
+       (vidReturnable: резервы живых роликов не трогаем), его спор
+       закрывается, бюджет остаётся открытым для остальных. amount 0 —
+       в претензии отказано (спор просто снимается). Раньше «Решить спор»
+       по бюджету задания умел только вернуть автору весь остаток и
+       закрыть задание всем блогерам. Комиссию с этой суммы не режем —
+       это решение арбитра (как у доли исполнителя ниже). */
+    if (dealId.startsWith('camp:') && body.payeeId != null && body.payeeId !== '') {
+      const pid = Number(body.payeeId);
+      const who = Number.isInteger(pid) && pid > 0 ? q.userById.get(pid) : null;
+      if (!who) return { status: 400, body: { error: 'Не указан блогер, по чьему спору решение' } };
+      if (who.id === d.payer_id) return { status: 400, body: { error: 'Плательщик и исполнитель — один человек' } };
+      const award = body.amount == null || body.amount === '' ? 0 : body.amount;
+      if (!Number.isInteger(award) || award < 0 || award > 100000000) {
+        return { status: 400, body: { error: 'Сумма блогеру — целое число от 0 до 100 000 000' } };
+      }
+      const cid = dealId.slice(5);
+      if (award > 0) {
+        const free = vidReturnable(cid);
+        if (award > free) {
+          return { status: 409, body: { error: 'Свободно в бюджете задания ' + free
+            + ' ₽ — остальное держат видео на проверке и в подсчёте просмотров', code: 'no_free', free } };
+        }
+      }
+      if (award === 0) {
+        const n = Number(q.closeDisputesFor.run(dealId, who.id).changes || 0);
+        if (n) adminLog(req, 'settle', 'сделка ' + dealId, 'спор блогера id ' + who.id + ' снят без выплаты');
+        vidBoardDrop(cid);
+        return { status: 200, body: { ok: true, dealId, payeeId: who.id, closed: n, исполнителю: 0, плательщику: 0, разделено: 0 } };
+      }
+      const part = moneyOp(String(body.opKey || ''), d.payer_id, 'settle', (add) => {
+        const dd = q.deal.get(dealId);
+        if (!dd || dd.status !== 'held') throw httpError(409, 'Сделка уже закрыта');
+        if (vidReturnable(cid) < award) throw httpError(409, 'В бюджете задания стало меньше свободных денег — обновите');
+        add(dd.payer_id, 'hold', -award, 'settle', dealId);
+        add(who.id, 'available', award, 'settle-payout', dealId);
+        q.payDeal.run(award, 'held', dealId);
+        /* потрачено всё — лишнюю от округления комиссию назад (как dealPayMoves) */
+        if (dd.paid + award >= dd.amount && Number(dd.fee_pct) > 0) {
+          dealFeeBackAll(add, Object.assign({}, dd, { paid: dd.paid + award }));
+        }
+        const closed = Number(q.closeDisputesFor.run(dealId, who.id).changes || 0);
+        return { ok: true, dealId, payeeId: who.id, closed, исполнителю: award, плательщику: 0, разделено: award,
+          left: dd.amount - dd.paid - award };
+      });
+      if (part.status === 200 && !part.body.repeated) {
+        vidBoardDrop(cid);
+        adminLog(req, 'settle', 'сделка ' + dealId, 'блогеру id ' + who.id + ' ' + award + ' ₽ из бюджета задания, спор снят');
+      }
+      return part;
+    }
 
     const share = Number(body.bloggerShare);
     if (!Number.isFinite(share) || share < 0 || share > 100) {
@@ -4791,6 +5515,13 @@ const routes = {
     if (!rateLimit(req, 'wd', 10, 60000)) return tooOften;
     const u = auth(req);
     if (!u) return { status: 401, body: { error: 'Нужен вход' } };
+    /* Пока на боевом адресе тестовое пополнение открыто всем, деньги на
+       балансах ненастоящие — наружу они уходить не должны (аудит 16.10.2026).
+       Раньше проверки личности: незачем вести человека через верификацию
+       к выводу, которого сейчас нет. */
+    if (TEST_MONEY_PUBLIC) {
+      return { status: 403, body: { error: 'Вывод откроется после запуска оплаты: сейчас пополнение тестовое, деньги на балансах ненастоящие', code: 'test_money' } };
+    }
     /* Гейт верификации живёт и на сервере: клиентскую проверку в мини-аппе
        обходят одним fetch, а деньги наружу без проверенной личности
        уходить не должны. */
@@ -4818,6 +5549,13 @@ const routes = {
     const code = String(body.code || '').replace(/\D/g, '');
     let burned = null;                 /* снятый код: вернём, если заявка не пройдёт */
     if (mailConfigured()) {
+      /* Служебная почта (вход через Телеграм / Google без почты) — код
+         ушёл бы в никуда, а лимит wdIssueAllowed сгорал бы впустую.
+         Просим задать настоящую почту; денег и кодов не трогаем
+         (аудит 16.10.2026). Приложение по code открывает «Почту и пароль». */
+      if (isServiceEmail(u.email)) {
+        return { status: 400, body: { error: 'Сначала укажите почту в Настройках — на неё придёт код вывода', code: 'need_email' } };
+      }
       if (!code) {
         if (!wdIssueAllowed(u.id)) {
           return { status: 429, body: { error: 'Код запрашивали слишком часто — попробуйте через час' } };
@@ -4917,9 +5655,12 @@ const routes = {
     if (buf.length > (mime === 'image/jpeg' ? MEDIA_MAX : MEDIA_MAX_RICH)) {
       return { status: 400, body: { error: mime === 'image/jpeg' ? 'Картинка больше 1 МБ — уменьшите её' : 'Файл больше 6 МБ — сожмите его' } };
     }
-    const st = qm.stat.get(u.id) || {};
-    if (Number(st.n) >= MEDIA_USER_FILES || Number(st.bytes) + buf.length > MEDIA_USER_BYTES) {
-      return { status: 400, body: { error: 'Место для картинок закончилось — удалите старые задания' } };
+    const full = (s) => Number(s.n) >= MEDIA_USER_FILES || Number(s.bytes) + buf.length > MEDIA_USER_BYTES;
+    let st = qm.stat.get(u.id) || {};
+    if (full(st) && mediaGc(u.id) > 0) st = qm.stat.get(u.id) || {};
+    if (full(st)) {
+      return { status: 400, body: { error: 'Место для картинок закончилось (' + MEDIA_USER_FILES + ' файлов, '
+        + Math.round(MEDIA_USER_BYTES / 1048576) + ' МБ) — напишите в поддержку', code: 'media_full' } };
     }
     const id = crypto.randomBytes(16).toString('hex');
     qm.ins.run(id, u.id, mime, buf, buf.length);
@@ -5130,7 +5871,8 @@ const routes = {
      адрес хостинга). Здесь вход в Google не нужен: человек вписывает
      короткий код в описание своего канала, сервер читает описание открытым
      ключом (YT_API_KEY) и, если код там, записывает канал на того, кто
-     начинал. Код — на 30 минут, проверок — до 30. Просмотры роликов сервер
+     начинал. Код — на 30 минут, проверок — до 30 (квота — ytChannelFor:
+     10 % суточной на всех, 40 запросов на человека, кэш 30 с). Просмотры роликов сервер
      и так берёт этим ключом (ytVideos); доступ к аккаунту не нужен. После
      подключения код из описания можно удалить. */
   'POST /api/verify/youtube/code': async (req, body) => {
@@ -5141,13 +5883,15 @@ const routes = {
     const ref = ytChannelRef(body && body.channel);
     if (!ref) return { status: 400, body: { error: 'Вставьте ссылку на канал — youtube.com/@имя — или @имя' } };
     let ch;
-    try { ch = await ytChannelGet(ref); }
-    catch (e) { return { status: 502, body: { error: 'YouTube не ответил — попробуйте ещё раз' } }; }
+    try { ch = await ytChannelFor(u.id, ref); }
+    catch (e) { return ytCodeFail(e); }
     if (!ch) return { status: 404, body: { error: 'Канал не найден — проверьте ссылку' } };
     ytCodeSweep();
     const prev = ytCode.get(u.id);
     const keep = prev && prev.channel.id === ch.id && Date.now() - prev.at < YT_CODE_TTL;
-    const rec = { channel: ch, code: keep ? prev.code : ytNewCode(), at: keep ? prev.at : Date.now(), tries: 0 };
+    /* тот же код — и тот же счёт проверок: иначе повторная выдача давала
+       ещё 30 запросов к YouTube (разбор 16.10) */
+    const rec = { channel: ch, code: keep ? prev.code : ytNewCode(), at: keep ? prev.at : Date.now(), tries: keep ? (prev.tries || 0) : 0 };
     ytCode.set(u.id, rec);
     return { status: 200, body: {
       code: rec.code, left: Math.max(0, Math.round((rec.at + YT_CODE_TTL - Date.now()) / 1000)),
@@ -5167,8 +5911,8 @@ const routes = {
     }
     if (++rec.tries > 30) { ytCode.delete(u.id); return { status: 429, body: { error: 'Слишком много проверок — получите новый код' } }; }
     let ch;
-    try { ch = await ytChannelGet({ id: rec.channel.id }); }
-    catch (e) { return { status: 502, body: { error: 'YouTube не ответил — попробуйте ещё раз' } }; }
+    try { ch = await ytChannelFor(u.id, { id: rec.channel.id }); }
+    catch (e) { return ytCodeFail(e); }
     if (!ch) return { status: 404, body: { error: 'Канал не найден' } };
     if (!ytHasCode(ch.description, rec.code)) {
       return { status: 409, body: { error: 'Код пока не виден в описании канала', code: rec.code } };
@@ -5401,7 +6145,16 @@ const routes = {
   'GET /api/admin/withdrawals': async (req, body, url) => {
     if (!isAdmin(req)) return { status: 403, body: { error: 'Нужен X-Admin-Key' } };
     const st = String(url.searchParams.get('status') || '');
-    return { status: 200, body: { rows: q.allWds.all(st, st) } };
+    /* У кого на балансе были тестовые зачисления — помечаем заявку: эти
+       деньги ненастоящие, платить их живыми рублями владелец не обязан
+       (аудит 16.10.2026). Сам вывод не отклоняем — решает оператор. */
+    const seen = new Map();
+    const rows = q.allWds.all(st, st).map((w) => {
+      if (!seen.has(w.user_id)) seen.set(w.user_id, q.testToppedBy.get(w.user_id, TEST_TOPUP_REF, TEST_TOPUP_REF).s);
+      const t = seen.get(w.user_id);
+      return t > 0 ? Object.assign({}, w, { test_topup: t }) : w;
+    });
+    return { status: 200, body: { rows } };
   },
 
   /* «Взял в работу» — с этого момента пользователь заявку не отменит. */
@@ -5527,7 +6280,19 @@ const routes = {
     }
     /* комиссия 7% сверху: счёт выставлен на сумму + комиссию, на баланс — сумма */
     const fee = pctOf(amount, TOPUP_FEE_PCT);
-    const res = moneyOp('invoice:' + r.id, r.user_id, 'topup', (add) => {
+    /* Ключ — служебный sys:invoice:<id> (из приложения его не занять, см.
+       RESERVED_OP). Прежнее зачисление ключом 'invoice:<id>' (до 16.10)
+       узнаём: тот же человек, вид topup и счёт уже «оплачен» — повтор идёт
+       старым ключом и второй раз не платит. Чужая запись под старым ключом
+       (занятый заранее номер) зачислению больше не мешает. */
+    const invSys = sysKey('invoice', r.id), invOld = 'invoice:' + r.id;
+    const opOld = q.opByKey.get(invSys) ? null : q.opByKey.get(invOld);
+    const invKey = opOld && opOld.user_id === r.user_id && opOld.kind === 'topup' && r.status === 'paid' ? invOld : invSys;
+    /* страховка от двойного зачисления: «оплачен», а записи зачисления нет */
+    if (r.status === 'paid' && !q.opByKey.get(invKey)) {
+      return { status: 409, body: { error: 'Счёт уже оплачен: зачислено ' + rubTxt(r.paid) } };
+    }
+    const res = moneyOp(invKey, r.user_id, 'topup', (add) => {
       add(r.user_id, 'available', amount, 'topup', 'пополнение по счёту №' + r.id + (fee > 0 ? ' · оплачено ' + (amount + fee) + ', комиссия ' + fee : ''));
       if (fee > 0) add(0, 'available', fee, 'topup-fee', 'комиссия пополнения по счёту №' + r.id);
       return { ok: true, id: r.id, amount, fee, total: amount + fee, balance: q.balance.get(r.user_id) };
@@ -5556,7 +6321,35 @@ const routes = {
 
   'GET /api/admin/deals': async (req) => {
     if (!isAdmin(req)) return { status: 403, body: { error: 'Нужен X-Admin-Key' } };
-    return { status: 200, body: { rows: q.openDeals.all() } };
+    /* Открытые споры со сторонами (аудит 16.10.2026): раньше раздел
+       показывал только заморозки — какая из них под спором и чей он, было
+       не видно, а снять спор было нечем. Для бюджета задания — что держит
+       спор блогера и сколько свободно для решения по его части. */
+    const disputes = q.openDisputesAdmin.all().map((x) => {
+      const camp = /^camp:/.test(String(x.deal_id));
+      const open = x.deal_status === 'held';
+      const o = {
+        id: x.id, dealId: x.deal_id, camp, dealStatus: x.deal_status || null,
+        amount: x.amount || 0, paid: x.paid || 0, left: open ? Math.max(0, (x.amount || 0) - (x.paid || 0)) : 0,
+        payerId: x.payer_id || null, payerName: x.payer_name || '', payerEmail: x.payer_email || '',
+        openedBy: x.opened_by, openerName: x.opener_name || '', openerEmail: x.opener_email || '',
+        byPayer: x.opened_by === x.payer_id,
+        payeeId: x.payee_id == null ? null : x.payee_id, payeeName: x.payee_name || '', payeeEmail: x.payee_email || '',
+        dealPayeeId: x.deal_payee_id == null ? null : x.deal_payee_id,
+        createdAt: x.created_at,
+      };
+      if (open && x.payee_id != null) o.paidTo = Number((q.paidToSum.get(x.deal_id, x.payee_id) || {}).s) || 0;
+      if (open && camp) {
+        o.free = vidReturnable(String(x.deal_id).slice(5));
+        if (x.payee_id != null) o.liveVideos = Number((q.vidLiveOf.get(String(x.deal_id).slice(5), x.payee_id) || {}).n) || 0;
+      }
+      o.blocksRefund = open && !!(x.payee_id == null || (!camp && (x.payee_id === x.deal_payee_id || o.paidTo > 0)));
+      return o;
+    });
+    const per = new Map();
+    for (const x of disputes) if (x.dealStatus === 'held') per.set(x.dealId, (per.get(x.dealId) || 0) + 1);
+    const rows = q.openDeals.all().map((d) => Object.assign({}, d, { disputes: per.get(d.id) || 0 }));
+    return { status: 200, body: { rows, disputes } };
   },
 
   'GET /api/admin/user': async (req, body, url) => {
@@ -5634,6 +6427,8 @@ const routes = {
     q.setBlocked.run(blocked ? 1 : 0, id);
     if (blocked) q.delUserSessions.run(id);
     cardsCache.at = 0; lbCache.at = 0; tsumCache.at = 0;
+    /* доски заданий прячут заблокированных — пересчитать сразу, а не через минуту */
+    vidBoards.clear();
     adminLog(req, blocked ? 'user-block' : 'user-unblock', 'user ' + id,
       (u.email || '') + (body.reason ? ' · ' + String(body.reason).slice(0, 200) : ''));
     return { status: 200, body: { ok: true, userId: id, blocked } };
@@ -6301,6 +7096,15 @@ const routes = {
     if (decision === 'count' && row.status === 'active' && !row.risk_hold && !row.pay_hold) {
       return { status: 409, body: { error: 'Видео уже засчитано — подсчёт просмотров идёт сам', code: 'state' } };
     }
+    /* Пауза «не хватило денег», а бюджет задания пуст: «засчитать» снова
+       поставило бы её же (и снова письмо блогеру). Платить нечем — ждём
+       пополнения, оно снимет паузу само (vidBudgetResume). Есть деньги —
+       «засчитать» доплачивает сразу. */
+    if (decision === 'count' && row.status === 'active' && !row.risk_hold && row.pay_hold && row.hold_kind === 'money'
+      && vidCampLeft(row.camp_id) <= 0) {
+      return { status: 409, body: { error: 'Бюджет задания исчерпан — платить нечем. Начисления продолжатся сами, '
+        + 'когда рекламодатель пополнит бюджет', code: 'no_budget' } };
+    }
     const note = String(body.note == null ? '' : body.note).trim().slice(0, 500);
     const now = Date.now();
     const name = vidCampName(vidCamp(row.camp_id));
@@ -6389,9 +7193,24 @@ const routes = {
        выплатами. Если равенство разошлось — где-то потеряны деньги, и
        это надо увидеть сразу, а не по недостаче на счёте. */
     const expected = toppedUp - paidOut;
+    const tst = q.testTopped.get(TEST_TOPUP_REF, TEST_TOPUP_REF, TEST_TOPUP_FEE_REF);
     return {
       status: 200,
       body: {
+        /* тестовые деньги (аудит 16.10.2026): «открыто_всем» — красная
+           плашка в /admin; внесено/комиссия — сколько из «внесено» и
+           «дохода» ненастоящие */
+        тестовые_деньги: {
+          открыто_всем: TEST_MONEY_PUBLIC,
+          предупреждение: TEST_MONEY_PUBLIC ? TEST_MONEY_MSG : '',
+          режим: YK_ON ? 'yookassa' : (!TEST_TOPUP ? 'off' : (TEST_TOPUP_OPEN ? 'open' : 'owner')),
+          вывод_закрыт: TEST_MONEY_PUBLIC,
+          внесено: tst.amount,
+          комиссия: tst.fee,
+          людей: tst.people,
+        },
+        /* адрес клиента за прокси хостинга: что видно по первым запросам */
+        прокси: proxyAdvice(),
         всего_в_системе: { available: t.available, hold: t.hold },
         доход_платформы: fees.fees,
         заявок_в_очереди: queued.length,
@@ -7096,10 +7915,10 @@ function ytCodeOf(status, j, viaToken) {
    не точный учёт. */
 const YT_DAY_UNITS = Math.max(100, Math.round(Number(ENV.YT_DAILY_UNITS) || 10000));
 const YT_BIND_UNITS = Math.floor(YT_DAY_UNITS * 0.7);
-const ytUnits = { day: '', n: 0 };
+const ytUnits = { day: '', n: 0, code: 0 };   /* code — из них на подключение кодом */
 function ytUnitsNow() {
   const d = new Date(Date.now() - 8 * 3600e3).toISOString().slice(0, 10);
-  if (ytUnits.day !== d) { ytUnits.day = d; ytUnits.n = 0; }
+  if (ytUnits.day !== d) { ytUnits.day = d; ytUnits.n = 0; ytUnits.code = 0; }
   return ytUnits;
 }
 function ytBindRoom() { return ytUnitsNow().n < YT_BIND_UNITS; }
@@ -7196,6 +8015,50 @@ async function ytChannelGet(ref) {
     username: String(sn.customUrl || '').slice(0, 120), videosTotal: Number(st.videoCount) || 0,
     description: String(sn.description || ''),
   };
+}
+/* Квота при подключении кодом (разбор 16.10). /code и /check спрашивают
+   channels.list — это та же квота проекта, что у загрузок и замеров; без
+   предела один человек по кругу выжигал её за несколько часов, и у всех
+   вставали загрузки и суточные начисления по YouTube. Теперь: на всех —
+   не больше 10 % суточной квоты и только пока у загрузок есть место
+   (ytBindRoom), запас под замеры не трогаем; на человека — 40 запросов к
+   YouTube за сутки с любых адресов; ответ по каналу живёт 30 с (повтор
+   «Проверить» или той же ссылки квоту не тратит — описание YouTube и сам
+   обновляет не сразу). Сверх — ttErr 'yt_code_quota' / 'yt_code_often'. */
+const YT_CODE_UNITS = Math.max(20, Math.floor(YT_DAY_UNITS * 0.1));
+const YT_CODE_USER_DAY = 40;
+const ytCodeUser = new Map();
+const YT_CHAN_MS = ENV.YT_CHAN_CACHE_MS != null && ENV.YT_CHAN_CACHE_MS !== '' && Number(ENV.YT_CHAN_CACHE_MS) >= 0
+  ? Math.min(300000, Number(ENV.YT_CHAN_CACHE_MS)) : 30000;
+const ytChan = new Map();
+async function ytChannelFor(uid, ref) {
+  const key = ref.id ? 'id:' + ref.id : 'h:' + String(ref.handle || '').toLowerCase();
+  const c = ytChan.get(key);
+  if (c && Date.now() - c.at < YT_CHAN_MS) return c.ch;
+  if (c) ytChan.delete(key);
+  const units = ytUnitsNow();
+  if (units.code >= YT_CODE_UNITS || !ytBindRoom()) throw ttErr('yt_code_quota');
+  if (!vidUserQuota(ytCodeUser, uid, YT_CODE_USER_DAY, 24 * 3600e3)) throw ttErr('yt_code_often');
+  units.code++;
+  const ch = await ytChannelGet(ref);
+  if (YT_CHAN_MS > 0) {
+    const at = Date.now();
+    ytChan.set(key, { at, ch });
+    if (ch) ytChan.set('id:' + ch.id, { at, ch });
+    while (ytChan.size > 2000) ytChan.delete(ytChan.keys().next().value);
+  }
+  return ch;
+}
+function ytCodeFail(e) {
+  const c = e && e.vidCode;
+  if (c === 'yt_code_quota') {
+    return { status: 503, body: { code: 'yt_quota',
+      error: 'Подключение YouTube на сегодня недоступно: дневной лимит проверок YouTube исчерпан. Попробуйте завтра.' } };
+  }
+  if (c === 'yt_code_often') {
+    return { status: 429, body: { code: 'often', error: 'Слишком много проверок YouTube за сутки — попробуйте завтра.' } };
+  }
+  return { status: 502, body: { error: 'YouTube не ответил — попробуйте ещё раз' } };
 }
 /* Свежий доступ к YouTube-каналу. Google живёт часом, дальше меняем по
    refresh (его даёт access_type=offline при подтверждении канала).
@@ -7908,6 +8771,9 @@ function vidDTO(r, view, opts) {
     payNote: view !== 'blogger' ? (r.pay_note || '') : '',
     /* Засчитано, а начисления держит открытый спор по заданию. */
     disputeHeld: r.status === 'active' && !!q.openDisputeFor.get('camp:' + r.camp_id, r.blogger_id),
+    /* Владельцу: блогер заблокирован — начисления по ролику стоят (vidSettle). */
+    blockedHeld: view === 'admin' && r.status === 'active'
+      && (r.blogger_blocked != null ? !!r.blogger_blocked : vidBlocked(r.blogger_id)),
     cover: yt ? (vidCoverOf(r.id) || ytThumb(vid)) : vidCoverOf(r.id),
     player: yt ? 'https://www.youtube.com/embed/' + vid
       : r.platform === 'instagram' ? igEmbed(r.url) : 'https://www.tiktok.com/player/v1/' + vid,
@@ -8124,16 +8990,42 @@ function vidHoldAlert(row, why) {
     'server');
 }
 
-/* Поставить начисления на паузу до владельца (pay_hold, 'money') с
-   причиной. Тревога и письмо блогеру — только при переходе в паузу, а не
-   каждый круг. */
-function vidPayHoldSet(row, why, now, blogMsg) {
+/* Заблокирован ли человек владельцем — деньги за видео ему не уходят. */
+function vidBlocked(uid) {
+  const u = uid ? q.userById.get(uid) : null;
+  return !!(u && u.is_blocked);
+}
+/* Сколько денег в заморозке задания сейчас (открыта — остаток, иначе 0). */
+function vidCampLeft(campId) {
+  const d = q.deal.get('camp:' + campId);
+  return d && d.status === 'held' ? Math.max(0, d.amount - d.paid) : 0;
+}
+/* Бюджет задания кончился, а ролику начислено больше (аудит 16.10.2026).
+   Это обычный конец бюджета, а не поломка: заморозка открыта с нулём
+   (dealPayMoves), пополнение снимает паузу и доплачивает само
+   (vidBudgetResume). Рекламодателю — «пополните» (раз в сутки на задание),
+   владельцу — спокойная заметка, без «критично» и без «ждут решения»:
+   раньше на каждый ролик шла критическая тревога, а блогеру — «администратор
+   уже разбирается», хотя разбирать нечего. */
+const vidBudgetSeen = new Map();
+function vidBudgetOut(row, short, name) {
+  const nm = name || vidCampName(vidCamp(row.camp_id));
+  tgAlert('vid:budget:' + row.camp_id, '💸 Бюджет задания исчерпан\n\n'
+    + 'Задание: «' + nm + '»\nАвтор: ' + vidWho(row.owner_id) + '\n'
+    + 'Блогер: ' + vidWho(row.blogger_id) + ' — недоплачено ' + short + ' ₽\n'
+    + 'Начисления продолжатся сами, когда автор пополнит бюджет задания: ' + PUBLIC_URL + '/admin', 'server');
+  if (vidOnce(vidBudgetSeen, String(row.camp_id))) {
+    vidNotify(row.owner_id, 'Бюджет задания закончился', '«' + nm + '»: бюджет потрачен целиком — блогерам не хватило '
+      + vidNum(short) + ' ₽ за набранные просмотры. Пополните бюджет задания: недоплата уйдёт им сама, '
+      + 'и задание снова начнёт принимать видео', '/?go=campaigns');
+  }
+}
+/* Поставить начисления на паузу «в бюджете не хватило денег» (pay_hold,
+   'money') с причиной. Заметки и письмо блогеру — только при переходе в
+   паузу, а не каждый круг. */
+function vidPayHoldSet(row, why, now, blogMsg, short, name) {
   if (!q.vidPayHold.run('money', why, now, row.id).changes) return false;
-  tgAlert('vid:payhold:' + row.id,
-    '⏸ Начисления за видео ждут вашего решения\n\n' + why + '\n'
-    + 'Задание: «' + vidCampName(vidCamp(row.camp_id)) + '»\nБлогер: ' + vidWho(row.blogger_id) + '\n'
-    + 'Начислено: ' + (row.earned || 0) + ' ₽, выплачено: ' + (row.paid || 0) + ' ₽\n' + (row.url || '')
-    + '\n\nРешение: ' + PUBLIC_URL + '/admin', 'server', true);
+  vidBudgetOut(row, short || 0, name);
   if (blogMsg) vidNotify(row.blogger_id, 'Выплата за видео задерживается', blogMsg, '/?go=tasks');
   return true;
 }
@@ -8205,6 +9097,10 @@ const VID_ACCESS_RETRY_MS = 3 * 3600 * 1000;
    часа сдвигали бы замер ролика на круг вперёд каждый день. */
 const VID_DAILY_MS = 20 * 3600 * 1000;
 const VID_MANUAL_ACTIVE_MS = VID_DAILY_MS;
+/* Финальный замер позже конца срока больше чем на это — уже не «30 дней»:
+   подсчёт закрывается по последнему замеру (аудит 16.10.2026). Порог —
+   те же «сутки», с которыми идут ежедневные замеры. */
+const VID_LATE_MS = VID_DAILY_MS;
 const VID_ACCESS_FAIL = new Set(['token', 'scope', 'no_channel']);
 const vidPaying = new Set();
 async function vidAccrue(id, opts) {
@@ -8226,6 +9122,26 @@ async function vidAccrueRun(id, o) {
   const P = vidPlatName(row.platform);
   const tail = o.how ? '. ' + o.how : '';
   let note = null;
+  /* Срок подсчёта вышел больше суток назад, а финального замера нет
+     (аудит 16.10.2026): пауза «нет доступа» тянулась за конец срока
+     (блогер отозвал доступ на 29-й день и вернул через недели) или круг
+     не шёл. Свежие цифры сейчас — просмотры уже после срока: раньше
+     переподключение платило за них. Закрываем по последнему замеру, как
+     после VID_PAY_TRIES сбоев площадки, к площадке не идём; пауза «нет
+     доступа» снимается — новых цифр не будет. */
+  if (!o.noMeasure && !row.frozen && now >= Number(row.track_ends_at) + VID_LATE_MS) {
+    const wasAccess = !!(row.pay_hold && row.hold_kind === 'access');
+    note = 'Подсчёт закрыт по последнему замеру' + (row.stats_at ? ' от ' + vidDate(row.stats_at) : '')
+      + ': финальный замер не снят в срок (' + (wasAccess ? 'не было доступа к ' + P + ' блогера' : 'замер опоздал')
+      + ') — просмотры после конца срока не считаются';
+    tgAlert('vid:lastknown:' + id, '⚠️ Подсчёт видео закрыт без финального замера\n\n' + note
+      + '\nЗадание: «' + name + '»\nБлогер: ' + vidWho(row.blogger_id) + '\n' + (row.url || '')
+      + '\n\nПроверить: ' + PUBLIC_URL + '/admin', 'server');
+    if (wasAccess) q.vidUnhold.run(now, id);
+    q.vidFreeze.run(now, id);
+    row = q.vidById.get(id);
+    if (!row || row.status !== 'active') return { state: 'skip', paid: 0 };
+  }
   if (!o.noMeasure && !row.frozen) {
     const accessHeld = !!(row.pay_hold && row.hold_kind === 'access');
     /* Пауза «нет доступа» повторяется не чаще раза в 3 часа: ждём, пока
@@ -8374,12 +9290,26 @@ function vidSettle(row, now, o, note) {
     }
     return Object.assign({ state: 'held', why: 'risk' }, base);
   }
+  /* Блогер заблокирован владельцем (аудит 16.10.2026): не платим ни
+     кругом, ни зачётом, ни доплатой после пополнения. Раньше прибавки шли
+     на заблокированный счёт, а доска их прятала. Подсчёт (замеры, срок)
+     идёт как обычно — разблокировали, и следующий круг доплатит по тем же
+     правилам; не платить совсем — «Не засчитывать» в /admin (ролик в
+     очереди владельца, vidQueueCount). */
+  if (vidBlocked(row.blogger_id)) return Object.assign({ state: 'held', why: 'blocked' }, base);
   if (q.openDisputeFor.get('camp:' + row.camp_id, row.blogger_id)) {
     vidHoldAlert(row, 'По заданию открыт спор.');
     if (o.accept) {
       vidNotify(row.blogger_id, 'Видео засчитано', '«' + name + '»: ' + lead('начисления ждут решения спора по заданию'), '/?go=tasks');
     }
     return Object.assign({ state: 'held', why: 'dispute' }, base);
+  }
+  /* Пауза «не хватило денег» ждёт денег, а не владельца (16.10.2026): в
+     заморозке они снова есть (пополнили, пока ролик ждал) — снимаем и
+     платим как обычно. */
+  if (row.pay_hold && row.hold_kind === 'money' && vidCampLeft(row.camp_id) > 0) {
+    if (q.vidUnholdMoney.run(now, row.id).changes) row = q.vidById.get(row.id);
+    if (!row || row.status !== 'active') return { state: 'skip', paid: 0 };
   }
   if (row.pay_hold) return Object.assign({ state: 'held', why: row.hold_kind || 'money' }, base);
   const owe = earned - before;
@@ -8466,9 +9396,9 @@ function vidPayStep(row, earned, owe, views, now, name) {
   const msgShort = (paidNow, short) => '«' + name + '»: начислено по просмотрам ' + vidNum(earned) + ' ₽'
     + (before + paidNow > 0 ? ', выплачено ' + vidNum(before + paidNow) + ' ₽' : '')
     + '. ' + (before + paidNow > 0 ? 'Остальные ' + vidNum(short) + ' ₽ задерживаются' : 'Выплата задерживается')
-    + ': в бюджете задания не хватило денег — администратор уже разбирается.';
+    + ': бюджет задания исчерпан — начислим, как только рекламодатель его пополнит.';
   if (left0 <= 0) {
-    vidPayHoldSet(row, 'В заморозке кампании не хватило денег: недоплачено ' + owe + ' ₽', now, msgShort(0, owe));
+    vidPayHoldSet(row, 'В заморозке кампании не хватило денег: недоплачено ' + owe + ' ₽', now, msgShort(0, owe), owe, name);
     return { state: 'held', why: 'money', paid: 0, short: owe, total: before, earned };
   }
   const sum = Math.min(owe, left0);
@@ -8478,6 +9408,7 @@ function vidPayStep(row, earned, owe, views, now, name) {
     if (!cur || cur.status !== 'active' || cur.pay_hold || cur.risk_hold) throw httpError(409, 'Ролик уже не ждёт начисления');
     if ((cur.paid || 0) !== before) throw httpError(409, 'Начисление по ролику уже прошло');
     if (q.openDisputeFor.get(dealId, cur.blogger_id)) throw httpError(409, 'По заданию открыт спор');
+    if (vidBlocked(cur.blogger_id)) throw httpError(409, 'Блогер заблокирован');
     const dd = q.deal.get(dealId);
     const left = dd && dd.status === 'held' ? Math.max(0, dd.amount - dd.paid) : 0;
     if (left < sum) throw httpError(409, 'В заморозке стало меньше денег');
@@ -8491,7 +9422,7 @@ function vidPayStep(row, earned, owe, views, now, name) {
     const err = String((r.body && r.body.error) || r.status);
     /* Ролик поменялся между чтением и транзакцией (решение владельца,
        спор, второй процесс) — не поломка: следующий круг посчитает заново. */
-    if (r.status === 409 && /уже|спор|меньше/.test(err)) return { state: 'skip', why: 'race', paid: 0, total: before, earned };
+    if (r.status === 409 && /уже|спор|меньше|заблокирован/.test(err)) return { state: 'skip', why: 'race', paid: 0, total: before, earned };
     console.error('[видео] начисление не прошло:', row.id, r.status, err);
     tgAlert('vid:payfail:' + row.id, '💥 Начисление за видео не прошло\n\nРолик #' + row.id
       + ', задание «' + name + '»\n' + err, 'server', true);
@@ -8501,16 +9432,37 @@ function vidPayStep(row, earned, owe, views, now, name) {
   const paid = Number(r.body.paid) || 0;
   const short = Number(r.body.short) || 0;
   if (short > 0) {
-    /* pay_hold уже поставлен в той же транзакции, что и выплата. */
-    tgAlert('vid:short:' + row.id, '⚠️ За видео заплачено меньше начисленного\n\n'
-      + 'Задание: «' + name + '»\nБлогер: ' + vidWho(row.blogger_id) + '\n'
-      + 'Начислено ' + earned + ' ₽, выплачено ' + after + ' ₽ — в заморозке не хватило ' + short + ' ₽. Остаток ждёт решения: '
-      + PUBLIC_URL + '/admin', 'server', true);
+    /* pay_hold уже поставлен в той же транзакции, что и выплата; бюджет
+       исчерпан — заметки как у паузы (vidBudgetOut), блогеру — правда. */
+    vidBudgetOut(row, short, name);
     vidNotify(row.blogger_id, 'Выплата за видео задерживается', msgShort(paid, short), '/?go=tasks');
     vidBoardDrop(row.camp_id);
     return { state: 'held', why: 'money', paid, short, total: after, earned };
   }
   return { credited: paid };
+}
+
+/* В заморозке задания снова есть деньги (пополнение, 16.10.2026): снять
+   паузу «не хватило денег» с роликов задания и доплатить тем же путём, что
+   у круга, — vidAccrue без замера (цифры уже есть; накрутка и спор держат
+   по-прежнему). По очереди зачёта, пока есть деньги: кому снова не хватило —
+   пауза и правда в письме (vidPayStep), остальные ждут следующего
+   пополнения. Раньше паузу снимал только владелец, а «Засчитать» при
+   закрытой заморозке ставило её снова. */
+async function vidBudgetResume(campId) {
+  const out = { videos: 0, paid: 0 };
+  const cid = String(campId);
+  for (const { id } of q.vidMoneyHeld.all(cid)) {
+    if (vidCampLeft(cid) <= 0) break;
+    if (!q.vidUnholdMoney.run(Date.now(), id).changes) continue;
+    let s;
+    try { s = await vidAccrue(id, { noMeasure: true, how: 'Рекламодатель пополнил бюджет задания' }); }
+    catch (e) { console.error('[видео] доплата после пополнения упала:', id, (e && e.message) || e); s = { state: 'fail' }; }
+    out.videos++;
+    out.paid += Number(s && s.paid) || 0;
+  }
+  if (out.videos) vidBoardDrop(cid);
+  return out;
 }
 
 /* Рекламодатель не ответил за VID_AUTO_ACCEPT_H часов — ролик засчитан
@@ -8712,8 +9664,9 @@ function vidBoardOut(rows, uids, me, owner) {
    адресе, разбираем сразу; если их нет, отдаём крошечную страницу,
    которая перекладывает фрагмент в обычный запрос. Так работают оба
    случая и ничего не приходится угадывать. */
-function tgFinish(res, state, rec, fields) {
-  const chk = tgWidgetCheck(fields);
+function tgFinish(req, res, state, rec, fields) {
+  /* rec.at — начало ЭТОГО входа: ответ, выданный раньше, не годится. */
+  const chk = tgWidgetCheck(fields, rec.at);
   if (!chk.ok) return verifyPage(res, 'Не вышло войти', chk.why, false);
 
   /* ── ПРИВЯЗКА ──
@@ -8729,16 +9682,11 @@ function tgFinish(res, state, rec, fields) {
       return verifyPage(res, 'Этот Телеграм уже занят',
         'Он привязан к другому аккаунту BloggerPay. Войдите в тот аккаунт через Телеграм или напишите в поддержку.', false);
     }
-    if (!taken) {
-      try { q.linkTg.run(String(chk.tg.id), mine.id); }
-      catch (e) { return verifyPage(res, 'Не вышло привязать', 'Попробуйте ещё раз через минуту.', false); }
-    }
-    rec.done = true;
+    /* Здесь ничего не привязываем: только запоминаем, КТО подтвердил.
+       Привязывает link-confirm от того же аккаунта (см. выше). */
+    rec.tg = { id: String(chk.tg.id), name: chk.tg.name, username: chk.tg.username };
     rec.token = '';
-    rec.user = null;
-    rec.code = String(crypto.randomInt(100000, 1000000));
-    tglog.set(state, rec);
-    return authRelayPage(res, 'tg', state, APP_BASE + '?tglogin=' + encodeURIComponent(state));
+    return loginDone(req, res, 'tg', tglog, state, rec, null);
   }
 
   const u = tgAccount(chk.tg.id, chk.tg.name, rec.role);
@@ -8749,21 +9697,14 @@ function tgFinish(res, state, rec, fields) {
   }
   syncAdminFlag(u);
 
-  const token = newToken();
-  const exp = new Date(Date.now() + SESSION_DAYS * 864e5).toISOString();
-  q.insSession.run(token, u.id, exp);
-
-  rec.done = true;
-  rec.token = token;
-  rec.user = { id: u.id, email: u.email, name: u.name, role: u.role };
-  rec.code = String(crypto.randomInt(100000, 1000000));
-  tglog.set(state, rec);
-
-  return authRelayPage(res, 'tg', state, APP_BASE + '?tglogin=' + encodeURIComponent(state));
+  /* Сессию заведёт выдача (pending/claim) — см. loginIssue. */
+  return loginDone(req, res, 'tg', tglog, state, rec, u);
 }
 
-/* Страница-перекладчик: читает фрагмент и отправляет его обычным
-   переходом на тот же адрес. Никакой логики входа здесь нет. */
+/* Страница-перекладчик: читает фрагмент и отправляет его на тот же адрес
+   ФОРМОЙ (POST), а фрагмент стирает из истории. Раньше поля уходили
+   переходом в адрес (?id=…&hash=…) и оседали в истории браузера и
+   журналах прокси (аудит 16.10). Никакой логики входа здесь нет. */
 function tgHashPage(res, state) {
   const esc = (v) => String(v).replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
   const html = '<!doctype html><meta charset="utf-8">'
@@ -8781,14 +9722,26 @@ function tgHashPage(res, state) {
     + 'Object.keys(o).forEach(function(k){ if(o[k]!=null) out.set(k,String(o[k])); });}'
     + 'else{p.forEach(function(v,k){ out.set(k,v); });}'
     + 'if(!out.get("hash")){document.body.textContent="Телеграм не прислал ответ. Начните вход заново.";return;}'
-    + 'location.replace(location.pathname+"?"+out.toString());'
+    + 'try{history.replaceState(null,"",location.pathname+"?n="+encodeURIComponent(out.get("n")));}catch(e){}'
+    + 'var f=document.createElement("form");f.method="POST";f.action=location.pathname;'
+    + 'out.forEach(function(v,k){var i=document.createElement("input");i.type="hidden";i.name=k;i.value=v;f.appendChild(i);});'
+    + 'document.body.appendChild(f);f.submit();'
     + '}catch(e){document.body.textContent="Не вышло разобрать ответ Телеграма.";}})();<\/script>';
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
   return res.end(html);
 }
 
 async function handleTelegramCallback(req, res, url) {
-  const state = String(url.searchParams.get('n') || url.searchParams.get('state') || '');
+  /* Поля приходят либо в адресе (так их кладёт Телеграм), либо формой
+     со страницы-перекладчика (POST). */
+  let src = url.searchParams;
+  if (req.method === 'POST') {
+    let raw = '';
+    try { raw = await readRaw(req, 8 * 1024); } catch (e) { raw = ''; }
+    src = new URLSearchParams(raw);
+    if (!src.get('n') && url.searchParams.get('n')) src.set('n', url.searchParams.get('n'));
+  }
+  const state = String(src.get('n') || src.get('state') || '');
   const rec = tglog.get(state);
 
   if (!rec) return verifyPage(res, 'Ссылка не найдена', 'Начните вход заново из приложения.', false);
@@ -8796,14 +9749,16 @@ async function handleTelegramCallback(req, res, url) {
     tglog.delete(state);
     return verifyPage(res, 'Слишком долго', 'Ссылка входа живёт 15 минут. Начните заново.', false);
   }
+  /* Кода здесь больше нет: метку знает и тот, кто прислал ссылку, — по
+     ней он открыл бы эту страницу и прочёл код чужого входа. */
   if (rec.done) {
     return verifyPage(res, 'Вход уже подтверждён',
       'Вернитесь в приложение — оно уже впустило вас. Если нет, начните вход заново.',
-      false, rec.code, APP_BASE + '?tglogin=' + encodeURIComponent(state));
+      false, '', APP_BASE + '?tglogin=' + encodeURIComponent(state));
   }
 
   const fields = {};
-  for (const [k, v] of url.searchParams.entries()) {
+  for (const [k, v] of src.entries()) {
     if (k === 'n' || k === 'state') continue;
     fields[k] = v;
   }
@@ -8811,7 +9766,7 @@ async function handleTelegramCallback(req, res, url) {
   if (!fields.hash) return tgHashPage(res, state);
 
   try {
-    return tgFinish(res, state, rec, fields);
+    return tgFinish(req, res, state, rec, fields);
   } catch (e) {
     return verifyPage(res, 'Не вышло войти', String((e && e.message) || e).slice(0, 160), false);
   }
@@ -8834,14 +9789,17 @@ async function handleGoogleCallback(req, res, url) {
     glog.delete(state);
     return verifyPage(res, 'Слишком долго', 'Ссылка входа живёт 15 минут. Начните заново.', false);
   }
-  if (!code) {
-    glog.delete(state);
-    return verifyPage(res, 'Вход отменён', 'Вы не разрешили доступ — аккаунт не создан.', false);
-  }
+  /* Сначала «уже подтверждён» и БЕЗ кода: метку знает и тот, кто прислал
+     ссылку, — по ней он открыл бы эту страницу и прочёл код чужого входа
+     (или стёр бы чужой вход адресом без code). */
   if (rec.done) {
     return verifyPage(res, 'Вход уже подтверждён',
       'Вернитесь в приложение — оно уже впустило вас. Если нет, начните вход заново.',
-      false, rec.code, APP_BASE + '?glogin=' + encodeURIComponent(state));
+      false, '', APP_BASE + '?glogin=' + encodeURIComponent(state));
+  }
+  if (!code) {
+    glog.delete(state);
+    return verifyPage(res, 'Вход отменён', 'Вы не разрешили доступ — аккаунт не создан.', false);
   }
 
   const ask = async (address, opts) => {
@@ -8896,7 +9854,7 @@ async function handleGoogleCallback(req, res, url) {
           + 'через Google в него пока не пускаем, иначе чужой аккаунт можно было бы '
           + 'забрать себе. Пароль забыт — восстановите его по почте.', false);
       }
-      const salt = crypto.randomBytes(16).toString('hex');
+      const salt = deadSalt();   /* метка «своего пароля нет» — «Настройки» дадут его задать */
       const dead = crypto.randomBytes(32).toString('hex');
       const role = rec.role === 'advertiser' ? 'advertiser' : 'blogger';
       try {
@@ -8913,17 +9871,9 @@ async function handleGoogleCallback(req, res, url) {
     }
     syncAdminFlag(u);
 
-    const token = newToken();
-    const exp = new Date(Date.now() + SESSION_DAYS * 864e5).toISOString();
-    q.insSession.run(token, u.id, exp);
-
-    rec.done = true;
-    rec.token = token;
-    rec.user = { id: u.id, email: u.email, name: u.name, role: u.role };
-    rec.code = String(crypto.randomInt(100000, 1000000));
-    glog.set(state, rec);
-
-    return authRelayPage(res, 'g', state, APP_BASE + '?glogin=' + encodeURIComponent(state));
+    /* Сессию заведёт выдача (pending/claim) — см. loginIssue. Возврат не
+       в тот браузер, что начинал, получает код, а не сессию. */
+    return loginDone(req, res, 'g', glog, state, rec, u);
   } catch (e) {
     return verifyPage(res, 'Не вышло войти', String((e && e.message) || e).slice(0, 160), false);
   }
@@ -9282,6 +10232,7 @@ function sendFile(req, res, file, type) {
 /* Обработчик вынесен отдельно: слушать приходится не один порт (почему —
    у listenOn ниже), а один http.Server умеет слушать только один. */
 const handler = async (req, res) => {
+  proxyProbe(req);
   let url;
   try {
     url = new URL(req.url, 'http://localhost');
@@ -9309,7 +10260,8 @@ const handler = async (req, res) => {
   if (req.method === 'GET' && url.pathname === '/api/auth/google/callback') {
     return handleGoogleCallback(req, res, url);
   }
-  if (req.method === 'GET' && url.pathname === '/api/auth/telegram/callback') {
+  /* POST — поля из фрагмента, которые прислала страница-перекладчик. */
+  if ((req.method === 'GET' || req.method === 'POST') && url.pathname === '/api/auth/telegram/callback') {
     return handleTelegramCallback(req, res, url);
   }
   /* Страница показа кода. Саму метку страница берёт из адреса уже в
@@ -9326,7 +10278,10 @@ const handler = async (req, res) => {
       'Content-Type': row.mime,
       'Accept-Ranges': 'bytes',
       'Cache-Control': 'public, max-age=31536000, immutable',
-      'Access-Control-Allow-Origin': '*',
+      /* Access-Control-Allow-Origin: * снят (аудит 16.10.2026): приложение
+         показывает файлы тегами img/video, которым CORS не нужен, а читать
+         их скриптом с чужих сайтов незачем. Показ в чужих страницах
+         (Телеграм, превью) — по-прежнему через CORP cross-origin. */
       'Cross-Origin-Resource-Policy': 'cross-origin',
     });
     /* Видео-баннер Safari (и Телеграм на iPhone) без ответа по кускам
@@ -9469,6 +10424,25 @@ function boot() {
   console.log(ALERTS_ON
     ? '[BloggerPay] тревога: ошибки уходят в Телеграм, чат ' + ADMIN_CHAT_ID
     : '[BloggerPay] тревога в Телеграм выключена (нужны BOT_TOKEN и ADMIN_CHAT_ID в .env)');
+  /* Тестовые деньги на боевом адресе (аудит 16.10.2026): громко при каждом
+     запуске, пока это не исправлено в переменных хостинга. */
+  try {
+    if (TEST_MONEY_PUBLIC) {
+      tgAlert('topup:open', '🚨 Тестовое пополнение открыто всем\n\n' + PUBLIC_URL
+        + ' виден из интернета, и любой вошедший пополняет баланс без оплаты — деньги'
+        + ' на балансах ненастоящие, поэтому вывод закрыт.\n\nПеред запуском: в переменных'
+        + ' хостинга убрать TEST_TOPUP_OPEN и поставить TEST_TOPUP=0.', 'server', true);
+    } else if (SERVER_IS_PUBLIC) {
+      const tst = q.testTopped.get(TEST_TOPUP_REF, TEST_TOPUP_REF, TEST_TOPUP_FEE_REF);
+      if (tst.amount > 0) {
+        console.error('[BloggerPay] ВНИМАНИЕ: в базе тестовые зачисления — ' + tst.amount + ' ₽ у '
+          + tst.people + ' чел. Эти деньги ненастоящие; их заявки на вывод помечены в /admin.');
+        tgAlert('topup:left', '⚠️ В базе остались тестовые деньги\n\n' + tst.amount + ' ₽ у ' + tst.people
+          + ' чел. зачислены тестовым пополнением, без оплаты. Заявки на вывод от этих людей'
+          + ' помечены в /admin → «Выплаты» — проверяйте, прежде чем платить.', 'server');
+      }
+    }
+  } catch (e) { console.error('[тестовые деньги]', (e && e.message) || e); }
   /* Почта — единственный путь восстановить пароль. Молча неработающей
      она быть не должна: без ключа человек жмёт «Забыли пароль?», видит
      экран ввода кода и ждёт письмо, которого никто не отправлял. */

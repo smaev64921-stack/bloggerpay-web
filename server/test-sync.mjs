@@ -88,11 +88,30 @@ try {
   const advMsg = await api('GET', '/api/sync/pull?since=' + advSees.body.ver, null, adv.token);
   ok(advMsg.body.rows.length === 1 && advMsg.body.rows[0].kind === 'msg' && advMsg.body.rows[0].data.text === 'Привет, беру', 'рекламодатель получил сообщение', advMsg.body);
 
-  /* ── общий конверт (без адресата): видят все вошедшие ── */
+  /* ── общий конверт (без адресата): видят все вошедшие ──
+     но только задание с бюджетом (аудит 16.10.2026): без заморозки
+     «задание» мог разослать всем кто угодно, в том числе блогер */
   const pub = await api('POST', '/api/sync/put', { kind: 'camp', rid: 'camp_' + tag, data: { name: 'Кампания', budget: 50000 } }, adv.token);
   ok(pub.status === 200 && pub.body.b === null, 'общий конверт положен', pub.body);
+  const otherNo = await api('GET', '/api/sync/pull?since=0', null, other.token);
+  ok(otherNo.body.rows.length === 0, 'без заморозки бюджета посторонний его не видит', otherNo.body.rows.map((r) => r.kind));
+  const advOwn = await api('GET', '/api/sync/pull?since=0', null, adv.token);
+  ok(advOwn.body.rows.some((r) => r.rid === 'camp_' + tag), 'автор своё задание видит и без заморозки (второе устройство)');
+  const fund = await api('POST', '/api/topup', { amount: 200000, opKey: 'sync-topup-' + tag }, adv.token);
+  ok(fund.status === 200, 'рекламодатель пополнил кошелёк', fund.body);
+  const holdIt = (rid, amount) => api('POST', '/api/deals/hold', { dealId: 'camp:' + rid, amount, opKey: 'sync-hold-' + rid + '-' + tag }, adv.token);
+  ok((await holdIt('camp_' + tag, 5000)).status === 200, 'бюджет задания заморожен');
   const otherSees = await api('GET', '/api/sync/pull?since=0', null, other.token);
   ok(otherSees.body.rows.length === 1 && otherSees.body.rows[0].kind === 'camp', 'посторонний видит общий конверт и только его', otherSees.body.rows.map((r) => r.kind));
+  /* блогер «публикует задание» без денег — никому не уходит, в витрину гостя тоже */
+  const fake = await api('POST', '/api/sync/put', { kind: 'camp', rid: 'camp_fake_' + tag, data: { id: 'camp_fake_' + tag, status: 'active', title: 'Перейдите по ссылке', desc: 'http://evil' } }, blg.token);
+  ok(fake.status === 200, 'конверт без бюджета положить можно (своё устройство)', fake.body);
+  const otherFake = await api('GET', '/api/sync/pull?since=' + otherSees.body.ver, null, other.token);
+  ok(!otherFake.body.rows.some((r) => r.rid === 'camp_fake_' + tag), 'но посторонний его не получает', otherFake.body.rows.map((r) => r.rid));
+  const pubFake = await (await fetch(BASE + '/api/tasks/public')).json();
+  ok(!(pubFake.rows || []).some((r) => r.id === 'camp_fake_' + tag), 'и в витрине гостя его нет');
+  const blgHold = await api('POST', '/api/deals/hold', { dealId: 'camp:camp_' + tag, amount: 1, opKey: 'sync-squat-' + tag }, blg.token);
+  ok(blgHold.status === 403 || blgHold.status === 409, 'чужим бюджетом своё задание не «оплатить»', blgHold.body);
   const pubSteal = await api('POST', '/api/sync/put', { kind: 'camp', rid: 'camp_' + tag, data: { name: 'Подмена' } }, other.token);
   ok(pubSteal.status === 403, 'общий конверт чужому не переписать', pubSteal.body);
 
@@ -101,6 +120,14 @@ try {
   ok(join.status === 200 && join.body.a === other.id && join.body.b === adv.id, 'отклик адресован владельцу кампании', join.body);
   const swap = await api('POST', '/api/sync/put', { kind: 'join', rid: 'join_' + tag, to: blg.id, data: { status: 'joined' } }, other.token);
   ok(swap.status === 200 && swap.body.b === adv.id, 'адресата сменить нельзя — остался прежний', swap.body);
+
+  /* ── личное сообщение: имя отправителя — из аккаунта (аудит 16.10.2026) ── */
+  const dmPut = await api('POST', '/api/sync/put', { kind: 'dm', rid: 'dm.' + blg.id + '.' + other.id + '.t' + tag, to: other.id,
+    data: { v: 1, t: 'Ваш аккаунт заблокирован', at: tag, n: 'BloggerPay Поддержка', r: 'adv' } }, blg.token);
+  ok(dmPut.status === 200, 'личное сообщение положено', dmPut.body);
+  const dmGot = (await api('GET', '/api/sync/pull?since=' + (dmPut.body.ver - 1), null, other.token)).body.rows.find((r) => r.kind === 'dm');
+  ok(dmGot && dmGot.data.n === 'Юзер b' + tag && dmGot.data.r === 'blogger' && dmGot.data.t === 'Ваш аккаунт заблокирован',
+    'получатель видит имя и роль из аккаунта отправителя, а не из письма', dmGot && dmGot.data);
 
   /* ── мусор и пределы ── */
   const badKind = await api('POST', '/api/sync/put', { kind: 'DROP TABLE', rid: 'x_1', data: {} }, adv.token);
@@ -137,6 +164,9 @@ try {
     kind: 'camp', rid: 'camp_pub_2', shared: true,
     data: { id: 'camp_pub_2', status: 'draft', title: 'Черновик', budget: 1 },
   }, adv.token);
+  /* витрина — только задания с замороженным бюджетом; черновику тоже
+     заморозим: проверяем, что его отсекает именно статус */
+  ok((await holdIt('camp_pub_1', 5000)).status === 200 && (await holdIt('camp_pub_2', 1)).status === 200, 'бюджеты витрины заморожены');
 
   const pubRes = await fetch(BASE + '/api/tasks/public');
   const shop = await pubRes.json();
@@ -166,6 +196,7 @@ try {
       platforms: ['TT', '<img src=x>', 'yt'], rate: -5, maxPayout: 'много', fixedPrice: 1e15,
       payMode: 'fixed', deadline: 'когда-нибудь', formatLabel: 'x'.repeat(200) },
   }, adv.token);
+  ok((await holdIt('camp_pub_3', 20000)).status === 200 && (await holdIt('camp_pub_4', 1000)).status === 200, 'и их бюджеты заморожены');
   const shop2 = await (await fetch(BASE + '/api/tasks/public')).json();
   const t3 = (shop2.rows || []).find((r) => r.id === 'camp_pub_3') || {};
   ok(t3.formatLabel === 'Нарезки' && t3.platforms === 'tt,yt' && t3.rate === 100 && t3.maxPayout === 3000

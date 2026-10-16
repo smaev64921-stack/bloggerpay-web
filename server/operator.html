@@ -132,6 +132,16 @@
   .recon.ok{border-color:rgba(61,220,132,.3);background:var(--okbg)}
   .recon.bad{border-color:rgba(255,107,107,.4);background:var(--badbg)}
   .recon b{font-family:var(--mono)}
+  /* Плашка «тестовые деньги» и совет про прокси (аудит 16.10.2026) — над
+     любым разделом, пока не исправлено в переменных хостинга */
+  .sysal{display:flex;flex-direction:column;gap:10px;margin-bottom:18px}
+  .sysal[hidden]{display:none}
+  .sysal > div{border-radius:var(--r);padding:16px 18px;font-size:var(--fs-md);line-height:1.5;border:1.5px solid var(--bad);background:#4a1620;color:#fff}
+  .sysal > div > b{display:block;font-size:var(--fs-lg);line-height:1.3;font-weight:800;margin-bottom:4px}
+  .sysal > div.warn{border-color:rgba(245,165,36,.55);background:var(--warnbg);color:var(--t1)}
+  .sysal > div.warn > b{font-size:var(--fs-md)}
+  .sysal code{font-family:var(--mono);font-size:.92em;background:rgba(0,0,0,.28);border-radius:6px;padding:1px 6px;white-space:nowrap}
+  .tmark{display:inline-block;margin-top:4px;border-radius:999px;padding:2px 9px;font-size:var(--fs-sm);font-weight:700;background:var(--badbg);color:var(--bad)}
 
   /* ── «нужно сделать» ── */
   .todo{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;margin-bottom:22px}
@@ -558,6 +568,7 @@
       <div><h1 id="pageTitle"></h1><p id="pageSub"></p></div>
       <div class="tools" id="tools"></div>
     </header>
+    <div class="sysal" id="sysAlert" role="alert" hidden></div>
     <div id="view"></div>
   </div></main>
   <!-- телефон: полка снизу и лист «Ещё» (15.10.2026) -->
@@ -826,8 +837,24 @@ function refreshBadges(){
     BADGES.videos = o.видео_на_решении ? String(o.видео_на_решении) : '';
     BADGES.errors = (o.ошибок_за_сутки && o.ошибок_за_сутки.n) ? String(o.ошибок_за_сутки.n) : '';
     paintNav();
+    paintSysAlert(o);
     return o;
   }).catch(function(){ return OV; });
+}
+/* Красная плашка «тестовые деньги» и жёлтый совет про прокси — над любым
+   разделом (аудит 16.10.2026). Сервер без этих полей — плашки нет. */
+function paintSysAlert(o){
+  var box = $('sysAlert'); if(!box) return;
+  var t = (o && o.тестовые_деньги) || {}, p = (o && o.прокси) || {}, h = '';
+  if(t.открыто_всем) h += '<div><b>Тестовое пополнение открыто всем — перед запуском убрать <code>TEST_TOPUP_OPEN</code>, <code>TEST_TOPUP=0</code></b>'
+    + 'Сейчас любой вошедший пополняет баланс без оплаты: деньги на балансах ненастоящие, поэтому вывод у людей закрыт.'
+    + (t.внесено ? ' Тестовых зачислений уже ' + money(t.внесено) + ' у ' + t.людей + ' ' + plural(t.людей, 'человека', 'человек', 'человек') + '.' : '')
+    + ' Переменные — в панели хостинга у российского бота, затем перезапуск.</div>';
+  else if(t.внесено) h += '<div class="warn"><b>В базе есть тестовые деньги: ' + money(t.внесено) + ' у ' + t.людей + ' ' + plural(t.людей, 'человека', 'человек', 'человек') + '</b>'
+    + 'Они зачислены тестовым пополнением, без оплаты. Заявки на вывод от этих людей помечены в «Выплатах» — проверяйте, прежде чем платить.</div>';
+  if(p.совет) h += '<div class="warn"><b>Адрес клиента за прокси</b>' + esc(p.совет) + '</div>';
+  if(box.__h !== h){ box.__h = h; box.innerHTML = h; }
+  box.hidden = !h;
 }
 
 /* ─────────────────────────── диалоги ─────────────────────────── */
@@ -956,7 +983,12 @@ function reconHtml(o){
     ? '✓ Сверка сходится: внесено <b>' + money(o.внесено_всего) + '</b> − выплачено наружу <b>'
       + money(o.выплачено_наружу) + '</b> = <b>' + money(s.фактически_в_системе) + '</b> в системе.'
     : '✗ <b>Расхождение ' + money(s.расхождение) + '</b>. Ожидалось ' + money(s.ожидается_в_системе)
-      + ', фактически ' + money(s.фактически_в_системе) + '. Остановите выплаты и разберитесь — деньги не сходятся.') + '</div>';
+      + ', фактически ' + money(s.фактически_в_системе) + '. Остановите выплаты и разберитесь — деньги не сходятся.')
+    /* тестовые зачисления в сверке есть (иначе она разошлась бы ровно на
+       них), но это не настоящие деньги и не доход — говорим прямо */
+    + (o.тестовые_деньги && o.тестовые_деньги.внесено ? '<br><span class="tmark">тестовые</span> Из внесённого <b>'
+      + money(o.тестовые_деньги.внесено + (o.тестовые_деньги.комиссия || 0)) + '</b> — тестовые пополнения без оплаты, из дохода сервиса <b>'
+      + money(o.тестовые_деньги.комиссия || 0) + '</b> — их комиссия. Это не настоящие деньги.' : '') + '</div>';
 }
 function todoBtn(sec, ic, cls, title, sub){
   return '<button type="button" data-go="' + sec + '"><span class="ic ' + cls + '">' + ICON[ic] + '</span><span><b>' + esc(title) + '</b><span>' + esc(sub) + '</span></span></button>';
@@ -996,7 +1028,8 @@ VIEWS.home = function(){
       + tile(money(o.сумма_к_выплате), 'К выплате сейчас', o.сумма_к_выплате ? 'warn' : '')
       + tile(o.взято_в_работу || 0, 'Взято в работу', '')
       + tile(o.верификаций_в_очереди || 0, 'Ждут проверки личности', o.верификаций_в_очереди ? 'warn' : '')
-      + tile(money(o.доход_платформы), 'Доход сервиса', 'good')
+      + tile(money(o.доход_платформы), (o.тестовые_деньги && o.тестовые_деньги.комиссия)
+          ? 'Доход сервиса · из них тестовых ' + money(o.тестовые_деньги.комиссия) : 'Доход сервиса', 'good')
       + tile(money(tot.available + tot.hold), 'Всего в системе', '')
       + tile(money(tot.hold), 'Из них заморожено', '')
       + tile(err.n || 0, 'Поломок за сутки', err.n ? 'bad' : 'good')
@@ -1030,7 +1063,9 @@ VIEWS.wd = function(first, seq){
           a += '</div>';
           return '<tr><td class="first who"><button type="button" class="linkish" data-user="' + w.user_id + '"><b>' + esc(w.name) + '</b><span>' + esc(w.email) + '</span></button></td>'
             + '<td class="req" data-l="Реквизиты">' + esc(w.requisites) + '</td>'
-            + '<td class="num" data-l="К выплате"><b>' + money(w.net) + '</b></td>'
+            + '<td class="num" data-l="К выплате"><b>' + money(w.net) + '</b>'
+            /* аудит 16.10.2026: на балансе были тестовые зачисления без оплаты */
+            + (w.test_topup ? '<div><span class="tmark" title="Человек пополнял баланс тестовым пополнением — эти деньги ненастоящие">тестовые ' + money(w.test_topup) + '</span></div>' : '') + '</td>'
             + '<td class="num" data-l="Комиссия">' + money(w.fee) + '</td>'
             + '<td data-l="Статус"><span class="st ' + esc(w.status) + '">' + statusRu(w.status) + '</span>'
             + (w.note ? '<div class="mute" style="margin-top:4px">' + esc(w.note) + '</div>' : '') + '</td>'
@@ -1176,7 +1211,7 @@ var VID_ST = {
   paid:['Подсчёт закончен','paid'], removed:['Удалено с площадки','off'], revoked:['Доступ отозван','off'],
 };
 /* вид паузы начислений → как назвать */
-var VID_HOLD = { money:'не хватило денег в бюджете', access:'нет доступа к каналу блогера' };
+var VID_HOLD = { money:'бюджет задания исчерпан — доплатим сами после пополнения', access:'нет доступа к каналу блогера' };
 var VID_PL = { tiktok:'TikTok', youtube:'YouTube', instagram:'Instagram' };
 /* 15.10.2026: Shorts и Reels — по пометке ролика (kind) */
 function vidPl(v){
