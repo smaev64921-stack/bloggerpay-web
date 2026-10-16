@@ -81,6 +81,13 @@ try {
   const camp = await api('POST', '/api/sync/put',
     { kind: 'camp', rid: 'camp-1', data: { id: 'camp-1', title: 'Кампания' } }, adv.token);
   ok(camp.status === 200 && camp.body.b === null, 'кампания положена общим конвертом', camp.body);
+  /* С аудита 16.10.2026 чужим лента отдаёт только задание с замороженным
+     бюджетом (без денег в кассе его не видно никому, кроме автора). */
+  ok(rows(await api('GET', '/api/sync/pull?since=0', null, bad.token)).length === 0,
+    'задание без денег в кассе посторонний не видит');
+  await api('POST', '/api/topup', { amount: 2000, opKey: 'forge-top-1' }, adv.token);
+  const held = await api('POST', '/api/deals/hold', { dealId: 'camp:camp-1', amount: 1000, opKey: 'forge-hold-1' }, adv.token);
+  ok(held.status === 200, 'бюджет задания заморожен', held.body);
   const forAll = rows(await api('GET', '/api/sync/pull?since=0', null, bad.token));
   ok(forAll.length === 1 && forAll[0].kind === 'camp',
     'посторонний видит кампанию — и только её', forAll.map((r) => r.kind));

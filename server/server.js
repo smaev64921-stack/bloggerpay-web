@@ -2961,42 +2961,80 @@ function ipBucket(ip) {
    (успешный сброс снимает паузу), вход Телеграмом и Google работают и во
    время неё. Почты без аккаунта считаются так же: по ответу не понять,
    есть ли аккаунт. */
+/* Пересмотр (аудит 16.10.2026, R2): пауза на ВСЮ почту запирала хозяина
+   посторонним — 10 неверных паролей раз в 15 минут с любого адреса, и
+   верный пароль с телефона владельца получал 429. Теперь пауза — на ПАРУ
+   (почта, адрес/сеть ipBucket): LOGIN_MISS_MAX промахов за окно — вход
+   паролем к этой почте с этого адреса на паузе, с других адресов верный
+   пароль проходит. Общий счёт по почте (со всех адресов) — только
+   замедление ответа (от LOGIN_SLOW_AT) и одна тревога владельцу за окно
+   (LOGIN_ALERT_AT: с одного адреса столько не набрать — пара встаёт на
+   паузу раньше, значит перебор идёт с нескольких). Тревоги — в свой
+   кошелёк 'auth' (TG_CAP.auth в час) и потолок серверных не выжигают.
+   Повтор той же пары быстрее LOGIN_TWIN_MS — полпромаха: приложение на
+   одну опечатку шлёт два пароля (производную и сам пароль). */
 const LOGIN_MISS_MAX = 10;
 const LOGIN_MISS_WIN_MS = 15 * 60 * 1000;
 const LOGIN_PAUSE_MS = 15 * 60 * 1000;
-const loginMiss = new Map();   /* почта → { n, at, until } */
-function loginPausedFor(email) {
+const LOGIN_TWIN_MS = 3000;
+const LOGIN_SLOW_AT = 20;
+const LOGIN_ALERT_AT = 30;
+const LOGIN_PAIRS_MAX = 300;
+/* почта → { n, at, alerted, pairs: Map(ipBucket → { n, at, last, until }) } */
+const loginMiss = new Map();
+function loginIpKey(req) { return ipBucket(clientIp(req)); }
+function loginPausedFor(email, ipk) {
   if (RL_OFF) return 0;
   const m = loginMiss.get(email);
-  if (!m || !m.until) return 0;
-  const left = m.until - Date.now();
+  const p = m && m.pairs.get(ipk);
+  if (!p || !p.until) return 0;
+  const left = p.until - Date.now();
   if (left > 0) return left;
-  loginMiss.delete(email);
+  m.pairs.delete(ipk);
   return 0;
 }
-function loginMissed(email, u) {
+/* замедление ответа, пока по почте идёт перебор со многих адресов */
+function loginSlowMs(email) {
+  if (RL_OFF) return 0;
+  const m = loginMiss.get(email);
+  if (!m || Date.now() - m.at > LOGIN_MISS_WIN_MS || m.n < LOGIN_SLOW_AT) return 0;
+  return Math.min(2000, 500 + (m.n - LOGIN_SLOW_AT) * 50);
+}
+function loginMissed(email, ipk, u) {
   if (RL_OFF || !email) return;
   const now = Date.now();
   let m = loginMiss.get(email);
-  if (!m || now - m.at > LOGIN_MISS_WIN_MS) m = { n: 0, at: now };
+  if (!m) m = { n: 0, at: now, alerted: false, pairs: new Map() };
+  if (now - m.at > LOGIN_MISS_WIN_MS) { m.n = 0; m.at = now; m.alerted = false; }
+  let p = m.pairs.get(ipk);
+  if (!p || (!p.until && now - p.at > LOGIN_MISS_WIN_MS)) p = { n: 0, at: now, last: 0, until: 0 };
+  p.n += (p.last && now - p.last < LOGIN_TWIN_MS) ? 0.5 : 1;
+  p.last = now;
   m.n += 1;
-  if (m.n >= LOGIN_MISS_MAX) {
-    m.until = now + LOGIN_PAUSE_MS;
-    m.n = 0; m.at = now;
-    if (u) {
-      tgAlert('loginbrute:' + u.id,
-        '🔐 Похоже на подбор пароля\n\nАккаунт: ' + String(email).slice(0, 120) + ' (#' + u.id + ')'
-        + '\nНеверных паролей: ' + LOGIN_MISS_MAX + ' за 15 минут.'
-        + '\nВход паролем для этой почты — на паузе 15 минут.', 'server');
-    }
+  if (p.n >= LOGIN_MISS_MAX) { p.until = now + LOGIN_PAUSE_MS; p.n = 0; p.at = now; }
+  m.pairs.delete(ipk); m.pairs.set(ipk, p);                 /* свежие — в конец */
+  if (m.pairs.size > LOGIN_PAIRS_MAX) m.pairs.delete(m.pairs.keys().next().value);
+  if (u && !m.alerted && m.n >= LOGIN_ALERT_AT) {
+    m.alerted = true;
+    let addrs = 0;
+    for (const x of m.pairs.values()) if (now - x.last < LOGIN_MISS_WIN_MS) addrs++;
+    tgAlert('loginbrute:' + u.id,
+      '🔐 Похоже на подбор пароля\n\nАккаунт: ' + String(email).slice(0, 120) + ' (#' + u.id + ')'
+      + '\nНеверных паролей: ' + m.n + ' за 15 минут, адресов: ' + addrs + '.'
+      + '\nС каждого адреса после ' + LOGIN_MISS_MAX + ' промахов вход паролем на паузе 15 минут, ответы замедлены;'
+      + ' хозяин со своего адреса входит как обычно.', 'auth');
   }
   loginMiss.delete(email); loginMiss.set(email, m);         /* свежие — в конец */
   if (loginMiss.size > 20000) loginMiss.delete(loginMiss.keys().next().value);
 }
+function loginPairClear(email, ipk) {
+  const m = loginMiss.get(email);
+  if (m) m.pairs.delete(ipk);
+}
 function loginPausedReply(ms) {
   const min = Math.max(1, Math.ceil(ms / 60000));
   return { status: 429, body: {
-    error: 'Слишком много неверных паролей для этой почты. Вход паролем — на паузе ' + min + ' мин. '
+    error: 'Слишком много неверных паролей для этой почты с вашего адреса. Вход паролем — на паузе ' + min + ' мин. '
       + 'Не помните пароль — нажмите «Забыли пароль?»: код придёт на почту.',
     code: 'login_paused', wait: Math.ceil(ms / 1000),
   } };
@@ -3219,7 +3257,7 @@ const TG_API_BASE = (ENV.TG_API_BASE || 'https://api.telegram.org').replace(/\/+
 const ALERTS_ON = Boolean(BOT_TOKEN && ADMIN_CHAT_ID);
 
 const tgSeen = new Map();          /* подпись → { n, lastSent }, свежие в конце */
-const TG_CAP = { client: 15, guest: 15, server: 10 };   /* тревог в час на каждый кошелёк */
+const TG_CAP = { client: 15, guest: 15, server: 10, auth: 5 };   /* тревог в час на каждый кошелёк */
 const TG_REPEAT_MS = 10 * 60 * 1000;
 const tgLane = {
   client: { sent: 0, muted: false },
@@ -3228,6 +3266,9 @@ const tgLane = {
      настоящих ошибках у вошедших людей */
   guest: { sent: 0, muted: false },
   server: { sent: 0, muted: false },
+  /* подбор паролей — свой кошелёк (аудит 16.10.2026, R2): тревоги о нём
+     вызывает кто угодно без входа, и они глушили споры, KYC и накрутку */
+  auth: { sent: 0, muted: false },
 };
 let tgHourAt = 0;
 
@@ -3272,7 +3313,7 @@ function tgAlert(sig, text, lane, critical) {
     tgHourAt = now;
     for (const k of Object.keys(tgLane)) { tgLane[k].sent = 0; tgLane[k].muted = false; }
   }
-  const key = (lane === 'client' || lane === 'guest') ? lane : 'server';
+  const key = (lane === 'client' || lane === 'guest' || lane === 'auth') ? lane : 'server';
   const L = tgLane[key];
 
   const rec = tgSeen.get(sig);
@@ -3291,7 +3332,7 @@ function tgAlert(sig, text, lane, critical) {
   if (!critical && L.sent >= TG_CAP[key]) {
     if (!L.muted) {
       L.muted = true;
-      tgSendRaw('⚠️ Тревог ' + (key === 'client' ? 'с сайта' : key === 'guest' ? 'с сайта от гостей' : 'серверных')
+      tgSendRaw('⚠️ Тревог ' + (key === 'client' ? 'с сайта' : key === 'guest' ? 'с сайта от гостей' : key === 'auth' ? 'о подборе паролей' : 'серверных')
         + ' больше ' + TG_CAP[key] + ' за час — молчу про них до конца часа, чтобы не завалить чат.'
         + ' Полный список: пульт оператора, раздел «Поломки».');
     }
@@ -4384,17 +4425,20 @@ const routes = {
     if (email.length > EMAIL_MAX) { scrypt('заглушка-для-ровного-времени', 'соль'); return bad; }
     /* пауза после череды промахов по этой почте — до сверки пароля, иначе
        перебор шёл бы дальше (аудит 16.10.2026, loginMissed) */
-    const paused = loginPausedFor(email);
+    const ipk = loginIpKey(req);
+    const paused = loginPausedFor(email, ipk);
     if (paused) return loginPausedReply(paused);
+    const slow = loginSlowMs(email);
+    if (slow) await new Promise((r) => setTimeout(r, slow));
     const u = q.userByEmail.get(email);
-    if (!u) { scrypt('заглушка-для-ровного-времени', 'соль'); loginMissed(email, null); return bad; }
+    if (!u) { scrypt('заглушка-для-ровного-времени', 'соль'); loginMissed(email, ipk, null); return bad; }
     const hash = scrypt(String(body.password || ''), u.pass_salt);
     const stored = String(u.pass_hash || '');
     if (hash.length !== stored.length || !crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(stored))) {
-      loginMissed(email, u);
+      loginMissed(email, ipk, u);
       return bad;
     }
-    loginMiss.delete(email);
+    loginPairClear(email, ipk);
     if (u.is_blocked) return { status: 403, body: { error: 'Аккаунт заблокирован' } };
     syncAdminFlag(u);
     const token = newToken();
@@ -5373,7 +5417,11 @@ const routes = {
     if (holds) {
       /* бюджет задания: спор одного блогера держит только его начисления,
          возврат автору он не запирает (refundBlocked) */
-      tgAlert('dispute:' + dealId + ':' + info.lastInsertRowid,
+      /* Подпись — сделка и сторона, а не номер строки (V1, аудит 16.10.2026):
+         «открыть → снять → открыть» шло новой тревогой каждый раз (20 в
+         минуту) и за минуту выжигало часовой лимит серверных тревог —
+         теперь повтор той же стороной не чаще раза в 10 минут. */
+      tgAlert('dispute:' + dealId + ':' + (scope == null ? 'all' : scope),
         '⚖️ Открыт спор по сделке ' + dealId + '\n\nОткрыл: ' + u.email
         + (scope != null ? '\nИсполнитель id ' + scope : '')
         + (campD && scope != null ? '\n\nНачисления этому блогеру по заданию стоят до решения.' : '\n\nДеньги заморожены до решения.')

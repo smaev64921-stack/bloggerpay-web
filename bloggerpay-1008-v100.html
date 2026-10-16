@@ -11585,12 +11585,12 @@ window.BP_LOGO="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAYAAABccq
   <!-- LOGIN FORM -->
   <div class="auth-form" id="formLogin">
     <div class="auth-field">
-      <div class="auth-field-lbl">Email или телефон</div>
+      <div class="auth-field-lbl">Почта</div>
       <div class="auth-inp-wrap">
         <div class="auth-inp-ico">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="22,4 12,13 2,4"/></svg>
         </div>
-        <input class="auth-inp" type="text" id="loginEmail" maxlength="254" placeholder="Введите email или телефон" autocomplete="email">
+        <input class="auth-inp" type="text" id="loginEmail" maxlength="254" placeholder="Введите почту" autocomplete="email" inputmode="email">
       </div>
     </div>
     <div class="auth-field">
@@ -16386,12 +16386,17 @@ function daysSince(dateStr) {
 async function doLogin() {
   const emailVal = document.getElementById('loginEmail').value.trim().toLowerCase();
   const passVal = document.getElementById('loginPass').value;
-  if(!emailVal) { showAuthToast('Введите email или телефон', 'err'); return; }
+  if(!emailVal) { showAuthToast('Введите почту', 'err'); return; }
+  /* Вход — только по почте (аудит 16.10.2026): сервер знает аккаунт по почте,
+     и вход по телефону пускал в приложение без серверной сессии (все
+     запросы — 401), а на новом устройстве отвечал «неверный пароль».
+     Телефон нужен только для верификации. */
+  if(emailVal.indexOf('@') < 0) { showAuthToast('Вход — по почте: введите адрес почты, который указали при регистрации', 'err'); return; }
   if(!passVal) { showAuthToast('Введите пароль', 'err'); return; }
 
-  // Ищем кандидата по email/телефону, затем проверяем пароль по хешу
+  // Ищем кандидата по почте, затем проверяем пароль по хешу
   // (_bpVerifyPass также мигрирует старые записи с открытым паролем на хеш)
-  const candidate = users.find(u => u.email.toLowerCase() === emailVal || u.phone === emailVal);
+  const candidate = users.find(u => String(u.email || '').toLowerCase() === emailVal);
   const ok = candidate ? await _bpVerifyPass(candidate, passVal) : false;
   if(!ok) {
     showAuthToast('Неверный email или пароль', 'err');
@@ -16489,7 +16494,7 @@ function forgotPass() {
   var f = document.getElementById('loginEmail');
   var val = ((f && f.value) || '').trim().toLowerCase();
   if(!val){
-    showAuthToast('Введите email или телефон — и нажмите снова', 'err');
+    showAuthToast('Введите почту — и нажмите снова', 'err');
     if(f) f.focus();
     return;
   }
@@ -16746,7 +16751,7 @@ function openHelpSheet(){
   _bpSheetOpen('Помощь и поддержка', `${items}
     <div style="display:flex;gap:10px;align-items:center;background:rgba(255,255,255,0.044);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:13px 14px;margin-top:6px">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#e5e7ea" stroke-width="2" stroke-linecap="round" style="flex-shrink:0"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-      <div style="min-width:0"><div style="font-size:12.5px;font-weight:700;color:var(--t1)">Не нашли ответ?</div><div style="font-size:11.5px;color:var(--t2);margin-top:1px">Напишите: support@bloggerpay.ru</div></div>
+      <div style="min-width:0"><div style="font-size:12.5px;font-weight:700;color:var(--t1)">Не нашли ответ?</div><div style="font-size:11.5px;color:var(--t2);margin-top:1px">Напишите в поддержку — бот BloggerPay в Telegram, команда /support</div></div>
     </div>`);
 }
 
@@ -16892,7 +16897,7 @@ function openLegal(kind){
     ${h('4. Дети')}
     ${p('4.1. Сервис не предназначен для лиц младше 18 лет.')}
     ${h('5. Контакты')}
-    ${p('5.1. Вопросы по данным: support@bloggerpay.ru')}`;
+    ${p('5.1. Вопросы по данным и запросы — в поддержку: «Настройки» → «Написать в поддержку» (бот BloggerPay в Telegram, команда /support).')}`;
   const ov = document.createElement('div');
   ov.id = 'legalOverlay';
   ov.style.cssText = 'position:fixed;inset:0;z-index:520;background:var(--bg);display:flex;flex-direction:column;max-width:420px;margin:0 auto;overflow:hidden';
@@ -74540,6 +74545,29 @@ if(typeof origLogin === 'function' && !origLogin.__bpLinked){
           }
         }
       }catch(e){ E(e); }
+      /* Местный вход без серверной сессии не пускаем (аудит 16.10.2026):
+         адрес знаком браузеру и пароль сошёлся с копией — раньше входили
+         сразу, а сессию заводили в фоне; не вышло (нет связи, на сервере
+         другой пароль) — человек сидел внутри, и всё, что идёт через
+         сервер (кошелёк, задания, вывод), отвечало 401. Теперь сначала
+         сервер (вход, для старых аккаунтов — регистрация тем же паролем),
+         и только с его «да» — местный вход. Без @ дальше не идём: вход
+         только по почте (doLogin сам скажет). */
+      var linked = false;
+      if(val && pass && /@/.test(val) && srvOn() && !viaSrv && known && need === false && typeof window.bpSrvLinkNow === 'function'){
+        try{
+          var lk = await window.bpSrvLinkNow(val, pass, known.name || 'Без имени', known.role || 'blogger');
+          if(!lk) throw new Error('Не удалось войти на сервере');
+          linked = true;
+        }catch(le){
+          var lt = (le && le.blocked) ? BLOCKED_TXT
+            : (le && le.stale) ? 'На сервере у этого аккаунта другой пароль — похоже, его меняли на другом устройстве. Войдите с новым паролем или нажмите «Забыли пароль?»'
+            : srvErrText(le, 'войти не получилось, попробуйте через минуту');
+          try{ showAuthToast(lt, 'err'); }catch(_){}
+          if(!(le && (le.blocked || le.stale || (le.status >= 400 && le.status < 500)))) E(le);
+          return false;
+        }
+      }
       var wasUser = (typeof currentUser !== 'undefined') ? currentUser : null;
       var r = await origLogin.apply(this, arguments);
       try{
@@ -74549,7 +74577,7 @@ if(typeof origLogin === 'function' && !origLogin.__bpLinked){
           /* сессия на сервере уже есть (вход выше) — второй раз не входим */
           if(viaSrv && viaSrv.id){
             try{ if(window.bpMoney && typeof bpMoney.setMySrvId === 'function') bpMoney.setMySrvId(viaSrv.id); }catch(e){ E(e); }
-          } else link(now.email || val, pass, now.name || 'Без имени', now.role || 'blogger');
+          } else if(!linked) link(now.email || val, pass, now.name || 'Без имени', now.role || 'blogger');
         }
       }catch(e){ E(e); }
       return r;
@@ -76231,8 +76259,11 @@ async function linkNow(email, password, name, role){
         throw be;
       }
       /* 409 «email уже занят» на регистрации означает, что пароль не тот:
-         дальше пробовать нечего — нужен настоящий пароль от этого адреса. */
-      if(e && e.status === 409) break;
+         дальше пробовать нечего — нужен настоящий пароль от этого адреса.
+         429 (лимит, пауза входа) — тоже стоп: следующие попытки лишь
+         добавили бы промахов, а регистрация ответила бы «адрес занят»
+         вместо понятного «подождите». */
+      if(e && (e.status === 409 || e.status === 429)) break;
     }
   }
   if(lastErr) lastErr.__bpLink = true;
@@ -76296,6 +76327,9 @@ function blockedOut(email){
 }
 window.bpBlockedOut = blockedOut;
 
+/* Вход с ожиданием и отказом исключением (blocked / stale / status):
+   его ждёт doLogin bp-srvlink ДО местного входа (аудит 16.10.2026). */
+window.bpSrvLinkNow = linkNow;
 /* Прежний мост звал window.bpLinkServer — оставляем то же имя, но с
    новой начинкой и молчаливым отказом (его зовут в фоне при входе). */
 window.bpLinkServer = function(email, password, name, role){
@@ -105377,7 +105411,6 @@ function openOp(it){
 }
 
 /* ══════════ «Пополнение кошелька» ══════════ */
-var SUPPORT = 'support@bloggerpay.ru';
 /* пополнение по счёту (14.10.2026): минимум и бот приходят с сервера */
 var INV = { min:10000, bot:'BloggerPay_bot' };
 /* Режим кассы (аудит 16.10.2026, GET /api/pay/config): mode 'off' — ни
@@ -107933,7 +107966,9 @@ function watchLaunch(id, budget){
         }, function(){ polling = false; if(late()) return ok(); if(more()) again(1000); });
         return;
       }
-      if(Date.now() - t0 < 20000 || confirmedAt) again(400);
+      /* не дольше 20 с от начала (или от «да» кассы): статус так и не стал
+         active — опрос не крутится вечно раз в 0,4 с (аудит 16.10.2026, V3) */
+      if(Date.now() - t0 < 20000 || (confirmedAt && Date.now() - confirmedAt < 20000)) again(400);
       return;
     }
     if(String(c.status) === 'active' && Date.now() - t0 > 2500) return ok();
@@ -110134,7 +110169,7 @@ function val(id){ var i = $(id); return i ? String(i.value || '') : ''; }
 function isReg(){ var f = $('formRegister'); return !!(f && f.style.display !== 'none'); }
 
 /* ── подписи полей: всплывают над значением ── */
-var LBL = { loginEmail:'Почта или телефон', loginPass:'Пароль', regName:'Имя', regEmail:'Почта', regPhone:'Телефон', regPass:'Пароль', regPass2:'Повторите пароль' };
+var LBL = { loginEmail:'Почта', loginPass:'Пароль', regName:'Имя', regEmail:'Почта', regPhone:'Телефон', regPass:'Пароль', regPass2:'Повторите пароль' };
 function labels(on){
   Object.keys(LBL).forEach(function(id){
     var i = $(id); if(!i || !i.parentNode) return;
@@ -110428,7 +110463,14 @@ function frame(ts){
   if(ts >= H.next){ H.wi = (H.wi + 1) % WORDS.length; setWord(H.wi, true); H.next = ts + HOLD; }
   draw(ts * 0.001, dt);
 }
+/* «уменьшить движение»: слово рисуем ОДИН раз на слово и размер. paint()
+   (наблюдатель классов #pg-auth, запасные таймеры 0,4/1,5/3,5 с, загрузка
+   шрифта) зовёт heroSync снова и снова, а setWord тасует точки случайно —
+   неподвижное слово каждый раз перерисовывалось иначе (16.10.2026) */
 function staticWord(){
+  var key = H.wi + ':' + H.W + 'x' + H.H + '@' + H.dpr;
+  if(H.still === key && H.stillC === H.c) return;
+  H.still = key; H.stillC = H.c;
   setWord(H.wi, false);
   for(var i = 0; i < H.P.length; i++){ var p = H.P[i]; p.x = p.tx; p.y = p.ty; p.vx = p.vy = 0; }
   draw(0, 1);
@@ -114275,8 +114317,21 @@ function tkHook(el){
   el.remove = function(){
     if(calm() || !el.isConnected || el.classList.contains('mvm-out')) return realRemove.call(el);
     el.classList.add('mvm-out');
-    setTimeout(function(){ realRemove.call(el); }, 210);
+    /* аудит 16.10.2026 (V3): шторку открывают заново тем же кодом «старую
+       remove() → новую с тем же id» (bpCampMoneySheet, bpCampFinish…). Пока
+       старая уезжает, getElementById находил ЕЁ поля (bpTmMoneyAmt, строки,
+       кнопку) — сумма и превью шли в уходящую шторку. Внутренние id снимаем
+       сразу (стили на них не завязаны), саму её убирает появление новой. */
+    try{ [].forEach.call(el.querySelectorAll('[id]'), function(n){ n.removeAttribute('id'); }); }catch(e){ E(e); }
+    setTimeout(function(){ if(el.isConnected) realRemove.call(el); }, 210);
   };
+}
+/* новая шторка с тем же id, пока прежняя уезжает: прежнюю — сразу (иначе
+   $('bpTmFinish') !== sh и прочие сверки по id смотрели бы на уходящую) */
+function tkDedup(n){
+  try{
+    [].forEach.call(document.querySelectorAll('.tk-ov.mvm-out'), function(o){ if(o !== n && o.id === n.id && o.isConnected) realRemove.call(o); });
+  }catch(e){ E(e); }
 }
 /* системная «Назад» (bp-nav closeLayer) ищет close<Id>; у этих шторок их
    не было — слой гас display:none и висел в разметке */
@@ -114527,7 +114582,7 @@ function onAdd(n){
     if(id === 'kycSheet') outOnLoss(n, 230);
     else if(id === 'bpConfirm') outOnLoss(n, 170);
     else if(id === 'bpToastWrap') watchToasts(n);
-    else if(TK.indexOf(id) >= 0) tkHook(n);
+    else if(TK.indexOf(id) >= 0){ tkDedup(n); tkHook(n); }
   }catch(e){ E(e); }
 }
 function boot(){

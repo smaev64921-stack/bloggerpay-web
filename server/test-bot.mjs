@@ -66,7 +66,12 @@ bot.stdout.on('data', (c) => { out += c; });
 bot.stderr.on('data', (c) => { out += c; });
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-await wait(1200);
+/* Ждём старт бота по факту (имя и настройка кнопок), а не 1,2 с: под
+   нагрузкой (прогоны в несколько потоков) запуск дольше, и набор падал
+   без причины в коде (V1, 16.10.2026). */
+for (let i = 0; i < 80 && !(/подключился/.test(out) && sent.some((s) => s._cfg === 'setMyCommands')
+  && sent.some((s) => s._cfg === 'setChatMenuButton')); i++) await wait(100);
+await wait(200);
 
 ok(/подключился: @test_bot/.test(out), 'бот представился именем из Телеграма', out.slice(0, 120));
 
