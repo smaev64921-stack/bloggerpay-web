@@ -3024,21 +3024,32 @@ const LOGIN_EMAILS_MAX = 20000;
 /* почта → { n, at, alerted, lockUntil,
              pairs: Map(ipBucket → { n, at, last, lastD, disc, until }) } */
 const loginMiss = new Map();
-/* Адреса, с которых человек уже входил паролем: почта → Set(ipBucket).
-   Замок на почту (LOGIN_EMAIL_MAX) — против перебора со многих адресов, но
-   он же давал постороннему запереть хозяина. Верный пароль со «своего»
-   адреса замок пропускает (пауза пары по-прежнему действует); перебор с
-   новых адресов упирается в замок (разбор безопасности 16.10.2026). */
-const loginKnown = new Map();
-function loginKnownHas(email, ipk) { const s = loginKnown.get(email); return !!(s && s.has(ipk)); }
-function loginKnownAdd(email, ipk) {
-  if (!email || !ipk) return;
-  let s = loginKnown.get(email);
-  if (!s) s = new Set();
-  s.delete(ipk); s.add(ipk);
-  if (s.size > 16) s.delete(s.values().next().value);
-  loginKnown.delete(email); loginKnown.set(email, s);
-  if (loginKnown.size > 50000) loginKnown.delete(loginKnown.keys().next().value);
+/* Метка устройства для замка на почту (разбор безопасности 16.10.2026).
+   Замок (LOGIN_EMAIL_MAX) — против перебора со многих адресов, но он же
+   давал постороннему запереть хозяина. Успешный вход паролем ставит
+   подписанную HttpOnly-куку bpld (uid.срок.подпись); верный пароль с
+   устройства с такой меткой проходит и во время замка (пауза пары
+   действует). Метку не подделать и не получить без входа; адрес как
+   «своё устройство» не годится — его делят соседи по сети. В подпись
+   входит соль пароля: смена или сброс пароля гасит все метки. */
+const LOGIN_DEV_MS = 180 * 864e5;
+const LOGIN_DEV_KEY = ADMIN_KEY || crypto.randomBytes(32).toString('hex');
+function loginDevSign(uid, exp, salt) {
+  return crypto.createHmac('sha256', 'ld:' + LOGIN_DEV_KEY).update(uid + ':' + exp + ':' + String(salt || '')).digest('hex').slice(0, 32);
+}
+function loginDevOk(req, u) {
+  if (!u) return false;
+  const m = /^(\d+)\.(\d+)\.([0-9a-f]{32})$/.exec(cookieOf(req, 'bpld'));
+  if (!m || Number(m[1]) !== u.id || Number(m[2]) < Date.now()) return false;
+  return crypto.timingSafeEqual(Buffer.from(loginDevSign(u.id, m[2], u.pass_salt)), Buffer.from(m[3]));
+}
+function loginDevCookie(req, u) {
+  const https = /^https:/i.test(PUBLIC_URL)
+    || /^https:/i.test(String(ENV.PUBLIC_URL || ''))
+    || String(req.headers['x-forwarded-proto'] || '') === 'https';
+  const exp = Date.now() + LOGIN_DEV_MS;
+  return 'bpld=' + u.id + '.' + exp + '.' + loginDevSign(u.id, exp, u.pass_salt)
+    + '; Path=/api/login; HttpOnly; SameSite=Lax; Max-Age=' + Math.floor(LOGIN_DEV_MS / 1000) + (https ? '; Secure' : '');
 }
 function loginIpKey(req) { return ipBucket(clientIp(req)); }
 /* производная пароля из приложения (bpSrvPass): SHA-256 в hex */
@@ -3097,7 +3108,13 @@ function loginMissed(email, ipk, u, pass) {
   m.n += w;
   if (p.n >= LOGIN_MISS_MAX) { p.until = now + LOGIN_PAUSE_MS; p.n = 0; p.at = now; }
   m.pairs.delete(ipk); m.pairs.set(ipk, p);                 /* свежие — в конец */
-  if (m.pairs.size > LOGIN_PAIRS_MAX) m.pairs.delete(m.pairs.keys().next().value);
+  /* вытесняем самую старую пару БЕЗ живой паузы: иначе поток новых адресов
+     сбрасывал бы паузу уже запертой пары */
+  if (m.pairs.size > LOGIN_PAIRS_MAX) {
+    let old = null;
+    for (const [k, x] of m.pairs) if (!(x.until > now)) { old = k; break; }
+    m.pairs.delete(old !== null ? old : m.pairs.keys().next().value);
+  }
   let lockedNow = false;
   if (m.n >= LOGIN_EMAIL_MAX && !(m.lockUntil > now)) { m.lockUntil = now + LOGIN_LOCK_MS; lockedNow = true; }
   if (u && ((!m.alerted && m.n >= LOGIN_ALERT_AT) || lockedNow)) {
@@ -4682,9 +4699,9 @@ const routes = {
        перебор шёл бы дальше (аудит 16.10.2026, loginMissed) */
     const ipk = loginIpKey(req);
     /* замок на почту (со всех адресов) — раньше паузы пары: верный пароль
-       во время замка тоже не проходит — кроме адреса, с которого этот
-       человек уже входил (loginKnown) */
-    const known = loginKnownHas(email, ipk);
+       во время замка тоже не проходит — кроме устройства с меткой bpld,
+       с которого этот человек уже входил паролем */
+    const known = loginDevOk(req, q.userByEmail.get(email));
     let locked = known ? 0 : loginLockedFor(email);
     if (locked) return loginLockedReply(locked);
     let paused = loginPausedFor(email, ipk);
@@ -4710,13 +4727,13 @@ const routes = {
       return bad;
     }
     loginPairClear(email, ipk);
-    loginKnownAdd(email, ipk);
     if (u.is_blocked) return { status: 403, body: { error: 'Аккаунт заблокирован' } };
     syncAdminFlag(u);
     const token = newToken();
     const exp = new Date(Date.now() + SESSION_DAYS * 864e5).toISOString();
     q.insSession.run(token, u.id, exp);
-    return { status: 200, body: { token, user: { id: u.id, email: u.email, name: u.name, role: u.role } } };
+    return { status: 200, body: { token, user: { id: u.id, email: u.email, name: u.name, role: u.role } },
+      headers: { 'Set-Cookie': loginDevCookie(req, u) } };
   },
 
   /* ── Восстановление пароля по коду из письма ────────────────────

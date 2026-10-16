@@ -178,10 +178,10 @@ async function withdrawNeedsEmail() {
   for (let i = 0; i < 100 && !upM; i++) { try { const r = await fetch(MBASE + '/api/health'); await r.text(); upM = r.ok; } catch (e) {} if (!upM) await sleep(150); }
   ok(upM, 'второй сервер (почта настроена, Resend — заглушка) поднялся');
   /* ip — свой адрес (X-Forwarded-For при TRUST_PROXY=1): лимиты и паузы входа считаются по нему */
-  apiM = async (m, p, b, token, admin, ip) => {
-    const h = { 'Content-Type': 'application/json', 'X-Forwarded-For': ip || ('10.78.' + (process.pid % 250) + '.9') }; if (token) h.Authorization = 'Bearer ' + token; if (admin) h['X-Admin-Key'] = KEY;
+  apiM = async (m, p, b, token, admin, ip, cookie) => {
+    const h = { 'Content-Type': 'application/json', 'X-Forwarded-For': ip || ('10.78.' + (process.pid % 250) + '.9') }; if (token) h.Authorization = 'Bearer ' + token; if (admin) h['X-Admin-Key'] = KEY; if (cookie) h.Cookie = cookie;
     const r = await fetch(MBASE + p, { method: m, headers: h, body: b ? JSON.stringify(b) : undefined });
-    const t = await r.text(); let j = {}; try { j = JSON.parse(t); } catch (e) {} return { status: r.status, body: j };
+    const t = await r.text(); let j = {}; try { j = JSON.parse(t); } catch (e) {} return { status: r.status, body: j, setCookie: r.headers.get('set-cookie') || '' };
   };
   mailsM = mails;
   /* initData мини-аппа — как его подписывает Телеграм */
@@ -395,10 +395,16 @@ async function loginBrute() {
     'замок: и верный пароль с нового адреса — 429 «Слишком много попыток входа к этой почте… «Забыли пароль?»»', owner2.body);
   const xff = await apiM('POST', '/api/login', { email: EL, password: PWD }, null, null, '1.2.3.4, 10.84.0.3');
   ok(xff.status === 429, 'подставной адрес в начале X-Forwarded-For замок не обходит', xff.body);
-  const ownerKnown = await login(EL, PWD, '10.84.0.1');
-  ok(ownerKnown.status === 200 && ownerKnown.body.token, 'во время замка хозяин входит со своего адреса (раньше входил с него) — постороннему не запереть', ownerKnown.body);
-  const knownBad = await login(EL, 'не-тот', '10.84.0.1');
-  ok(knownBad.status === 401, '…а неверный пароль со «своего» адреса — обычный промах', knownBad.body);
+  const dev = String(owner1.setCookie || '').split(';')[0];
+  ok(/^bpld=\d+\.\d+\.[0-9a-f]{32}$/.test(dev) && /HttpOnly/i.test(owner1.setCookie) && /Path=\/api\/login/i.test(owner1.setCookie), 'успешный вход ставит метку устройства bpld (HttpOnly, только для /api/login)', owner1.setCookie);
+  const sameIp = await login(EL, PWD, '10.84.0.1');
+  ok(sameIp.status === 429, 'тот же адрес без метки устройства замок не обходит (адрес делят соседи по сети)', sameIp.body);
+  const ownerKnown = await apiM('POST', '/api/login', { email: EL, password: PWD }, null, null, '10.84.0.77', dev);
+  ok(ownerKnown.status === 200 && ownerKnown.body.token, 'во время замка хозяин входит с устройства с меткой (с любого адреса) — постороннему не запереть', ownerKnown.body);
+  const knownBad = await apiM('POST', '/api/login', { email: EL, password: 'не-тот' }, null, null, '10.84.0.77', dev);
+  ok(knownBad.status === 401, '…а неверный пароль с меткой — обычный промах', knownBad.body);
+  const forged = await apiM('POST', '/api/login', { email: EL, password: PWD }, null, null, '10.84.0.78', dev.replace(/.$/, (c) => (c === '0' ? '1' : '0')));
+  ok(forged.status === 429, 'подделанная метка не действует', forged.body);
   ok((await apiM('GET', '/api/me', null, owner1.body.token)).status === 200, 'уже вошедшего хозяина замок не выкидывает');
   /* сброс по коду снимает замок */
   const f = await apiM('POST', '/api/password/forgot', { email: EL }, null, null, '10.84.0.4');
