@@ -77,6 +77,9 @@ function start(port, env) {
       ...process.env, PORT: String(port), ADMIN_KEY: 'test-key',
       YOOKASSA_SHOP_ID: '', YOOKASSA_SECRET_KEY: '', ADMIN_CHAT_ID: '',
       YT_CLIENT_ID: '', YT_CLIENT_SECRET: '',
+      /* почта выключена явно: иначе server/.env включил бы настоящую, и
+         «Почта и пароль» слала бы письма наружу (аудит 16.10.2026) */
+      RESEND_API_KEY: '', MAIL_DEBUG: '', RELAY_URL: '',
       ...env,
     },
     stdio: 'ignore',
@@ -275,15 +278,19 @@ try {
   const fake = await api('POST', '/api/account/email', { email: 'tg1@telegram.local', password: 'пароль-подлиннее' }, tokB);
   ok(fake.status === 400, 'служебный домен не принимаем', fake.body);
 
+  /* Аудит 16.10.2026: почта привязывается только кодом, ушедшим на неё
+     (полный путь с кодом — test-account.mjs). Здесь почта на сервере не
+     настроена — подтвердить адрес нечем, и сервер честно отказывает, а не
+     привязывает чужой адрес без проверки. */
   const setMail = await api('POST', '/api/account/email', { email: 'bot@t.ru', password: 'пароль-подлиннее' }, tokB);
-  ok(setMail.status === 200 && setMail.body.email === 'bot@t.ru', 'почта задана', setMail.body);
-  const meB = await fetch(BASE + '/api/me', { headers: { Authorization: 'Bearer ' + tokB } }).then((r) => r.json());
+  ok(setMail.status === 503 && setMail.body.code === 'mail_off' && /почта на сервере/i.test(setMail.body.error || ''),
+    'почта на сервере не настроена — честный отказ, а не привязка без проверки', setMail.body);
+  const mB2 = await api('GET', '/api/account/methods', null, tokB);
+  ok(mB2.body.needsEmail === true && mB2.body.email === '', 'почта так и не задана', mB2.body);
   const logIn = await api('POST', '/api/login', { email: 'bot@t.ru', password: 'пароль-подлиннее' });
-  ok(logIn.status === 200 && logIn.body.user && logIn.body.user.id === meB.user.id,
-    'вход по новой почте ведёт в ТОТ ЖЕ аккаунт, а не во второй кошелёк',
-    { было: meB.user && meB.user.id, стало: logIn.body.user && logIn.body.user.id });
-  const again = await api('POST', '/api/account/email', { email: 'bot2@t.ru', password: 'пароль-подлиннее' }, tokB);
-  ok(again.status === 400, 'вторую смену почты закрываем', again.body);
+  ok(logIn.status === 401, 'по непривязанной почте не войти', logIn.body);
+  const withCode = await api('POST', '/api/account/email', { email: 'bot@t.ru', code: '123456' }, tokB);
+  ok(withCode.status === 503 || withCode.status === 400, 'и с выдуманным кодом почту не привязать', withCode.body);
 
   /* ── имя одно везде ──
      Профиль правил своё имя, а в таблице users оставалось прежнее — его

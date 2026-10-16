@@ -1098,6 +1098,24 @@ try { db.exec('ALTER TABLE users ADD COLUMN google_sub TEXT'); }
 catch (e) { /* уже есть */ }
 try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_gsub ON users(google_sub) WHERE google_sub IS NOT NULL'); }
 catch (e) { /* индекс мог не создаться на старом движке — не критично */ }
+/* Почта подтверждена (аудит 16.10.2026, захват аккаунта заранее): 1 —
+   человек доказал, что ящик его: код из письма в «Почте и пароле», сброс
+   пароля по коду, вход через Google с почтой, проверенной у Google. Сброс
+   пароля по коду на НЕподтверждённой почте отвязывает Телеграм и Google и
+   гасит все сессии: иначе тот, кто заранее записал на свой аккаунт чужую
+   почту, так и оставался бы в аккаунте хозяина почты своим входом. */
+let EMAIL_VERIFIED_NEW = false;
+try { db.exec('ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0'); EMAIL_VERIFIED_NEW = true; } catch (e) { /* уже есть */ }
+if (EMAIL_VERIFIED_NEW) {
+  /* Разово: аккаунты Google без своего пароля — почту им дал сам Google
+     (непроверенную он не принимает), «Почтой и паролем» её не меняли (та
+     ставит обычную соль вместо метки nopw:). Остальным — 0: почту никто
+     не проверял. */
+  try {
+    db.exec(`UPDATE users SET email_verified = 1 WHERE google_sub IS NOT NULL
+      AND email NOT LIKE '%@google.local' AND email NOT LIKE '%@telegram.local' AND pass_salt LIKE 'nopw:%'`);
+  } catch (e) { /* не критично: худшее — лишняя отвязка Google при сбросе пароля */ }
+}
 
 /* Журнал действий владельца. Решения по выплатам, личности, спорам и
    блокировкам раньше оставляли только новый статус: при нескольких
@@ -1478,6 +1496,11 @@ const q = {
      пароль — и это становится вторым способом входа в ТОТ ЖЕ аккаунт,
      а не вторым кошельком. */
   updEmail: db.prepare('UPDATE users SET email = ? WHERE id = ?'),
+  /* почта доказана кодом из письма (или Google) — см. email_verified */
+  setEmailVerified: db.prepare('UPDATE users SET email_verified = 1 WHERE id = ?'),
+  /* сброс пароля по коду на неподтверждённой почте: прочие входы — прочь */
+  unlinkLogins: db.prepare('UPDATE users SET tg_id = NULL, google_sub = NULL WHERE id = ?'),
+  delUserPush: db.prepare('DELETE FROM push_subs WHERE user_id = ?'),
   /* Имён у человека было фактически два: users.name с регистрации,
      который менять было нечем, и имя из профиля, которое ездит конвертом
      между устройствами. Рейтинг, тревоги владельцу и пульт оператора
@@ -2972,18 +2995,56 @@ function ipBucket(ip) {
    (LOGIN_ALERT_AT: с одного адреса столько не набрать — пара встаёт на
    паузу раньше, значит перебор идёт с нескольких). Тревоги — в свой
    кошелёк 'auth' (TG_CAP.auth в час) и потолок серверных не выжигают.
-   Повтор той же пары быстрее LOGIN_TWIN_MS — полпромаха: приложение на
-   одну опечатку шлёт два пароля (производную и сам пароль). */
+   Полпромаха — только «двойнику»: приложение на одну опечатку шлёт два
+   пароля, производную bpSrvPass (64 знака hex) и сам пароль.
+   Пересмотр (аудит 16.10.2026, R3): раньше полпромаха получала ЛЮБАЯ
+   попытка быстрее LOGIN_TWIN_MS после прошлой — частые запросы считались
+   за половину, перебор с одного адреса шёл вдвое дольше. Теперь скидка —
+   только паре попыток той же пары (почта, адрес) быстрее LOGIN_TWIN_MS,
+   где одна — производная, другая — нет, и не больше одной скидки на две
+   попытки (цепочкой hex, сырой, hex, сырой… вторую скидку не набрать).
+   И замок на ПОЧТУ со всех адресов: LOGIN_EMAIL_MAX промахов за окно —
+   вход паролем к почте закрыт LOGIN_LOCK_MS для всех, верный пароль тоже
+   (иначе это не замок). Замедление ответа (sleep) параллельные запросы
+   обходили — потолок считается синхронно, после ожидания проверяется
+   заново. Хозяину остаются «Забыли пароль?» (успешный сброс по коду
+   снимает замок), вход Телеграмом и Google. */
 const LOGIN_MISS_MAX = 10;
 const LOGIN_MISS_WIN_MS = 15 * 60 * 1000;
 const LOGIN_PAUSE_MS = 15 * 60 * 1000;
 const LOGIN_TWIN_MS = 3000;
 const LOGIN_SLOW_AT = 20;
 const LOGIN_ALERT_AT = 30;
-const LOGIN_PAIRS_MAX = 300;
-/* почта → { n, at, alerted, pairs: Map(ipBucket → { n, at, last, until }) } */
+const LOGIN_EMAIL_MAX = 50;
+const LOGIN_LOCK_MS = 15 * 60 * 1000;
+/* адресов на почту: при замке после LOGIN_EMAIL_MAX промахов живых пар в
+   окне больше ~50 не набрать — 64 с запасом (было 300) */
+const LOGIN_PAIRS_MAX = 64;
+const LOGIN_EMAILS_MAX = 20000;
+/* почта → { n, at, alerted, lockUntil,
+             pairs: Map(ipBucket → { n, at, last, lastD, disc, until }) } */
 const loginMiss = new Map();
 function loginIpKey(req) { return ipBucket(clientIp(req)); }
+/* производная пароля из приложения (bpSrvPass): SHA-256 в hex */
+function loginDerived(p) { return /^[0-9a-f]{64}$/i.test(String(p == null ? '' : p)); }
+/* замок на почту целиком (со всех адресов) — сколько осталось, мс */
+function loginLockedFor(email) {
+  if (RL_OFF) return 0;
+  const m = loginMiss.get(email);
+  if (!m || !m.lockUntil) return 0;
+  const left = m.lockUntil - Date.now();
+  if (left > 0) return left;
+  m.lockUntil = 0; m.n = 0; m.at = Date.now(); m.alerted = false;
+  return 0;
+}
+function loginLockedReply(ms) {
+  const min = Math.max(1, Math.ceil(ms / 60000));
+  return { status: 429, body: {
+    error: 'Слишком много попыток входа к этой почте. Войдите через «Забыли пароль?» — код придёт на почту. '
+      + 'Вход паролем откроется через ' + min + ' мин.',
+    code: 'login_locked', wait: Math.ceil(ms / 1000),
+  } };
+}
 function loginPausedFor(email, ipk) {
   if (RL_OFF) return 0;
   const m = loginMiss.get(email);
@@ -3001,33 +3062,67 @@ function loginSlowMs(email) {
   if (!m || Date.now() - m.at > LOGIN_MISS_WIN_MS || m.n < LOGIN_SLOW_AT) return 0;
   return Math.min(2000, 500 + (m.n - LOGIN_SLOW_AT) * 50);
 }
-function loginMissed(email, ipk, u) {
+function loginMissed(email, ipk, u, pass) {
   if (RL_OFF || !email) return;
   const now = Date.now();
   let m = loginMiss.get(email);
-  if (!m) m = { n: 0, at: now, alerted: false, pairs: new Map() };
-  if (now - m.at > LOGIN_MISS_WIN_MS) { m.n = 0; m.at = now; m.alerted = false; }
+  if (!m) m = { n: 0, at: now, alerted: false, lockUntil: 0, pairs: new Map() };
+  /* окно счёта по почте не сбрасывается, пока висит замок */
+  if (now - m.at > LOGIN_MISS_WIN_MS && !(m.lockUntil > now)) { m.n = 0; m.at = now; m.alerted = false; m.lockUntil = 0; }
   let p = m.pairs.get(ipk);
-  if (!p || (!p.until && now - p.at > LOGIN_MISS_WIN_MS)) p = { n: 0, at: now, last: 0, until: 0 };
-  p.n += (p.last && now - p.last < LOGIN_TWIN_MS) ? 0.5 : 1;
-  p.last = now;
-  m.n += 1;
+  if (!p || (!p.until && now - p.at > LOGIN_MISS_WIN_MS)) p = { n: 0, at: now, last: 0, lastD: null, disc: false, until: 0 };
+  /* «двойник» опечатки: та же пара быстрее LOGIN_TWIN_MS, ровно одна из
+     двух попыток — производная, и прошлая попытка скидку не получала */
+  const d = loginDerived(pass);
+  const twin = !!p.last && now - p.last < LOGIN_TWIN_MS && p.lastD !== null && p.lastD !== d && !p.disc;
+  const w = twin ? 0.5 : 1;
+  p.n += w;
+  p.last = now; p.lastD = d; p.disc = twin;
+  m.n += w;
   if (p.n >= LOGIN_MISS_MAX) { p.until = now + LOGIN_PAUSE_MS; p.n = 0; p.at = now; }
   m.pairs.delete(ipk); m.pairs.set(ipk, p);                 /* свежие — в конец */
   if (m.pairs.size > LOGIN_PAIRS_MAX) m.pairs.delete(m.pairs.keys().next().value);
-  if (u && !m.alerted && m.n >= LOGIN_ALERT_AT) {
+  let lockedNow = false;
+  if (m.n >= LOGIN_EMAIL_MAX && !(m.lockUntil > now)) { m.lockUntil = now + LOGIN_LOCK_MS; lockedNow = true; }
+  if (u && ((!m.alerted && m.n >= LOGIN_ALERT_AT) || lockedNow)) {
     m.alerted = true;
     let addrs = 0;
     for (const x of m.pairs.values()) if (now - x.last < LOGIN_MISS_WIN_MS) addrs++;
-    tgAlert('loginbrute:' + u.id,
-      '🔐 Похоже на подбор пароля\n\nАккаунт: ' + String(email).slice(0, 120) + ' (#' + u.id + ')'
-      + '\nНеверных паролей: ' + m.n + ' за 15 минут, адресов: ' + addrs + '.'
+    tgAlert('loginbrute:' + u.id + (lockedNow ? ':lock' : ''),
+      (lockedNow ? '🔒 Вход паролем к почте закрыт\n\n' : '🔐 Похоже на подбор пароля\n\n')
+      + 'Аккаунт: ' + String(email).slice(0, 120) + ' (#' + u.id + ')'
+      + '\nНеверных паролей: ' + Math.floor(m.n) + ' за 15 минут, адресов: ' + addrs + '.'
       + '\nС каждого адреса после ' + LOGIN_MISS_MAX + ' промахов вход паролем на паузе 15 минут, ответы замедлены;'
-      + ' хозяин со своего адреса входит как обычно.', 'auth');
+      + ' после ' + LOGIN_EMAIL_MAX + ' со всех адресов вход паролем к этой почте закрыт на 15 минут для всех'
+      + (lockedNow ? ' — это случилось сейчас. Хозяину остаются «Забыли пароль?», Телеграм и Google.' : '.'), 'auth');
   }
   loginMiss.delete(email); loginMiss.set(email, m);         /* свежие — в конец */
-  if (loginMiss.size > 20000) loginMiss.delete(loginMiss.keys().next().value);
+  if (loginMiss.size > LOGIN_EMAILS_MAX) loginMissEvict(now);
 }
+/* Потолок памяти: уходит самая старая запись БЕЗ живого замка и паузы
+   (смотрим первые 64); все такие — уходит самая старая. Иначе поток
+   промахов к тысячам выдуманных почт выталкивал бы замок с настоящей. */
+function loginMissEvict(now) {
+  let i = 0, first = null;
+  for (const [k, x] of loginMiss) {
+    if (first === null) first = k;
+    let busy = x.lockUntil > now;
+    if (!busy) for (const p of x.pairs.values()) if (p.until > now) { busy = true; break; }
+    if (!busy) { loginMiss.delete(k); return; }
+    if (++i >= 64) break;
+  }
+  if (first !== null) loginMiss.delete(first);
+}
+/* Уборка: окна и паузы истекли — запись не нужна. */
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, m] of loginMiss) {
+    for (const [ip, p] of m.pairs) {
+      if (p.until ? now > p.until : now - p.at > LOGIN_MISS_WIN_MS) m.pairs.delete(ip);
+    }
+    if (!(m.lockUntil > now) && now - m.at > LOGIN_MISS_WIN_MS && !m.pairs.size) loginMiss.delete(k);
+  }
+}, 5 * 60 * 1000).unref();
 function loginPairClear(email, ipk) {
   const m = loginMiss.get(email);
   if (m) m.pairs.delete(ipk);
@@ -3848,6 +3943,78 @@ setInterval(() => {
   for (const [k, r] of wdCodes) if (now > r.expires) wdCodes.delete(k);
 }, 5 * 60 * 1000).unref();
 
+/* ── Код привязки почты (аудит 16.10.2026, захват аккаунта заранее) ──
+   «Почта и пароль» у аккаунта со служебной почтой (вход Телеграмом или
+   Google без почты) записывала адрес сразу, без проверки. Аккаунт из
+   Телеграма брал себе чужую почту; хозяин почты потом входил через
+   «Забыли пароль?» в ЭТОТ же аккаунт, а у захватчика оставался вход
+   Телеграмом — общий аккаунт. Теперь адрес привязывается только кодом,
+   ушедшим на НЕГО ЖЕ. Код привязан к паре (аккаунт, почта): им не
+   подтвердить другой адрес и не подтвердить за другой аккаунт. Пять
+   попыток на код (перевыпуск их не обнуляет), 15 минут, одноразовый.
+   Писем — не больше EM_ISSUE_MAX в час на аккаунт и столько же на адрес
+   (со всех аккаунтов), не чаще раза в минуту: чужой ящик не завалить. */
+const EM_TTL_MS = 15 * 60 * 1000;
+const EM_MAX_ATTEMPTS = 5;
+const EM_ISSUE_MAX = 5;
+const EM_RESEND_MS = 60 * 1000;
+/* userId → { hash, email, expires, attempts, at, salt, passHash } */
+const emCodes = new Map();
+const emIssues = new Map();   /* 'u:<id>' | 'm:<почта>' → [время, …] */
+function emHash(userId, email, code) {
+  return crypto.createHmac('sha256', PW_SECRET).update('em|' + userId + '|' + email + '|' + code).digest('hex');
+}
+function emRecent(key, now) {
+  const arr = (emIssues.get(key) || []).filter((t) => now - t < 3600000);
+  if (arr.length) emIssues.set(key, arr); else emIssues.delete(key);
+  return arr;
+}
+/* можно ли выслать код: { ok } или { error, wait } */
+function emIssueCheck(userId, email) {
+  const now = Date.now();
+  const mine = emRecent('u:' + userId, now), to = emRecent('m:' + email, now);
+  const last = Math.max(mine.length ? mine[mine.length - 1] : 0, to.length ? to[to.length - 1] : 0);
+  if (last && now - last < EM_RESEND_MS) return { error: 'cooldown', wait: Math.ceil((EM_RESEND_MS - (now - last)) / 1000) };
+  if (mine.length >= EM_ISSUE_MAX || to.length >= EM_ISSUE_MAX) return { error: 'too_many' };
+  return { ok: true };
+}
+function emIssue(userId, email, salt, passHash) {
+  const now = Date.now();
+  const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+  for (const k of ['u:' + userId, 'm:' + email]) { const arr = emRecent(k, now); arr.push(now); emIssues.set(k, arr); }
+  if (emIssues.size > 20000) emIssues.delete(emIssues.keys().next().value);
+  const was = emCodes.get(userId);
+  emCodes.set(userId, {
+    hash: emHash(userId, email, code), email, expires: now + EM_TTL_MS,
+    /* попытки переезжают на новый код: перевыпуск не обнуляет защиту */
+    attempts: (was && now - (was.at || 0) < 3600000) ? (Number(was.attempts) || 0) : 0,
+    at: now, salt, passHash,
+  });
+  return code;
+}
+/* ПРОВЕРЯЕТ, НЕ ГАСИТ (гасит обработчик после записи в базу) */
+function emCheck(userId, email, code) {
+  const rec = emCodes.get(userId);
+  if (!rec || Date.now() > rec.expires) return { ok: false, dead: true, why: 'Код истёк — запросите новый' };
+  if (rec.attempts >= EM_MAX_ATTEMPTS) return { ok: false, dead: true, why: 'Слишком много попыток — запросите новый код' };
+  /* код выдан на другой адрес — дело не в цифрах */
+  if (rec.email !== email) return { ok: false, dead: true, why: 'Код отправлен на другой адрес — запросите код для этой почты' };
+  const good = /^\d{6}$/.test(code) && crypto.timingSafeEqual(
+    Buffer.from(rec.hash, 'hex'), Buffer.from(emHash(userId, email, code), 'hex'));
+  if (!good) {
+    rec.attempts += 1;
+    const left = Math.max(0, EM_MAX_ATTEMPTS - rec.attempts);
+    return { ok: false, dead: !left, why: left ? 'Неверный код. Осталось попыток: ' + left : 'Слишком много попыток — запросите новый код' };
+  }
+  return { ok: true, rec };
+}
+setInterval(() => {
+  const now = Date.now();
+  /* запись с попытками живёт час — иначе перевыпуск после истечения обнулял бы их */
+  for (const [k, r] of emCodes) if (now > r.expires && now - (r.at || 0) > 3600000) emCodes.delete(k);
+  for (const k of [...emIssues.keys()]) emRecent(k, now);
+}, 5 * 60 * 1000).unref();
+
 function pwReason(reason, left) {
   if (reason === 'expired') return 'Код истёк — запросите новый';
   if (reason === 'locked') return 'Слишком много попыток — запросите новый код';
@@ -4498,16 +4665,30 @@ const routes = {
     /* пауза после череды промахов по этой почте — до сверки пароля, иначе
        перебор шёл бы дальше (аудит 16.10.2026, loginMissed) */
     const ipk = loginIpKey(req);
-    const paused = loginPausedFor(email, ipk);
+    /* замок на почту (со всех адресов) — раньше паузы пары: верный пароль
+       во время замка тоже не проходит */
+    let locked = loginLockedFor(email);
+    if (locked) return loginLockedReply(locked);
+    let paused = loginPausedFor(email, ipk);
     if (paused) return loginPausedReply(paused);
     const slow = loginSlowMs(email);
-    if (slow) await new Promise((r) => setTimeout(r, slow));
+    if (slow) {
+      await new Promise((r) => setTimeout(r, slow));
+      /* Пока ждали, параллельные запросы могли добить счёт до замка: от
+         этого места до записи промаха — ни одного await, поэтому потолок
+         не перешагнуть пачкой одновременных запросов. */
+      locked = loginLockedFor(email);
+      if (locked) return loginLockedReply(locked);
+      paused = loginPausedFor(email, ipk);
+      if (paused) return loginPausedReply(paused);
+    }
+    const pw = String(body.password || '');
     const u = q.userByEmail.get(email);
-    if (!u) { scrypt('заглушка-для-ровного-времени', 'соль'); loginMissed(email, ipk, null); return bad; }
-    const hash = scrypt(String(body.password || ''), u.pass_salt);
+    if (!u) { scrypt('заглушка-для-ровного-времени', 'соль'); loginMissed(email, ipk, null, pw); return bad; }
+    const hash = scrypt(pw, u.pass_salt);
     const stored = String(u.pass_hash || '');
     if (hash.length !== stored.length || !crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(stored))) {
-      loginMissed(email, ipk, u);
+      loginMissed(email, ipk, u, pw);
       return bad;
     }
     loginPairClear(email, ipk);
@@ -4643,9 +4824,22 @@ const routes = {
     const hash = scrypt(pass, salt);
     const token = newToken();
     const exp = new Date(Date.now() + SESSION_DAYS * 864e5).toISOString();
+    /* Почта до этого НЕ была подтверждена (аудит 16.10.2026, захват
+       аккаунта заранее): аккаунт мог завести на чужой адрес кто-то другой и
+       привязать к нему свой Телеграм или Google. Хозяин почты доказал её
+       кодом — прочие входы отвязываем, все сессии и подписки на уведомления
+       гасим: в аккаунте остаётся только он. Подтверждённую почту сброс не
+       трогает (сессии гасятся всегда, как и раньше). */
+    const wasVerified = Number(u.email_verified) === 1;
+    const unlinked = wasVerified ? null : { telegram: !!u.tg_id, google: !!u.google_sub };
     db.exec('BEGIN IMMEDIATE');
     try {
       q.updPass.run(salt, hash, u.id);
+      if (!wasVerified) {
+        q.unlinkLogins.run(u.id);
+        q.delUserPush.run(u.id);
+        q.setEmailVerified.run(u.id);
+      }
       q.delUserSessions.run(u.id);
       q.insSession.run(token, u.id, exp);
       db.exec('COMMIT');
@@ -4654,8 +4848,17 @@ const routes = {
       throw e;                                  /* наверх: 500 и тревога */
     }
     pwVerify(email, code, true);                /* код потрачен — пароль уже сменён */
-    loginMiss.delete(email);                    /* пауза входа паролем снята: человек доказал почту */
-    return { status: 200, body: { ok: true, token, user: { id: u.id, email: u.email, name: u.name, role: u.role } } };
+    loginMiss.delete(email);                    /* пауза и замок входа паролем сняты: человек доказал почту */
+    if (unlinked && (unlinked.telegram || unlinked.google)) {
+      tgAlert('pwreset-unlink:' + u.id,
+        '🔑 Сброс пароля отвязал вход\n\nАккаунт: ' + String(email).slice(0, 120) + ' (#' + u.id + ')'
+        + '\nПочта не была подтверждена, хозяин почты доказал её кодом. Отвязано: '
+        + [unlinked.telegram ? 'Телеграм' : '', unlinked.google ? 'Google' : ''].filter(Boolean).join(', ')
+        + '. Если почту к аккаунту записал посторонний — он больше не входит.', 'auth');
+    }
+    const out = { ok: true, token, user: { id: u.id, email: u.email, name: u.name, role: u.role } };
+    if (unlinked && (unlinked.telegram || unlinked.google)) out.unlinked = unlinked;
+    return { status: 200, body: out };
   },
 
   /* Вход из мини-аппа. Пароль не нужен: личность подтверждает Телеграм,
@@ -4685,6 +4888,8 @@ const routes = {
         /* свой пароль есть? нет (вход был Google/Телеграмом) — «Настройки»
            предложат «Задать пароль» без «текущего» */
         hasPassword: hasOwnPass(u),
+        /* почта доказана кодом из письма (или Google) — см. email_verified */
+        emailVerified: !temp && Number(u.email_verified) === 1,
         telegram: !!u.tg_id,
         google: !!u.google_sub,
         canTelegram: !!(BOT_TOKEN && TG_BOT_ID),
@@ -4711,7 +4916,13 @@ const routes = {
   /* ── Задать почту и пароль ──
      Только для аккаунта со служебной почтой (заведён входом через
      Телеграм). После этого человек входит той же почтой с компьютера и
-     попадает в ТОТ ЖЕ аккаунт, а не заводит второй кошелёк. */
+     попадает в ТОТ ЖЕ аккаунт, а не заводит второй кошелёк.
+     Два шага (аудит 16.10.2026, захват аккаунта заранее — см. emCodes):
+     {email, password} без code — проверки и код на ЭТОТ адрес, ответ
+     {needCode, sentTo}; почта не меняется. {email, code[, password]} —
+     сверка кода, и только тогда почта и пароль записываются, почта
+     помечается подтверждённой. Пароль второго шага можно не слать — берём
+     заданный на первом (в памяти лежит его хеш, не он сам). */
   'POST /api/account/email': async (req, body) => {
     const u = auth(req);
     if (!u) return { status: 401, body: { error: 'Нужен вход' } };
@@ -4723,13 +4934,16 @@ const routes = {
     }
     const email = String(body.email || '').trim().toLowerCase();
     const pass = String(body.password || '');
+    const code = String(body.code || '').replace(/\D/g, '').slice(0, 12);
     if (email.length > EMAIL_MAX) return { status: 400, body: { error: 'Слишком длинный адрес почты' } };
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { status: 400, body: { error: 'Некорректный email' } };
     if (isServiceEmail(email)) {
       return { status: 400, body: { error: 'Это служебный адрес — укажите свою настоящую почту' } };
     }
-    if (pass.length < 8) return { status: 400, body: { error: 'Пароль — минимум 8 символов' } };
-    if (pass.length > PASS_MAX) return { status: 400, body: { error: 'Слишком длинный пароль — не больше ' + PASS_MAX + ' символов' } };
+    if (!code || pass) {
+      if (pass.length < 8) return { status: 400, body: { error: 'Пароль — минимум 8 символов' } };
+      if (pass.length > PASS_MAX) return { status: 400, body: { error: 'Слишком длинный пароль — не больше ' + PASS_MAX + ' символов' } };
+    }
     /* АДРЕС ВЛАДЕЛЬЦА ЗАНИМАЕТ ТОЛЬКО ВЛАДЕЛЕЦ.
        Аккаунт с почтой из ADMIN_EMAIL получает права на всю площадку
        (syncAdminFlag). Адрес этот не секрет — он стоит в политике и в
@@ -4741,14 +4955,55 @@ const routes = {
       return { status: 403, body: { error: 'Этот адрес принадлежит владельцу площадки — занять его можно только с ключом владельца' } };
     }
     if (q.userByEmail.get(email)) return { status: 409, body: { error: 'Этот email уже зарегистрирован' } };
-    const salt = crypto.randomBytes(16).toString('hex');
+    /* Подтвердить адрес нечем — честный отказ, а не привязка без проверки */
+    if (!mailConfigured()) {
+      return { status: 503, body: { error: 'Не можем отправить код подтверждения: почта на сервере ещё не настроена. '
+        + 'Попробуйте позже или напишите в поддержку.', code: 'mail_off' } };
+    }
+
+    /* ── шаг 1: код на новый адрес ── */
+    if (!code) {
+      const can = emIssueCheck(u.id, email);
+      if (!can.ok) {
+        return { status: 429, body: can.error === 'cooldown'
+          ? { error: 'Код уже отправлен — новый можно запросить через ' + can.wait + ' с', code: 'cooldown', wait: can.wait }
+          : { error: 'Код запрашивали слишком часто — попробуйте через час', code: 'too_many' } };
+      }
+      const salt = crypto.randomBytes(16).toString('hex');
+      const fresh = emIssue(u.id, email, salt, scrypt(pass, salt));
+      const r = await sendCodeEmail({ to: email, code: fresh, kind: 'verify', minutes: Math.round(EM_TTL_MS / 60000) });
+      /* письмо не ушло — код гасим: ждать кода, которого не будет, незачем */
+      if (!r.ok && !MAIL_DEBUG) {
+        const cur = emCodes.get(u.id);
+        if (cur && cur.email === email) cur.expires = 0;
+        return { status: 502, body: { error: 'Не удалось отправить код на почту. Проверьте адрес или попробуйте позже.' } };
+      }
+      /* адрес человек ввёл сам — показываем целиком, куда ушёл код */
+      const out = { needCode: true, sentTo: email, ttl: Math.round(EM_TTL_MS / 1000) };
+      if (MAIL_DEBUG) out.devCode = fresh;     /* как у вывода: только тесты и разработка */
+      return { status: 200, body: out };
+    }
+
+    /* ── шаг 2: сверка кода, запись ── */
+    const chk = emCheck(u.id, email, code);
+    if (!chk.ok) return { status: 400, body: { error: chk.why, needCode: true, dead: !!chk.dead } };
+    let salt = chk.rec.salt, hash = chk.rec.passHash;
+    if (pass) { salt = crypto.randomBytes(16).toString('hex'); hash = scrypt(pass, salt); }
+    if (!salt || !hash) return { status: 400, body: { error: 'Задайте пароль — минимум 8 символов' } };
+    /* между сверкой и записью нет ни одного await: второй запрос тем же
+       кодом не вклинится */
+    db.exec('BEGIN IMMEDIATE');
     try {
       q.updEmail.run(email, u.id);
-      q.updPass.run(salt, scrypt(pass, salt), u.id);
+      q.updPass.run(salt, hash, u.id);
+      q.setEmailVerified.run(u.id);
+      db.exec('COMMIT');
     } catch (e) {
+      try { db.exec('ROLLBACK'); } catch (_) { /* нечего откатывать */ }
       return { status: 409, body: { error: 'Этот email уже зарегистрирован' } };
     }
-    return { status: 200, body: { ok: true, email } };
+    emCodes.delete(u.id);                       /* код одноразовый */
+    return { status: 200, body: { ok: true, email, verified: true } };
   },
 
   'GET /api/auth/methods': async () => ({
@@ -10370,6 +10625,8 @@ async function handleGoogleCallback(req, res, url) {
         return verifyPage(res, 'Не вышло создать аккаунт', 'Попробуйте ещё раз через минуту.', false);
       }
       u = q.userByGoogle.get(sub);
+      /* почту проверил сам Google (непроверенную выше не берём) */
+      if (u && mail) { try { q.setEmailVerified.run(u.id); u.email_verified = 1; } catch (e) { /* не критично */ } }
     }
     if (!u) return verifyPage(res, 'Не вышло войти', 'Попробуйте ещё раз через минуту.', false);
     if (u.is_blocked) {

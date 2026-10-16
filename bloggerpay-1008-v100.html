@@ -84382,6 +84382,11 @@ html #alkSheet button{
 html #alkSheet .alk-no{ background:rgba(255,255,255,.06); color:var(--t2) }
 html #alkSheet .alk-go{ background:var(--acc,#2f6ce0); color:#fff }
 html #alkSheet .alk-go[disabled]{ opacity:.6 }
+/* шаг кода «Почты и пароля» (аудит 16.10.2026) */
+html #alkSheet [hidden]{ display:none!important }
+html #alkSheet #alkCodeIn{ letter-spacing:.3em; font-variant-numeric:tabular-nums; font-size:18px }
+html #alkSheet .alk-resend{ flex:none; height:auto; padding:2px 0; align-self:flex-start; background:none; color:var(--acc,#2f6ce0); font-size:14px; font-weight:600 }
+html #alkSheet .alk-resend[disabled]{ opacity:.5 }
 </style>
 
 <script id="bp-acclink">
@@ -84505,6 +84510,10 @@ function sheet(){
     + 'в этот же аккаунт с компьютера. Деньги, сделки и карточка останутся те же.</p>'
     + '<input id="alkMailIn" type="email" inputmode="email" autocomplete="email" placeholder="Почта">'
     + '<input id="alkPassIn" type="password" autocomplete="new-password" placeholder="Пароль — минимум 8 символов">'
+    /* шаг 2 (аудит 16.10.2026): почта привязывается только кодом, ушедшим на неё */
+    + '<p id="alkCodeTxt" hidden></p>'
+    + '<input id="alkCodeIn" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Код из письма — 6 цифр" hidden>'
+    + '<button type="button" class="alk-resend" id="alkResend" hidden>Отправить ещё раз</button>'
     + '<div class="alk-err" id="alkErr"></div>'
     + '<div class="alk-btns">'
     + '<button type="button" class="alk-no" id="alkNo">Отмена</button>'
@@ -84513,27 +84522,59 @@ function sheet(){
   document.body.appendChild(ov);
   ov.addEventListener('click', function(e){ if(e.target === ov) ov.remove(); });
   document.getElementById('alkNo').addEventListener('click', function(){ ov.remove(); });
-  document.getElementById('alkGo').addEventListener('click', function(){
-    var go = document.getElementById('alkGo');
-    var err = document.getElementById('alkErr');
-    var mail = (document.getElementById('alkMailIn').value || '').trim();
-    var pass = document.getElementById('alkPassIn').value || '';
+  var G = function(id){ return document.getElementById(id); };
+  var sent = null, busy = false;
+  function ok(){
+    ov.remove();
+    toast('Почта подтверждена: теперь можно входить по почте', 'ok');
+    load(true);
+  }
+  /* шаг 1 и «Отправить ещё раз»: код на новый адрес, почта пока не меняется */
+  function ask(mail, dp){
+    busy = true; G('alkGo').disabled = true; G('alkResend').disabled = true;
+    return srv().raw('POST', '/api/account/email', { email: mail, password: dp }).then(function(j){
+      busy = false; G('alkGo').disabled = false; G('alkResend').disabled = false;
+      if(!(j && j.needCode)){ if(j && j.ok) ok(); return; }
+      var again = !!sent;
+      sent = { mail: mail, dp: dp };
+      ['alkMailIn', 'alkPassIn'].forEach(function(id){ G(id).hidden = true; });
+      var box = ov.querySelector('.alk-box > p:not(#alkCodeTxt)'); if(box) box.hidden = true;
+      G('alkCodeTxt').textContent = 'Мы отправили код на ' + String(j.sentTo || mail) + '. Введите 6 цифр из письма — так мы убедимся, что почта ваша.';
+      G('alkCodeTxt').hidden = false; G('alkCodeIn').hidden = false; G('alkResend').hidden = false;
+      G('alkGo').textContent = 'Подтвердить';
+      G('alkCodeIn').value = ''; G('alkCodeIn').focus();
+      if(again) toast('Новый код отправлен', 'ok');
+    }, function(e2){
+      busy = false; G('alkGo').disabled = false; G('alkResend').disabled = false;
+      G('alkErr').textContent = (e2 && e2.message) || 'Не получилось отправить код';
+    });
+  }
+  G('alkResend').addEventListener('click', function(){ if(!busy && sent){ G('alkErr').textContent = ''; ask(sent.mail, sent.dp); } });
+  G('alkGo').addEventListener('click', function(){
+    if(busy) return;
+    var err = G('alkErr');
     err.textContent = '';
+    if(sent){
+      var code = String(G('alkCodeIn').value || '').replace(/\D/g, '');
+      if(code.length !== 6){ err.textContent = 'Введите 6 цифр из письма'; return; }
+      busy = true; G('alkGo').disabled = true;
+      srv().raw('POST', '/api/account/email', { email: sent.mail, code: code, password: sent.dp })
+        .then(function(){ busy = false; ok(); })
+        .catch(function(e2){
+          busy = false; G('alkGo').disabled = false;
+          err.textContent = (e2 && e2.message) || 'Не получилось подтвердить почту';
+          G('alkCodeIn').value = ''; G('alkCodeIn').focus();
+        });
+      return;
+    }
+    var mail = (G('alkMailIn').value || '').trim();
+    var pass = G('alkPassIn').value || '';
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)){ err.textContent = 'Проверьте адрес почты'; return; }
     if(pass.length < 8){ err.textContent = 'Пароль — минимум 8 символов'; return; }
-    go.disabled = true;
+    G('alkGo').disabled = true;
     /* производная, как у регистрации и входа (аудит 16.10.2026) */
     Promise.resolve(typeof window.bpSrvPass === 'function' ? window.bpSrvPass(mail, pass) : pass)
-      .then(function(dp){ return srv().raw('POST', '/api/account/email', { email: mail, password: dp }); })
-      .then(function(){
-        ov.remove();
-        toast('Готово: теперь можно входить по почте', 'ok');
-        load(true);
-      })
-      .catch(function(e2){
-        go.disabled = false;
-        err.textContent = (e2 && e2.message) || 'Не получилось сохранить';
-      });
+      .then(function(dp){ return ask(mail, dp); }, function(){ G('alkGo').disabled = false; err.textContent = 'Не получилось — попробуйте ещё раз'; });
   });
   setTimeout(function(){ try{ document.getElementById('alkMailIn').focus(); }catch(e){} }, 80);
 }
@@ -111164,6 +111205,12 @@ html.bp-mv .mvs-foot{ margin:26px 0 0; text-align:center; font-size:12.5px; line
 
 /* окна: пароль */
 html.bp-mv .mvs-form{ display:flex; flex-direction:column; gap:16px }
+/* «Почта и пароль», шаг кода (аудит 16.10.2026): .mx-fld/.mx-pl — flex, атрибут hidden их сам не прячет */
+html.bp-mv .mvs-form [hidden]{ display:none!important }
+html.bp-mv .mvs-code{ display:flex; flex-direction:column; gap:16px }
+html.bp-mv #mvsMailCode{ letter-spacing:.32em; font-variant-numeric:tabular-nums; font-size:20px }
+html.bp-mv #mvsMailCode::placeholder{ letter-spacing:.32em }
+html.bp-mv .mvs-resend{ align-self:flex-start }
 html.bp-mv .mvs-eye{ flex:none; display:grid; place-items:center; width:36px; height:36px; margin:0 -8px 0 0; padding:0; border:0; border-radius:10px; background:none; color:var(--mx-t4); cursor:pointer; -webkit-tap-highlight-color:transparent }
 html.bp-mv .mvs-eye svg{ width:20px; height:20px }
 html.bp-mv .mvs-eye[aria-pressed="true"]{ color:#fff }
@@ -111280,7 +111327,8 @@ html.bp-mv .mvs-done p{ margin:0; font-size:14px; line-height:20px; color:var(--
      (сборка — из кэша воркера bloggerpay-bp-vNNN или из sw.js),
      «Комиссии сервиса» (window.bpFees) — окна mx-*.
    Способы входа — тот же /api/account/methods, что у bp-acclink; почта
-   для аккаунта из Телеграма — тот же POST /api/account/email. Уведомления
+   для аккаунта из Телеграма — тот же POST /api/account/email, в два шага
+   (аудит 16.10.2026): сначала код на новый адрес, почта — только по коду. Уведомления
    на телефон — bpPushState / bpPushOn / bpAskNotif и флаг bp_prefs.push
    (как у bp-push), вибрация — bpPrefToggle. Остальное — прежние входы:
    bpMvMeOpen, bpMvVerifyOpen, bpKycPayout, toggleRole, bpExportData,
@@ -111794,30 +111842,106 @@ function openMail(why){
       + '<p class="mx-txt">' + nbsp('Вы вошли через ' + via + ', и у аккаунта нет почты. Задайте её — и сможете входить в этот же аккаунт с компьютера. Баланс, задания и видео останутся те же.') + '</p>'
       + '<label class="mx-fld"><span class="mx-lbl">Почта</span><span class="mx-ctl"><input id="mvsMailIn" type="email" inputmode="email" autocomplete="email" maxlength="160" spellcheck="false" autocapitalize="off" placeholder="name@example.ru"></span></label>'
       + '<label class="mx-fld"><span class="mx-lbl">Пароль</span><span class="mx-ctl"><input id="mvsMailPw" type="password" autocomplete="new-password" maxlength="200" spellcheck="false" autocapitalize="off">' + eyeBtn('mvsMailPw') + '</span><span class="mx-hint">Минимум 8 символов</span></label>'
+      /* шаг 2 (аудит 16.10.2026): почта привязывается только кодом, ушедшим на неё */
+      + '<div class="mvs-code" id="mvsMailCodeBox" hidden>'
+      +   '<div class="mx-pl blue" id="mvsMailSent"></div>'
+      +   '<label class="mx-fld"><span class="mx-lbl">Код из письма</span><span class="mx-ctl"><input id="mvsMailCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*" spellcheck="false" autocapitalize="off" placeholder="000000" aria-describedby="mvsMailSent"></span></label>'
+      +   '<button type="button" class="mx-b mx-bg mx-bs mvs-resend" id="mvsMailAgain">Отправить ещё раз</button>'
+      + '</div>'
       + '<div class="mx-err" id="mvsMailE" role="alert"></div><button type="submit" hidden></button></form>',
     foot:'<button type="button" class="mx-b mx-bg" data-mx="x">Отмена</button><button type="button" class="mx-b mx-bp mx-bgrow" id="mvsMailGo">Сохранить</button>' });
   if(!m) return;
   wireEyes(m.el);
-  var go = $('mvsMailGo'), err = $('mvsMailE');
+  var go = $('mvsMailGo'), err = $('mvsMailE'), again = $('mvsMailAgain'), codeIn = $('mvsMailCode');
+  /* step: 1 — почта и пароль, 2 — код; sent — адрес и производная пароля шага 1 */
+  var step = 1, sent = null, busy = false, cdT = null, cdUntil = 0;
+  function countdown(sec){
+    clearInterval(cdT); cdUntil = Date.now() + Math.max(0, sec) * 1000;
+    function tick(){
+      if(!document.body.contains(again)){ clearInterval(cdT); return; }
+      var left = Math.ceil((cdUntil - Date.now()) / 1000);
+      if(left > 0){ again.disabled = true; again.textContent = 'Отправить ещё раз · ' + Math.floor(left / 60) + ':' + ('0' + left % 60).slice(-2); }
+      else { clearInterval(cdT); again.disabled = busy; again.textContent = 'Отправить ещё раз'; }
+    }
+    tick(); cdT = setInterval(tick, 1000);
+  }
+  function toCode(j){
+    step = 2;
+    var box = $('mvsMailCodeBox'), f = $('mvsMailF');
+    [].forEach.call(f.querySelectorAll('.mx-txt, #mvsMailWhy'), function(x){ x.hidden = true; });
+    [$('mvsMailIn'), $('mvsMailPw')].forEach(function(x){ var l = x && x.closest('.mx-fld'); if(l) l.hidden = true; });
+    var min = Math.max(1, Math.round(Number(j && j.ttl || 900) / 60));
+    $('mvsMailSent').innerHTML = '<b>Код отправлен на почту</b><span>' + esc(nbsp('Мы отправили 6 цифр на ' + String((j && j.sentTo) || sent.mail) + '. Введите их здесь — так мы убедимся, что почта ваша. Код действует ' + min + ' мин.')) + '</span>';
+    box.hidden = false;
+    go.textContent = 'Подтвердить';
+    countdown(60);
+    later(function(){ try{ codeIn.focus(); }catch(e){} }, 60);
+  }
+  function done(){
+    clearInterval(cdT);
+    m.close();
+    toast(wd ? 'Почта подтверждена — нажмите «Вывести» ещё раз' : 'Почта подтверждена: теперь можно входить по почте', 'ok');
+    try{ if(typeof window.bpAccLinkLoad === 'function') window.bpAccLinkLoad(); }catch(e){}
+    pullMethods(true).then(function(){ _key = ''; soon(); });
+  }
+  /* шаг 1 (и «Отправить ещё раз»): сервер шлёт код на новый адрес, почту не меняет */
+  function ask(mail, dp, isAgain){
+    busy = true; go.disabled = true; if(isAgain) again.disabled = true;
+    return srv().raw('POST', '/api/account/email', { email:mail, password:dp }).then(function(j){
+      busy = false; go.disabled = false;
+      sent = { mail:mail, dp:dp };
+      if(j && j.needCode){
+        if(step === 2){ countdown(60); codeIn.value = ''; codeIn.focus(); toast('Новый код отправлен на ' + mail, 'ok'); }
+        else toCode(j);
+        return;
+      }
+      if(j && j.ok) done();               /* старый сервер без кода */
+    }, function(e){
+      busy = false; go.disabled = false;
+      if(isAgain){
+        /* «новый можно запросить через N с» — ждём столько же */
+        var w = Number((/через\s+(\d+)\s*с/.exec(String((e && e.message) || '')) || [])[1] || 0);
+        if(e && e.status === 429 && w > 0) countdown(w); else again.disabled = false;
+      }
+      err.textContent = errOf(e, 'Не получилось отправить код');
+    });
+  }
   function submit(){
-    var mail = String($('mvsMailIn').value || '').trim(), pw = $('mvsMailPw').value || '';
+    if(busy) return;
     err.textContent = '';
+    if(!online()){ err.textContent = 'Нет связи с сервером — проверьте интернет'; return; }
+    if(step === 2){
+      var code = String(codeIn.value || '').replace(/\D/g, '');
+      if(code.length !== 6){ err.textContent = 'Введите 6 цифр из письма'; codeIn.focus(); return; }
+      busy = true; go.disabled = true;
+      srv().raw('POST', '/api/account/email', { email:sent.mail, code:code, password:sent.dp }).then(function(){
+        busy = false; done();
+      }, function(e){
+        busy = false; go.disabled = false;
+        err.textContent = errOf(e, 'Не получилось подтвердить почту');
+        codeIn.value = ''; codeIn.focus();
+        if(e && e.dead && !(cdUntil > Date.now())){ again.disabled = false; again.textContent = 'Отправить ещё раз'; }
+      });
+      return;
+    }
+    var mail = String($('mvsMailIn').value || '').trim(), pw = $('mvsMailPw').value || '';
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)){ err.textContent = 'Проверьте адрес почты'; $('mvsMailIn').focus(); return; }
     if(pw.length < 8){ err.textContent = 'Пароль — минимум 8 символов'; $('mvsMailPw').focus(); return; }
-    if(!online()){ err.textContent = 'Нет связи с сервером — проверьте интернет'; return; }
     go.disabled = true;
     /* на сервер — производная, как у регистрации и входа (аудит 16.10.2026):
        открытый пароль ложился на сервер, и каждый вход шёл со второй попытки */
     Promise.resolve(typeof window.bpSrvPass === 'function' ? window.bpSrvPass(mail, pw) : pw).then(function(dp){
-      return srv().raw('POST', '/api/account/email', { email:mail, password:dp });
-    }).then(function(){
-      m.close();
-      toast(wd ? 'Почта сохранена — нажмите «Вывести» ещё раз' : 'Готово: теперь можно входить по почте', 'ok');
-      try{ if(typeof window.bpAccLinkLoad === 'function') window.bpAccLinkLoad(); }catch(e){}
-      pullMethods(true).then(function(){ _key = ''; soon(); });
-    }, function(e){ go.disabled = false; err.textContent = errOf(e, 'Не получилось сохранить'); });
+      return ask(mail, dp, false);
+    }, function(){ go.disabled = false; err.textContent = 'Не получилось — попробуйте ещё раз'; });
   }
   go.addEventListener('click', submit);
+  again.addEventListener('click', function(){
+    if(busy || !sent || again.disabled) return;
+    err.textContent = '';
+    if(!online()){ err.textContent = 'Нет связи с сервером — проверьте интернет'; return; }
+    ask(sent.mail, sent.dp, true);
+  });
+  codeIn.addEventListener('input', function(){ var v = codeIn.value.replace(/\D/g, '').slice(0, 6); if(v !== codeIn.value) codeIn.value = v; });
   $('mvsMailF').addEventListener('submit', function(e){ e.preventDefault(); submit(); });
   return true;
 }
