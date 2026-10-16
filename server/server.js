@@ -3024,6 +3024,22 @@ const LOGIN_EMAILS_MAX = 20000;
 /* почта → { n, at, alerted, lockUntil,
              pairs: Map(ipBucket → { n, at, last, lastD, disc, until }) } */
 const loginMiss = new Map();
+/* Адреса, с которых человек уже входил паролем: почта → Set(ipBucket).
+   Замок на почту (LOGIN_EMAIL_MAX) — против перебора со многих адресов, но
+   он же давал постороннему запереть хозяина. Верный пароль со «своего»
+   адреса замок пропускает (пауза пары по-прежнему действует); перебор с
+   новых адресов упирается в замок (разбор безопасности 16.10.2026). */
+const loginKnown = new Map();
+function loginKnownHas(email, ipk) { const s = loginKnown.get(email); return !!(s && s.has(ipk)); }
+function loginKnownAdd(email, ipk) {
+  if (!email || !ipk) return;
+  let s = loginKnown.get(email);
+  if (!s) s = new Set();
+  s.delete(ipk); s.add(ipk);
+  if (s.size > 16) s.delete(s.values().next().value);
+  loginKnown.delete(email); loginKnown.set(email, s);
+  if (loginKnown.size > 50000) loginKnown.delete(loginKnown.keys().next().value);
+}
 function loginIpKey(req) { return ipBucket(clientIp(req)); }
 /* производная пароля из приложения (bpSrvPass): SHA-256 в hex */
 function loginDerived(p) { return /^[0-9a-f]{64}$/i.test(String(p == null ? '' : p)); }
@@ -4666,8 +4682,10 @@ const routes = {
        перебор шёл бы дальше (аудит 16.10.2026, loginMissed) */
     const ipk = loginIpKey(req);
     /* замок на почту (со всех адресов) — раньше паузы пары: верный пароль
-       во время замка тоже не проходит */
-    let locked = loginLockedFor(email);
+       во время замка тоже не проходит — кроме адреса, с которого этот
+       человек уже входил (loginKnown) */
+    const known = loginKnownHas(email, ipk);
+    let locked = known ? 0 : loginLockedFor(email);
     if (locked) return loginLockedReply(locked);
     let paused = loginPausedFor(email, ipk);
     if (paused) return loginPausedReply(paused);
@@ -4677,7 +4695,7 @@ const routes = {
       /* Пока ждали, параллельные запросы могли добить счёт до замка: от
          этого места до записи промаха — ни одного await, поэтому потолок
          не перешагнуть пачкой одновременных запросов. */
-      locked = loginLockedFor(email);
+      locked = known ? 0 : loginLockedFor(email);
       if (locked) return loginLockedReply(locked);
       paused = loginPausedFor(email, ipk);
       if (paused) return loginPausedReply(paused);
@@ -4692,6 +4710,7 @@ const routes = {
       return bad;
     }
     loginPairClear(email, ipk);
+    loginKnownAdd(email, ipk);
     if (u.is_blocked) return { status: 403, body: { error: 'Аккаунт заблокирован' } };
     syncAdminFlag(u);
     const token = newToken();

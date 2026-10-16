@@ -395,6 +395,10 @@ async function loginBrute() {
     'замок: и верный пароль с нового адреса — 429 «Слишком много попыток входа к этой почте… «Забыли пароль?»»', owner2.body);
   const xff = await apiM('POST', '/api/login', { email: EL, password: PWD }, null, null, '1.2.3.4, 10.84.0.3');
   ok(xff.status === 429, 'подставной адрес в начале X-Forwarded-For замок не обходит', xff.body);
+  const ownerKnown = await login(EL, PWD, '10.84.0.1');
+  ok(ownerKnown.status === 200 && ownerKnown.body.token, 'во время замка хозяин входит со своего адреса (раньше входил с него) — постороннему не запереть', ownerKnown.body);
+  const knownBad = await login(EL, 'не-тот', '10.84.0.1');
+  ok(knownBad.status === 401, '…а неверный пароль со «своего» адреса — обычный промах', knownBad.body);
   ok((await apiM('GET', '/api/me', null, owner1.body.token)).status === 200, 'уже вошедшего хозяина замок не выкидывает');
   /* сброс по коду снимает замок */
   const f = await apiM('POST', '/api/password/forgot', { email: EL }, null, null, '10.84.0.4');
